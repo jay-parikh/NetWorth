@@ -47,6 +47,12 @@ def test_six_charts_present(built):
     assert types.count("<c:lineChart>") == 1
 
 
+def test_dropdown_tip_within_excel_limit():
+    # Excel silently drops a validation whose input message exceeds 255 chars
+    from networth.generate import _DROPDOWN_TIP
+    assert len(_DROPDOWN_TIP) <= 255
+
+
 def test_typeahead_validations(built):
     with zipfile.ZipFile(built) as z:
         eq = z.read("xl/worksheets/sheet6.xml").decode()   # Equity is 6th sheet

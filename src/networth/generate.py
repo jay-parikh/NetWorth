@@ -94,9 +94,12 @@ def _typeahead(anchor_sheet: str, name_list: str, col: str = "C",
             f"MAX(1,COUNTIF({name_list},${col}4&\"*\")),1)")
 
 
-_DROPDOWN_TIP = ("Type the first letters, then open the dropdown to see only "
-                 "matching entries. Free text is allowed (a warning you can "
-                 "accept) - then fill the ISIN yourself.")
+# Excel silently drops a validation whose input message exceeds 255 chars —
+# keep this tip well under that.
+_DROPDOWN_TIP = ("FILTER IN 2 STEPS: type the first letters, press ENTER, "
+                 "then re-open the dropdown (arrow or Alt+Down) - only "
+                 "matching names remain. Excel does not suggest while "
+                 "typing. Free text is allowed for names not in the list.")
 
 
 def _add_dropdown(ws, rng: str, source: str, title: str) -> None:

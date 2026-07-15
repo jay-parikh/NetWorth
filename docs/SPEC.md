@@ -328,6 +328,12 @@ List validation with:
 
 - Begins-with filtering: typing a prefix then opening the dropdown shows only
   matching entries. Requires the master **sorted** by that column.
+- **Interaction is two-step by Excel's design**: the window formula evaluates
+  against the cell's *committed* value, so the user must type the prefix,
+  press Enter, then re-open the dropdown (arrow click or Alt+Down on the
+  selected cell). Excel offers no live suggestions while typing in a
+  validation cell (only recent Microsoft 365 builds add native autocomplete).
+  The input tip and Guide must state this two-step flow explicitly.
 - `showErrorMessage = false` (non-blocking): users may keep free text (e.g. a
   delisted scheme); the lookup columns then stay blank, which downstream
   formulas treat as "fill ISIN manually".
