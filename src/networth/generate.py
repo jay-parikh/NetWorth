@@ -67,6 +67,9 @@ def _formats(wb: xlsxwriter.Workbook) -> dict:
         # conditional-format overlays (SPEC §6.9)
         "cf_green": f(font_color="#1F7A1F"),
         "cf_red": f(font_color="#C00000"),
+        # amber = degraded data: stale price, suspended/delisted, FMV-estimated cost
+        "cf_amber": f(bg_color="#FFE8C4"),
+        "amber_price": f(bg_color="#FFE8C4", num_format="#,##0.00"),
     }
 
 
@@ -352,6 +355,10 @@ def _write_equity(wb, F, data: PortfolioData):
                         "Cur. val", "Invested", "Net chg.", "Day chg.",
                         "Cost date", "XIRR"], F["header"])
     ws.write("P3", "Key", F["header"])
+    ws.write("Q3", "Flags", F["key"])
+    ws.write_comment("E3", "Leave blank for pre-Feb-2018 purchases whose price you "
+                           "don't know - the updater fills the 31-Jan-2018 FMV "
+                           "(LTCG grandfathering value) and marks the cell amber.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.equity)}
     for r in range(M.FIRST_DATA_ROW, M.EQUITY_LAST_ROW + 1):
@@ -369,13 +376,21 @@ def _write_equity(wb, F, data: PortfolioData):
             if row.qty is not None:
                 ws.write_number(f"D{r}", row.qty, F["in_num"])
             if row.avg_cost is not None:
-                ws.write_number(f"E{r}", row.avg_cost, F["in_price"])
+                if row.fmv_used:
+                    ws.write_number(f"E{r}", row.avg_cost, F["amber_price"])
+                    ws.write_comment(f"E{r}", "Cost unknown - using the 31-01-2018 "
+                                              "FMV (LTCG grandfathering value). "
+                                              "Overtype with the real cost if you "
+                                              "find it.")
+                    ws.write(f"Q{r}", "FMV", F["key"])
+                else:
+                    ws.write_number(f"E{r}", row.avg_cost, F["in_price"])
             if row.close is not None:
                 ws.write_number(f"F{r}", row.close, F["u_price"])
             if row.prev_close is not None:
                 ws.write_number(f"G{r}", row.prev_close, F["u_price"])
             if row.close_date:
-                ws.write(f"H{r}", row.close_date)
+                ws.write_datetime(f"H{r}", row.close_date, F["date_disp"])
             if row.cost_date is not None:
                 ws.write_datetime(f"M{r}", row.cost_date, F["in_date"])
         ws.write_formula(f"I{r}", f'=IF($D{r}="","",$D{r}*$F{r})', F["c_money"])
@@ -407,6 +422,18 @@ def _write_equity(wb, F, data: PortfolioData):
     _redgreen(ws, F, f"N4:N{M.EQUITY_LAST_ROW}")
     _redgreen(ws, F, f"K{tr}:L{tr}")
     _redgreen(ws, F, f"N{tr}")
+    # amber flags (SPEC §6.5): stale price date; suspended/delisted scrip
+    ws.conditional_format(f"F4:H{M.EQUITY_LAST_ROW}", {
+        "type": "formula",
+        "criteria": '=AND($H4<>"",TODAY()-$H4>7)',
+        "format": F["cf_amber"]})
+    ws.conditional_format(f"C4:C{M.EQUITY_LAST_ROW}", {
+        "type": "formula",
+        "criteria": ('=OR(IFERROR(INDEX(Stock_Master!$D:$D,MATCH($B4,'
+                     'Stock_Master!$C:$C,0)),"")="Suspended",'
+                     'IFERROR(INDEX(Stock_Master!$D:$D,MATCH($B4,'
+                     'Stock_Master!$C:$C,0)),"")="Delisted")'),
+        "format": F["cf_amber"]})
     ws.freeze_panes("A4")
     return ws
 
@@ -531,7 +558,8 @@ def _write_mf_sip(wb, F, data: PortfolioData):
 
 
 def _write_master(wb, F, name: str, title: str, hint: str,
-                  headers: list[str], rows: list[tuple], refreshed: str):
+                  headers: list[str], rows: list[tuple], refreshed: str,
+                  status: dict | None = None):
     ws = wb.add_worksheet(name)
     _widths(ws, {"A": 34, "B": 60, "C": 16, "D": 12, "E": 12})
     ws.write("A1", title, F["title"])
@@ -540,9 +568,17 @@ def _write_master(wb, F, name: str, title: str, hint: str,
     ws.write("D2", "Refreshed:", F["label"])
     ws.write("E2", refreshed, F["in_text"])
     ws.write_row("A3", headers, F["header"])
+    if status is not None:
+        ws.write("D3", "Status", F["header"])
+        ws.write("E3", "Last Traded", F["header"])
     r = M.FIRST_DATA_ROW - 1  # 0-based row index for write_row
     for tup in rows:
         ws.write_row(r, 0, tup)
+        if status and tup[2] in status:
+            st, last = status[tup[2]]
+            ws.write(r, 3, st)
+            if last:
+                ws.write_datetime(r, 4, last, F["date_disp"])
         r += 1
     ws.freeze_panes("A4")
     return ws
@@ -791,7 +827,8 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
                   "updater: newly listed stocks are added, existing names are kept "
                   "stable. Do not edit by hand.",
                   ["Symbol", "Stock Name", "ISIN"],
-                  data.masters.stock_rows, data.masters.stock_refreshed)
+                  data.masters.stock_rows, data.masters.stock_refreshed,
+                  status=data.masters.stock_status)
     _write_bank_master(wb, F)
     _write_fd(wb, F, data)
     _write_ppf(wb, F, data)

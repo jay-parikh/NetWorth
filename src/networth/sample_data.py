@@ -17,7 +17,7 @@ from .model import (
 
 PERSONS = ["Amit", "Priya", "Rahul"]
 
-_CLOSE_DATE = "13-07-2026"
+_CLOSE_DATE = date(2026, 7, 13)
 _FMV_DATE = date(2018, 1, 31)   # grandfathering date, see Guide
 
 _EQUITY = [

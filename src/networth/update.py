@@ -20,6 +20,7 @@ from .compute.cashflows import compute_all_xirr
 from .compute.projections import fy_expected_by_person
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
+from .model import load_fmv
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -123,27 +124,45 @@ def run(path: Path, *, price_data=None, amfi_data=None,
 
     stamp = today.strftime("%d-%m-%Y")
 
-    # ---- equity prices + stock master ----
+    # ---- equity prices + stock master + trading status (SPEC §6.5) ----
     if price_data:
         isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
-        trade_stamp = price_data.trade_date.strftime("%d-%m-%Y") if price_data.trade_date else stamp
+        trade_date = price_data.trade_date or today
         matched = 0
+        suspended = 0
         for row in data.equity:
             isin = row.isin_override or isin_by_name.get(row.scrip, "")
+            if not isin:
+                continue
             quote = price_data.prices.get(isin)
             if quote:
                 row.close = quote["close"]
                 if quote["prev"]:
                     row.prev_close = quote["prev"]
-                row.close_date = trade_stamp
+                row.close_date = trade_date
+                data.masters.stock_status[isin] = ("Active", trade_date)
                 matched += 1
+            else:
+                # not traded today: escalate by how long it has been absent
+                prev_status, last = data.masters.stock_status.get(isin, ("", None))
+                last = last or row.close_date
+                if prev_status == "Delisted":
+                    continue
+                if last and (today - last).days > 180:
+                    data.masters.stock_status[isin] = ("Delisted", last)
+                elif last and (today - last).days > 21:
+                    data.masters.stock_status[isin] = ("Suspended", last)
+                    suspended += 1
+                elif last:
+                    data.masters.stock_status[isin] = (prev_status or "Active", last)
+        summary["suspended"] = suspended
         data.masters.stock_rows, added = _merge_stock_master(
             data.masters.stock_rows, price_data.master_rows)
         data.masters.stock_refreshed = stamp
         summary["equity_matched"] = matched
         summary["equity_total"] = sum(1 for r in data.equity if r.scrip or r.isin_override)
         summary["stocks_added"] = added
-        summary["price_source"] = f"{price_data.source} {trade_stamp}"
+        summary["price_source"] = f"{price_data.source} {trade_date.strftime('%d-%m-%Y')}"
 
         # bonds trade on the exchanges too — refresh when the ISIN is quoted
         bonds_matched = 0
@@ -176,6 +195,31 @@ def run(path: Path, *, price_data=None, amfi_data=None,
         summary["mf_matched"] = matched
         summary["mf_total"] = len(data.mutual_funds)
 
+    # ---- FMV 31-01-2018 fallback for unknown old costs (SPEC §6.6) ----
+    fmv_filled = 0
+    try:
+        fmv_by_isin, fmv_by_symbol = load_fmv()
+    except OSError:
+        fmv_by_isin, fmv_by_symbol = {}, {}
+    if fmv_by_isin:
+        isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
+        symbol_by_isin = {isin: sym for sym, _n, isin in data.masters.stock_rows}
+        cutoff = date(2018, 2, 1)
+        for row in data.equity:
+            if row.avg_cost is not None or not row.qty:
+                continue
+            if not row.cost_date or row.cost_date >= cutoff:
+                continue
+            isin = row.isin_override or isin_by_name.get(row.scrip, "")
+            # the 2018 ISIN may differ from today's (post-split reissues) —
+            # fall back to the exchange symbol
+            fmv = fmv_by_isin.get(isin) or fmv_by_symbol.get(symbol_by_isin.get(isin, ""))
+            if fmv:
+                row.avg_cost = fmv
+                row.fmv_used = True
+                fmv_filled += 1
+    summary["fmv_filled"] = fmv_filled
+
     # ---- XIRR + FY-end estimate (always recomputed from current values) ----
     data.xirr = compute_all_xirr(data, today)
     summary["portfolio_xirr"] = data.xirr.portfolio
@@ -197,6 +241,10 @@ def _print_summary(s: dict) -> None:
               f"{s['bonds_matched']} bond(s) priced")
     if "mf_matched" in s:
         print(f"Fund NAVs  : {s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")
+    if s.get("fmv_filled"):
+        print(f"FMV filled : {s['fmv_filled']} row(s) got the 31-01-2018 grandfathering cost")
+    if s.get("suspended"):
+        print(f"Suspended  : {s['suspended']} held scrip(s) not traded for 21+ days (amber)")
     x = s.get("portfolio_xirr")
     print(f"XIRR       : portfolio {x:.2%}" if x is not None else
           "XIRR       : not enough dated cashflows yet")

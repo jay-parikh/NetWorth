@@ -65,9 +65,10 @@ class EquityRow:
     avg_cost: float | None = None
     close: float | None = None         # updater-written
     prev_close: float | None = None    # updater-written
-    close_date: str = ""               # updater-written, display string dd-mm-yyyy
+    close_date: date | None = None     # updater-written; drives the stale-price flag
     cost_date: date | None = None
     isin_override: str = ""            # user typed an ISIN over the lookup
+    fmv_used: bool = False             # avg_cost filled from the 31-01-2018 FMV (§6.6)
 
 
 @dataclass
@@ -153,6 +154,8 @@ class Masters:
     stock_rows: list[tuple[str, str, str]] = field(default_factory=list)   # symbol, name, isin
     mf_refreshed: str = ""
     stock_refreshed: str = ""
+    # held-ISIN trading status (SPEC §6.5): isin -> (Active|Suspended|Delisted, last traded)
+    stock_status: dict[str, tuple[str, date | None]] = field(default_factory=dict)
 
 
 @dataclass
@@ -171,6 +174,23 @@ class PortfolioData:
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person
     xirr: ClassXirr = field(default_factory=ClassXirr)
     masters: Masters = field(default_factory=Masters)
+
+
+def load_fmv(data_dir: Path = DATA_DIR) -> tuple[dict[str, float], dict[str, float]]:
+    """31-01-2018 FMV (day's high, IT-Act grandfathering) keyed by ISIN and by
+    symbol. The symbol map matters: some ISINs changed after later corporate
+    actions (e.g. HDFC Bank post-split), so the 2018 ISIN may not match today's."""
+    import csv
+
+    by_isin: dict[str, float] = {}
+    by_symbol: dict[str, float] = {}
+    with open(data_dir / "fmv_2018-01-31.csv", newline="", encoding="utf-8") as f:
+        rdr = csv.DictReader(f)
+        for r in rdr:
+            fmv = float(r["fmv"])
+            by_isin[r["isin"]] = fmv
+            by_symbol[r["symbol"]] = fmv
+    return by_isin, by_symbol
 
 
 def load_banks(data_dir: Path = DATA_DIR) -> list[tuple[str, str]]:

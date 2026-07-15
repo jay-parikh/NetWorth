@@ -186,7 +186,7 @@ Header row 3, data rows 4…140. Columns:
 | E | Avg. cost | input | as-purchased average cost/share; **v1: may be left blank → FMV fallback §6.6** |
 | F | Closing Price | updater | last close by ISIN |
 | G | Prev. close | updater | previous close |
-| H | Closing Price Date | updater | bhavcopy date used |
+| H | Closing Price Date | updater | bhavcopy date used (a real date cell — the stale-price amber conditional format keys on `TODAY()-$H4>7`) |
 | I | Cur. val | computed | `=IF($D4="","",$D4*$F4)` (v1: uses adjusted qty, §6.7) |
 | J | Invested | computed | `=IF(OR($D4="",$E4=""),"",$D4*$E4)` |
 | K | Net chg. | computed | `=I−J` guarded |
@@ -194,6 +194,7 @@ Header row 3, data rows 4…140. Columns:
 | M | Cost date | input | drives per-row return annualisation & XIRR cashflows |
 | N | XIRR (per row) | computed | `=IF(OR($M4="",N($J4)=0,$I4="",TODAY()<=$M4),"",($I4/$J4)^(365/(TODAY()-$M4))-1)` — simple two-flow annualisation |
 | P | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
+| v1: Q | Flags | updater helper | `FMV` marks an avg-cost filled by the §6.6 fallback so the flag round-trips regeneration |
 
 Below the data block, one **updater-written** cell holds the equity-class
 XIRR (legacy: N142). v1 additions: status/staleness amber flags (§6.5),
@@ -401,7 +402,7 @@ on conflict.
 
 | File | Shape | Source |
 |---|---|---|
-| `fmv_2018-01-31.csv` | `isin, scrip_name, fmv` | BSE bhavcopy of 2018-01-31; FMV = that day's **high** price (IT Act grandfathering definition) |
+| `fmv_2018-01-31.csv` | `isin, symbol, fmv` | NSE bhavcopy of 2018-01-31 (EQ/BE/BZ series, 1,639 ISINs); FMV = that day's **high** price (IT Act grandfathering definition). The symbol column enables lookup when a later corporate action reissued the ISIN (e.g. HDFC Bank post-split) |
 | `banks_in.csv` | `bank_name, type` | RBI scheduled commercial banks list + major SFB/payment/co-op banks |
 | `ppf_rates.csv` | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
 
@@ -461,34 +462,40 @@ AMFI drops it (append with its last-known names).
 ### 6.5 Delisted / stale detection (v1)
 
 ```
-for each held ISIN:
-  in today's bhavcopy            → Status=Active, LastTraded=bhavcopy date
-  missing < 15 trading sessions  → keep last price; if Closing Price Date
-                                   older than 7 calendar days → amber "stale"
-  missing ≥ 15 sessions          → Status=Suspended (amber)
-  removed from exchange list / user-marked → Status=Delisted (amber)
-Suspended/Delisted rows: keep last traded price & date, exclude from Day chg.
-(prev close = close), allow manual price override in F (turns the cell into
-an input; the updater then leaves it alone).
+for each held ISIN, at update time:
+  quoted in the bhavcopy          → Status=Active, LastTraded=bhavcopy date
+  absent ≤ 21 calendar days       → keep last price/status; the live amber
+                                    "stale" conditional format fires anyway
+                                    once Closing Price Date is > 7 days old
+  absent > 21 calendar days       → Status=Suspended (amber via status CF)
+  absent > 180 calendar days      → Status=Delisted (amber via status CF)
+Suspended/Delisted rows keep their last price and Closing Price Date; the
+updater never overwrites an unquoted row's price, so a manual price typed
+into F simply persists.
 ```
 
-Status + LastTraded live in Stock_Master extra columns; Equity rows surface
-the flag via the amber conditional format keyed on a status lookup.
+Status + Last Traded live in Stock_Master columns D/E (written only for held
+ISINs). Equity surfaces both flags with conditional formats: stale via
+`TODAY()-$H4>7` on the price cells, suspended/delisted via an INDEX/MATCH
+status lookup on the Scrip cell — both live formulas, no stored flags.
 
 ### 6.6 FMV 31-01-2018 fallback (v1)
 
 For an Equity row with Quantity and Cost date but **blank Avg. cost**:
 
 ```
-if Cost date < 2018-02-01 and isin in fmv_2018-01-31.csv:
-    effective_cost = FMV(isin);  write it into E as an updater value
-    mark cell amber + comment "Cost unknown — using 31-01-2018 FMV (grandfathering)"
+if Cost date < 2018-02-01 and Avg. cost is blank:
+    fmv = FMV by ISIN, else FMV by exchange symbol   # ISIN may have been
+                                                     # reissued post-split
+    if fmv: write it into E (amber format + explanatory comment),
+            set the Q-column flag to "FMV"
 else: row stays without Invested/XIRR (as today)
 ```
 
-The FMV figure is also kept separately (hidden helper or Corporate_Actions
-sheet region) so a future capital-gains report can apply the true
-grandfathering rule (higher of cost vs min(FMV, sale price)).
+The Q flag makes the fallback round-trip regeneration (the cell keeps its
+amber + comment and is never mistaken for a user-typed cost), and lets a
+future capital-gains report apply the true grandfathering rule (higher of
+cost vs min(FMV, sale price)).
 
 ### 6.7 Corporate-action adjustment (v1)
 

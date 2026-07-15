@@ -58,7 +58,7 @@ def test_update_run(workbook):
     # prices moved +2%, prev = old close, date stamped
     assert back.equity[0].close == pytest.approx(1520 * 1.02, abs=0.01)
     assert back.equity[0].prev_close == 1520
-    assert back.equity[0].close_date == "15-07-2026"
+    assert back.equity[0].close_date == TODAY
     # bond priced from the feed
     assert back.bonds[0].cur_price == 1020.0
     # stock master merged add-only: new listing present, old names intact

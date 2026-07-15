@@ -102,9 +102,10 @@ def read_workbook(path: str) -> PortfolioData:
             avg_cost=_as_float(ws.cell(r, 5).value),
             close=_as_float(ws.cell(r, 6).value),
             prev_close=_as_float(ws.cell(r, 7).value),
-            close_date=_as_str(ws.cell(r, 8).value),
+            close_date=_as_date(ws.cell(r, 8).value),
             cost_date=_as_date(ws.cell(r, 13).value),
             isin_override=_manual(ws.cell(r, 2).value),
+            fmv_used=_as_str(ws.cell(r, 17).value) == "FMV",
         ))
 
     ws = wb["MutualFunds"]
@@ -209,11 +210,20 @@ def read_workbook(path: str) -> PortfolioData:
                 out.append((_as_str(m.cell(r, 1).value), _as_str(m.cell(r, 2).value), isin))
         return out
 
+    sm = wb["Stock_Master"]
+    stock_status: dict[str, tuple[str, object]] = {}
+    for r in range(4, sm.max_row + 1):
+        isin = _as_str(sm.cell(r, 3).value)
+        st = _as_str(sm.cell(r, 4).value)
+        if isin and st:
+            stock_status[isin] = (st, _as_date(sm.cell(r, 5).value))
+
     data.masters = Masters(
         mf_rows=master_rows("MF_Master"),
         stock_rows=master_rows("Stock_Master"),
         mf_refreshed=_as_str(wb["MF_Master"]["E2"].value),
         stock_refreshed=_as_str(wb["Stock_Master"]["E2"].value),
+        stock_status=stock_status,
     )
     wb.close()
     return data
