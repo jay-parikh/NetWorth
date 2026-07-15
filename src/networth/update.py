@@ -15,6 +15,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from . import __version__
 from . import model as M
 from .compute.cashflows import compute_all_xirr, ppf_ledger_by_account
 from .compute.projections import fy_expected_by_person
@@ -349,6 +350,48 @@ def _print_summary(s: dict) -> None:
     print(f"Updated    : {s['workbook']}")
 
 
+RELEASES_API = "https://api.github.com/repos/jay-parikh/NetWorth/releases/latest"
+RELEASES_PAGE = "https://github.com/jay-parikh/NetWorth/releases"
+
+
+def _parse_version(v: str) -> tuple | None:
+    """Parse 'v1.2.0' / '1.1.0rc3' → a sortable tuple; a final release sorts
+    above any pre-release of the same base (…,1,0) > (…,0,N)."""
+    import re
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)(?:[.\-]?(?:rc|a|b|alpha|beta|pre)\.?(\d+))?",
+                 v.strip())
+    if not m:
+        return None
+    major, minor, patch, pre = m.group(1), m.group(2), m.group(3), m.group(4)
+    if pre is None:
+        return (int(major), int(minor), int(patch), 1, 0)
+    return (int(major), int(minor), int(patch), 0, int(pre))
+
+
+def check_for_update(current: str, session=None, timeout: int = 8) -> str | None:
+    """Return a one-line hint if a newer GitHub release exists, else None.
+    Never raises — a nicety that must never disturb the update."""
+    cur = _parse_version(current)
+    if cur is None:
+        return None
+    try:
+        import requests
+        sess = session or requests.Session()
+        resp = sess.get(RELEASES_API, timeout=timeout,
+                        headers={"Accept": "application/vnd.github+json"})
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        tag = data.get("tag_name", "") or ""
+        url = data.get("html_url") or RELEASES_PAGE
+    except Exception:  # noqa: BLE001 — offline / rate-limited / private repo
+        return None
+    latest = _parse_version(tag)
+    if latest and latest > cur:
+        return f"Update available: {tag} (you have v{current}) — {url}"
+    return None
+
+
 def _use_os_trust_store() -> None:
     """Validate TLS against the OS certificate store (like browsers and the
     legacy PowerShell did) so corporate/AV proxies don't break the fetch."""
@@ -367,6 +410,8 @@ def main(argv: list[str] | None = None) -> int:
                         f"{M.TEMPLATE_FILENAME} next to the current directory)")
     parser.add_argument("--pause", action="store_true",
                         help="wait for Enter before exiting (double-click launchers)")
+    parser.add_argument("--no-update-check", action="store_true",
+                        help="don't check GitHub for a newer version")
     args = parser.parse_args(argv)
 
     code = 0
@@ -378,6 +423,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001 — last-resort user-facing message
         print(f"ERROR: {e}", file=sys.stderr)
         code = 1
+
+    if not (args.no_update_check or os.environ.get("NETWORTH_NO_UPDATE_CHECK")):
+        hint = check_for_update(__version__)
+        if hint:
+            print(hint)
+
     if args.pause:
         input("\nPress Enter to close...")
     return code

@@ -14,10 +14,10 @@ handling, inflation-adjusted projections, and per-person views.
   specification ([docs/SPEC.md](docs/SPEC.md)), so the whole product can be
   re-implemented on any platform or language from the spec alone.
 
-> Status: **v1 feature-complete** — all milestones R0–R7 implemented, 59 tests,
-> live-verified against real BSE/AMFI/NSE data. Next: the first tagged
-> release (`v1.0.0-rc.1` → binaries built by CI → verified on real
-> Windows/Mac → `v1.0.0`). See [docs/RELEASES.md](docs/RELEASES.md).
+> Status: **v1.1 feature-complete** — v1.0 (R0–R7) plus the v1.1 milestone
+> (accurate PPF interest via an optional deposit ledger, net-worth history +
+> trend chart, auto-update check). 80 tests, live-verified against real
+> BSE/AMFI/NSE data. See [docs/RELEASES.md](docs/RELEASES.md).
 
 ## The workbook
 
@@ -233,11 +233,15 @@ All fetches are plain HTTPS GETs of public data, initiated from your machine
 - NSE corporate actions (per held stock): `https://www.nseindia.com/api/corporates-corporateActions?...`
 - BSE corporate actions (per held stock): `https://api.bseindia.com/BseIndiaAPI/api/DefaultData/w?...`
 
-Bundled static data (no fetch needed): the Indian bank list and the
-31-01-2018 FMV table, refreshed via app releases. A PPF rate-history table is
-planned alongside the PPF ledger ([roadmap](docs/ROADMAP.md)).
+On each run the updater also makes one call to the GitHub releases API to tell
+you if a newer version exists. It sends nothing about you (just a normal API
+request) and is easy to turn off: pass `--no-update-check` or set
+`NETWORTH_NO_UPDATE_CHECK=1`.
 
-Nothing is ever uploaded, anywhere.
+Bundled static data (no fetch needed): the Indian bank list, the 31-01-2018
+FMV table, and the PPF interest-rate history — all refreshed via app releases.
+
+Nothing about your holdings is ever uploaded, anywhere.
 
 ## License
 
