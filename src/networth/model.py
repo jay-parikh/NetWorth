@@ -1,0 +1,184 @@
+"""Data model and layout constants shared by the generator and the reader.
+
+Every dataclass field is either a user input or an updater-written value
+(SPEC §1 terminology). Computed columns are Excel formulas emitted by the
+generator and never stored here — that is what makes the round trip
+(generate → read → regenerate) lossless.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+
+# ---------------------------------------------------------------- layout ----
+# Row numbers are 1-based Excel rows. Data sheets: title r1, hint r2 (where
+# present), header r3, data from r4 (SPEC §3.2).
+
+HEADER_ROW = 3
+FIRST_DATA_ROW = 4
+
+EQUITY_LAST_ROW = 140          # data rows 4..140, dropdown range end
+EQUITY_TOTAL_ROW = 142
+MF_LAST_ROW = 63
+MF_TOTAL_ROW = 65
+SIP_LAST_ROW = 503
+FD_LAST_ROW = 53
+FD_TOTAL_ROW = 55
+PPF_LAST_ROW = 43
+PPF_TOTAL_ROW = 45
+BOND_LAST_ROW = 53
+BOND_TOTAL_ROW = 55
+BYSCRIP_LAST_ROW = 29
+
+DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
+DASH_PERSON_LAST = 15
+DASH_TOTAL_ROW = 16
+PROJECTION_YEARS = 20          # Projection rows 4..24 (n = 0..20)
+
+# Person sheets: summary r5..r11, then per-class holding blocks (SPEC §3.5,
+# reverse-engineered from the legacy workbook): (title_row, first, last).
+PERSON_EQ_BLOCK = (14, 16, 55)
+PERSON_MF_BLOCK = (57, 59, 78)
+PERSON_FD_BLOCK = (80, 82, 96)
+PERSON_PPF_BLOCK = (98, 100, 109)
+PERSON_BOND_BLOCK = (111, 113, 127)
+
+TEMPLATE_FILENAME = "Family_Portfolio_Tracker.xlsx"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+# ------------------------------------------------------------------ rows ----
+
+@dataclass
+class EquityRow:
+    owner: str = ""
+    scrip: str = ""                    # dropdown pick from Stock_Master
+    qty: float | None = None
+    avg_cost: float | None = None
+    close: float | None = None         # updater-written
+    prev_close: float | None = None    # updater-written
+    close_date: str = ""               # updater-written, display string dd-mm-yyyy
+    cost_date: date | None = None
+    isin_override: str = ""            # user typed an ISIN over the lookup
+
+
+@dataclass
+class MFRow:
+    owner: str = ""
+    scheme: str = ""                   # dropdown pick from MF_Master
+    current_nav: float | None = None   # updater-written
+    xirr: float | None = None          # updater-written
+    fund_house_override: str = ""
+    isin_override: str = ""
+
+
+@dataclass
+class SIPRow:
+    owner: str = ""
+    scheme: str = ""
+    txn_date: date | None = None
+    amount: float | None = None        # negative = redemption
+    nav: float | None = None
+    units_override: float | None = None
+    fund_house_override: str = ""
+    isin_override: str = ""
+
+
+@dataclass
+class FDRow:
+    owner: str = ""
+    bank: str = ""
+    fd_no: str = ""
+    principal: float | None = None
+    rate: float | None = None
+    start: date | None = None
+    maturity: date | None = None
+    comp_per_year: int | None = None
+
+
+@dataclass
+class PPFRow:
+    owner: str = ""
+    institution: str = ""
+    account_no: str = ""
+    balance: float | None = None
+    as_on: date | None = None
+    rate: float | None = None
+    notes: str = ""
+
+
+@dataclass
+class BondRow:
+    owner: str = ""
+    issuer: str = ""
+    isin: str = ""
+    qty: float | None = None
+    face: float | None = None
+    buy_price: float | None = None
+    cur_price: float | None = None     # updater fills when the ISIN trades
+    coupon: float | None = None
+    maturity: date | None = None
+    buy_date: date | None = None
+
+
+@dataclass
+class ScripRef:
+    """By Scrip row — ISIN and display name are both user inputs."""
+    isin: str = ""
+    name: str = ""
+
+
+@dataclass
+class ClassXirr:
+    """Updater-written plain values (SPEC §6.2)."""
+    portfolio: float | None = None
+    equity: float | None = None
+    mutual_funds: float | None = None
+    fixed_deposits: float | None = None
+    ppf: float | None = None
+    bonds: float | None = None
+
+
+@dataclass
+class Masters:
+    mf_rows: list[tuple[str, str, str]] = field(default_factory=list)      # fund, scheme, isin
+    stock_rows: list[tuple[str, str, str]] = field(default_factory=list)   # symbol, name, isin
+    mf_refreshed: str = ""
+    stock_refreshed: str = ""
+
+
+@dataclass
+class PortfolioData:
+    """Everything the generator needs beyond the spec itself."""
+    persons: list[str] = field(default_factory=list)
+    equity: list[EquityRow] = field(default_factory=list)
+    mutual_funds: list[MFRow] = field(default_factory=list)
+    sip: list[SIPRow] = field(default_factory=list)
+    fixed_deposits: list[FDRow] = field(default_factory=list)
+    ppf: list[PPFRow] = field(default_factory=list)
+    bonds: list[BondRow] = field(default_factory=list)
+    by_scrip: list[ScripRef] = field(default_factory=list)
+    inflation_pct: float = 7
+    xirr: ClassXirr = field(default_factory=ClassXirr)
+    masters: Masters = field(default_factory=Masters)
+
+
+def load_masters(data_dir: Path = DATA_DIR,
+                 mf_refreshed: str = "", stock_refreshed: str = "") -> Masters:
+    """Load the committed seed masters (refreshed for real by the updater)."""
+    import csv
+
+    def rows(name: str) -> list[tuple[str, str, str]]:
+        with open(data_dir / name, newline="", encoding="utf-8") as f:
+            rdr = csv.reader(f)
+            next(rdr)
+            return [(r[0], r[1], r[2]) for r in rdr if len(r) >= 3 and r[2]]
+
+    return Masters(
+        mf_rows=rows("seed_mf_master.csv"),
+        stock_rows=rows("seed_stock_master.csv"),
+        mf_refreshed=mf_refreshed,
+        stock_refreshed=stock_refreshed,
+    )
