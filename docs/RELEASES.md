@@ -31,13 +31,21 @@ Post-v1: see [ROADMAP.md](ROADMAP.md).
 ## Release artifact layout (from R4)
 
 ```
-NetWorth-<version>-windows.zip
+NetWorth-<version>-windows.zip        # assembled on Linux, no Wine/compiler
+└── NetWorth-<version>-windows/
+    ├── Family_Portfolio_Tracker.xlsx
+    ├── Update Portfolio.bat          # double-click launcher (%~dp0-relative)
+    ├── README.txt                    # 1-page quick start
+    └── app/                          # private embeddable CPython + code + data
+NetWorth-<version>-macos.zip          # built on macOS via PyInstaller
 ├── Family_Portfolio_Tracker.xlsx
-├── Update Portfolio.exe
-└── README.txt                      # 1-page quick start
-NetWorth-<version>-macos.zip
-├── Family_Portfolio_Tracker.xlsx
-├── Update Portfolio.command        # tiny wrapper
-├── networth-updater                # PyInstaller binary
+├── Update Portfolio.command          # tiny wrapper
+├── networth-updater                  # PyInstaller binary
 └── README.txt
 ```
+
+Windows build (`packaging/build-windows-nowine.sh`) downloads the Windows
+embeddable CPython + prebuilt `win_amd64` wheels and arranges them — no
+compilation, no Wine. A single self-contained `.exe` needs a real Windows box
+(`packaging/build-release.bat`) or CI; on Linux the launcher is a `.bat`
+because a relocatable Windows `.exe` can't be execute-verified there.

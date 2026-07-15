@@ -157,24 +157,47 @@ the generated file directly (see the maintainers note below).
 
 ### Build the one-click apps (what end users download)
 
-Run **on the OS you're building for** — PyInstaller cannot cross-compile.
-From the repo root, *without* any venv active (the script makes its own):
-
-```bat
-:: Windows → dist\NetWorth-<version>-windows.zip  (+ Update Portfolio.exe)
-packaging\build-release.bat 1.0.0rc3
-```
+macOS build (run **on a Mac** — PyInstaller can't cross-compile a native binary),
+from the repo root, *without* any venv active (the script makes its own):
 
 ```bash
 # macOS  → dist/NetWorth-<version>-macos.zip
 #          (+ networth-updater binary and "Update Portfolio.command" launcher)
-packaging/build-release.sh 1.0.0rc3
+packaging/build-release.sh 1.1.0
 ```
 
-Each zip contains the generated workbook, the updater app and a one-page
-README — the exact layout CI publishes on releases. First-run warnings are
-expected for unsigned builds: Windows SmartScreen → *More info → Run anyway*;
-macOS Gatekeeper → *right-click → Open*.
+The zip contains the generated workbook, the updater app and a one-page README.
+First-run warnings are expected for unsigned builds: macOS Gatekeeper →
+*right-click → Open*.
+
+### Building the Windows app on Linux (no Windows machine, no Wine)
+
+Because NetWorth is **pure Python**, the Windows deliverable is assembled on
+Linux by *downloading* prebuilt Windows artifacts — never compiling and never
+emulating. One command:
+
+```bash
+# → dist/NetWorth-<version>-windows.zip
+packaging/build-windows-nowine.sh 1.1.0          # optional 2nd arg: python ver
+```
+
+It downloads the official Windows **embeddable CPython**, fetches Windows wheels
+for every dependency (`pip download --platform win_amd64` — even the one
+C-extension dep ships a `win_amd64` wheel), unpacks them alongside our own
+pure-Python wheel and the bundled `data/*.csv`, generates the workbook natively,
+and zips a folder the end user just unzips and runs. Only `curl`/`unzip` and a
+Python 3 are needed; nothing is installed system-wide.
+
+The end-user launcher is **`Update Portfolio.bat`** (double-click). It's a `.bat`
+rather than a single `.exe` on purpose: a relocatable Windows launcher `.exe`
+can't be *execute-verified* from Linux, and a `.bat` using `%~dp0` is
+correct-by-inspection and always finds its bundled Python, data and workbook.
+For a single self-contained `.exe`, build on real Windows
+(`packaging\build-release.bat`) or via CI. Verify the bundle assembled:
+
+```bash
+python -m zipfile -l dist/NetWorth-1.1.0-windows.zip | grep win_amd64 | head
+```
 
 ### Troubleshooting
 
