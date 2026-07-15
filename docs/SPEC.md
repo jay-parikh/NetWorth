@@ -641,22 +641,31 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
 ```
 1. locate workbook (same folder as the executable; default filename, else
    the single *.xlsx present; else prompt)
-2. refuse politely if the file is locked/open (detect via exclusive-open probe)
-3. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
-4. READ  — all input columns of all data sheets + persons + settings cells
+2. INTERACTIVE (console runs only, i.e. stdin.isatty(); skipped when headless
+   or --no-prompt): show the current people and offer to add new person
+   sheet(s). Names entered here (or via repeatable --add-person NAME) are
+   appended to the person list — regeneration then creates each new person's
+   sheet, Dashboard row and By-Scrip column automatically (§2). Deduped
+   case-insensitively; capped at the Dashboard's 10 people. Prompting must
+   never hang or break a run — any error is swallowed.
+3. refuse politely if the file is locked/open (detect via exclusive-open probe)
+4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
+5. READ  — all input columns of all data sheets + persons + settings cells
            (openpyxl read-only; header row located by matching known header
            names within rows 1–5, so user row edits/sorts never break it)
-5. FETCH — AMFI, bhavcopy (BSE→NSE fallback), corporate actions [R7];
+6. FETCH — AMFI, bhavcopy (BSE→NSE fallback), corporate actions (NSE+BSE);
            per-source failure ⇒ keep previous values, note in summary
-6. COMPUTE — masters merge (§6.4), prices/NAVs by ISIN, status flags (§6.5),
-           FMV fallbacks (§6.6), corp-action factors (§6.7), XIRR (§6.1–6.3),
-           FY-end estimates (§6.8)
-7. REGENERATE — build the complete workbook (xlsxwriter): structure from this
+7. COMPUTE — masters merge (§6.4), prices/NAVs by ISIN, status flags (§6.5),
+           FMV fallbacks (§6.6), corp-action factors (§6.7), PPF ledger
+           accrual (§6.10), XIRR (§6.1–6.3), FY-end estimates (§6.8),
+           net-worth snapshot (§6.11)
+8. REGENERATE — build the complete workbook (xlsxwriter): structure from this
            spec + user inputs + computed/updater values; atomic replace
            (write temp file, then swap)
-8. REPORT — console summary (rows matched/unmatched per sheet, sources used,
-           XIRR figures, backup path) + append to update.log; pause before
-           closing when launched by double-click; exit code 0/1
+9. REPORT — console summary (rows matched/unmatched per sheet, sources used,
+           XIRR figures, PPF/history/added-people, backup path); pause before
+           closing when launched by double-click; a non-blocking GitHub
+           release check may print an update hint; exit code 0/1
 ```
 
 Round-trip invariant (the regression backbone): `generate → read → regenerate`

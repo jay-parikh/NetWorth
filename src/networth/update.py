@@ -106,12 +106,27 @@ def _replace_mf_master(existing: list[tuple[str, str, str]],
 
 
 def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
+        add_persons: list[str] | None = None,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
     summary: dict = {"warnings": []}
 
     ensure_closed(path)
     data = read_workbook(str(path))
+
+    # add new people (declaratively: they land in data.persons, so regeneration
+    # creates their sheet, Dashboard row, By-Scrip column — everything)
+    if add_persons:
+        have = {p.casefold() for p in data.persons}
+        added = []
+        for name in add_persons:
+            name = name.strip()
+            if name and name.casefold() not in have and len(data.persons) < 10:
+                data.persons.append(name)
+                have.add(name.casefold())
+                added.append(name)
+        summary["persons_added"] = added
+
     if do_backup:
         summary["backup"] = str(make_backup(path))
 
@@ -340,6 +355,8 @@ def _print_summary(s: dict) -> None:
           "XIRR       : not enough dated cashflows yet")
     if s.get("fy_expected_total"):
         print(f"FY-end est : {s['fy_expected_total']:,.0f} (family total)")
+    if s.get("persons_added"):
+        print(f"Added      : sheet(s) for {', '.join(s['persons_added'])}")
     if s.get("net_worth") is not None:
         print(f"Net worth  : {s['net_worth']:,.0f}  "
               f"({s.get('history_points', 0)} day(s) of history)")
@@ -392,6 +409,49 @@ def check_for_update(current: str, session=None, timeout: int = 8) -> str | None
     return None
 
 
+def peek_persons(path: Path) -> list[str]:
+    """Read just the current people from the Dashboard, cheaply (read-only)."""
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True)
+    try:
+        dash = wb["Dashboard"]
+        return [str(dash.cell(r, 1).value).strip()
+                for r in range(6, 16)
+                if dash.cell(r, 1).value not in (None, "")]
+    finally:
+        wb.close()
+
+
+def prompt_new_persons(existing: list[str]) -> list[str]:
+    """Interactively collect new person names (double-click / Terminal only).
+    Adding a person here is optional — you can also just type a name in a yellow
+    Dashboard cell."""
+    print("\nPeople currently tracked: " + (", ".join(existing) or "(none)"))
+    slots = 10 - len(existing)
+    if slots <= 0:
+        print("(the Dashboard already lists the maximum of 10 people)")
+        return []
+    print("Add a new person's sheet? Type a name and press Enter, "
+          "or just press Enter to skip.")
+    added: list[str] = []
+    seen = {p.casefold() for p in existing}
+    while len(added) < slots:
+        try:
+            name = input("  New person (blank to continue): ").strip()
+        except EOFError:
+            break
+        if not name:
+            break
+        if name.casefold() in seen:
+            print(f"  '{name}' is already tracked.")
+            continue
+        seen.add(name.casefold())
+        added.append(name)
+        print(f"  ✓ will add a sheet for {name} "
+              f"(then record holdings with '{name}' in the Owner columns)")
+    return added
+
+
 def _use_os_trust_store() -> None:
     """Validate TLS against the OS certificate store (like browsers and the
     legacy PowerShell did) so corporate/AV proxies don't break the fetch."""
@@ -412,11 +472,25 @@ def main(argv: list[str] | None = None) -> int:
                         help="wait for Enter before exiting (double-click launchers)")
     parser.add_argument("--no-update-check", action="store_true",
                         help="don't check GitHub for a newer version")
+    parser.add_argument("--no-prompt", action="store_true",
+                        help="never ask interactive questions (e.g. add a person)")
+    parser.add_argument("--add-person", action="append", metavar="NAME", default=[],
+                        help="add a person's sheet without prompting (repeatable)")
     args = parser.parse_args(argv)
 
     code = 0
     try:
-        summary = run(locate_workbook(args.workbook))
+        path = locate_workbook(args.workbook)
+        new_persons = list(args.add_person)
+        # interactive only when attached to a real console — never hangs a
+        # headless/scheduled run
+        interactive = sys.stdin.isatty() and not args.no_prompt
+        if interactive:
+            try:
+                new_persons += prompt_new_persons(peek_persons(path))
+            except Exception:  # noqa: BLE001 — prompting must never break the run
+                pass
+        summary = run(path, add_persons=new_persons)
         _print_summary(summary)
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1

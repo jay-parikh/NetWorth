@@ -77,10 +77,12 @@ on every gain, return and XIRR figure. **Amber** = look closer: a stale price
    (`.exe` on Windows; on macOS right-click `Update Portfolio.command` →
    Open the first time).
 
-Each run: backs up your file (`backups/`, last 10 kept) → fetches prices,
-NAVs, masters and corporate actions → recomputes every XIRR and the FY-end
-estimate → rebuilds the workbook in place and prints a one-screen summary.
-Failed sources degrade gracefully (old values stay, a warning tells you).
+Each run: offers to **add a new person** (just type a name — their sheet is
+created for you) → backs up your file (`backups/`, last 10 kept) → fetches
+prices, NAVs, masters and corporate actions → recomputes every XIRR, the
+FY-end estimate and PPF interest → records a net-worth snapshot → rebuilds the
+workbook in place and prints a one-screen summary. Failed sources degrade
+gracefully (old values stay, a warning tells you).
 
 First-run OS warnings (binaries are unsigned for now): Windows SmartScreen →
 *More info → Run anyway*; macOS Gatekeeper → *right-click → Open*.
