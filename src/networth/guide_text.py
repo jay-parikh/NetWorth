@@ -4,6 +4,23 @@ Kept verbatim from the legacy template so the in-workbook manual stays
 the single onboarding document. Update alongside feature changes.
 """
 
+_WHATS_NEW: list[tuple[str, ...]] = [
+    (),
+    ("WHAT'S NEW IN THIS VERSION",),
+    ('  - One updater for everything: run "Update Portfolio" (no more three .bat files).',),
+    ('    It backs up your file first (backups folder), works on Windows and Mac.',),
+    ('  - Green = gain, red = loss, everywhere. Amber = look closer: a stale price,',),
+    ('    a suspended/delisted stock, or an estimated cost.',),
+    ('  - Splits & bonuses handled automatically: the Corporate_Actions sheet lists what',),
+    ("    was fetched for your stocks; the Equity 'Adj factor' column applies it. Your",),
+    ('    typed Quantity/Avg cost always stay exactly as you bought.',),
+    ("  - Old purchase, price unknown? Leave Avg. cost BLANK if bought before Feb-2018 -",),
+    ('    the 31-Jan-2018 FMV (tax grandfathering value) fills in, marked amber.',),
+    ('  - FDs: pick the bank from the dropdown. Bonds: maturity value + coupons counted.',),
+    ("  - Dashboard: 'Expected @ FY-end' estimates each person's total at 31 March,",),
+    ("    using your 'Expected return %' input for market assets.",),
+]
+
 GUIDE_ROWS: list[tuple[str, ...]] = [
     ('HOW TO USE THIS TRACKER',),
     (),
@@ -68,3 +85,5 @@ GUIDE_ROWS: list[tuple[str, ...]] = [
     ('    also filters as you type inside the dropdown itself. No pop-ups: if the ISIN stays',),
     ('    blank after entering a name, it did not match the master - re-pick from the list.',),
 ]
+
+GUIDE_ROWS += _WHATS_NEW

@@ -13,10 +13,12 @@ XIRR (annualised returns), inflation-adjusted projections, and per-person views.
   specification ([docs/SPEC.md](docs/SPEC.md)), so the whole product can be
   re-implemented on any platform or language from the spec alone.
 
-> Status: **in development.** The current working (Windows-only, PowerShell)
-> template lives in [legacy/](legacy/) and is fully usable today — see
-> [legacy/README.txt](legacy/README.txt). The cross-platform rewrite is being
-> built milestone by milestone; see [docs/RELEASES.md](docs/RELEASES.md).
+> Status: **v1 feature-complete, pre-release.** All milestones R0–R7 are
+> implemented and tested (54 tests, live-verified against real BSE/AMFI/NSE
+> data); pending: a manual check of the generated workbook in desktop Excel
+> and the first tagged release with per-OS binaries. The original
+> Windows-only template remains in [legacy/](legacy/). See
+> [docs/RELEASES.md](docs/RELEASES.md).
 
 ## What you get
 
@@ -34,11 +36,19 @@ XIRR (annualised returns), inflation-adjusted projections, and per-person views.
 | MF_Master / Stock_Master | ~14,000 AMFI schemes and ~4,500 listed stocks powering type-ahead dropdowns |
 | Guide | 2-minute in-workbook manual |
 
-Planned for v1 (see [docs/PLAN.md](docs/PLAN.md) and [docs/ROADMAP.md](docs/ROADMAP.md)):
-red/green gain-loss colouring, bond maturity & coupon-aware XIRR, Indian bank
-dropdown for FDs, expected value at FY-end, FMV 31-01-2018 fallback for unknown
-buy prices (LTCG grandfathering), delisted/suspended stock handling, and
-automatic corporate-action (split/bonus) adjustment.
+Also in v1 (see [docs/SPEC.md](docs/SPEC.md) for exact behaviour):
+
+- **Red/green colouring** on every gain/loss, return and XIRR figure; **amber**
+  marks degraded data (stale price, suspended/delisted scrip, estimated cost).
+- **Corporate actions** — splits, bonuses and consolidations are fetched for
+  your holdings on every update and applied automatically (past *and* future
+  ex-dates), without ever rewriting the quantities you typed. A visible
+  Corporate_Actions sheet is the audit trail; manual rows cover feed gaps.
+- **FMV 31-01-2018 fallback** — don't know an old buy price? Leave it blank;
+  the LTCG-grandfathering fair market value fills in, clearly flagged.
+- **Delisted/suspended detection** with last-traded date and manual override.
+- **Bond maturity value** and coupon-aware bond XIRR.
+- **Indian bank dropdown** for FDs, **expected value at FY-end** per person.
 
 ## Quick start (current legacy template)
 
