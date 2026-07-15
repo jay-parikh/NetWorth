@@ -46,6 +46,15 @@ is committed; promote items into [RELEASES.md](RELEASES.md) when scheduled.
 
 ## Platform & polish
 
+- **Search-as-you-type inside dropdowns** — typing while the list is open is
+  an Excel-owned interaction a plain .xlsx cannot provide. Current Microsoft
+  365 (≈ version 2304+) already does it natively with our validations
+  (AutoComplete for data validation, contains-matching), so the primary
+  answer is "update Office". If demand persists for older Excel, the option
+  is a separate **macro-enabled (.xlsm) variant** with a VBA search popup —
+  costs: macro security warnings everywhere, no LibreOffice, Mac userform
+  quirks — kept out of the default build deliberately.
+
 - **Signed/notarized binaries** (macOS notarization, Windows code signing) to
   remove the right-click→Open / SmartScreen friction.
 - **Auto-update check** — updater compares its version against the latest

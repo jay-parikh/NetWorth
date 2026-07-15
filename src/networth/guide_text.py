@@ -86,9 +86,13 @@ GUIDE_ROWS: list[tuple[str, ...]] = [
     ('  - TYPE-AHEAD (2 steps): in a Scheme/Scrip/Bank cell, type the first letters and',),
     ('    press ENTER, then RE-OPEN the dropdown (click the arrow, or Alt+Down on the',),
     ('    selected cell) - the list now shows only names starting with what you typed.',),
-    ('    Excel does NOT suggest while you are typing (only very recent Microsoft 365',),
-    ('    builds do that natively). No pop-ups: if the ISIN stays blank after entering',),
-    ('    a name, it did not match the master - re-open the dropdown and pick from it.',),
+    ('    To change an existing pick, clear the cell (Delete) first - the dropdown then',),
+    ('    offers the full list again.',),
+    ('  - Want to type WHILE the list is open? Update Excel: current Microsoft 365',),
+    ('    (about version 2304 and newer) filters the dropdown live as you type, with',),
+    ('    no workbook change needed. Older Excel cannot do this in any workbook.',),
+    ('    No pop-ups here: if the ISIN stays blank after entering a name, it did not',),
+    ('    match the master - re-open the dropdown and pick from it.',),
 ]
 
 GUIDE_ROWS += _WHATS_NEW
