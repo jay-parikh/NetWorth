@@ -22,6 +22,8 @@ jobs:
 
   build:
     needs: test
+    permissions:
+      contents: write        # let the release step upload assets
     strategy:
       matrix:
         include:
@@ -48,12 +50,15 @@ jobs:
           cp packaging/README-enduser.txt "$STAGE/README.txt"
           if [ "${{ matrix.osname }}" = "windows" ]; then
             cp "packaging/dist/Update Portfolio.exe" "$STAGE/"
+            7z a "$STAGE.zip" "$STAGE"
           else
             cp packaging/dist/networth-updater "$STAGE/"
             cp "packaging/Update Portfolio.command" "$STAGE/"
             chmod +x "$STAGE/Update Portfolio.command" "$STAGE/networth-updater"
+            zip -r "$STAGE.zip" "$STAGE"   # zip preserves the exec bits
           fi
-          7z a "$STAGE.zip" "$STAGE"
       - uses: softprops/action-gh-release@v2
         with:
           files: NetWorth-*.zip
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
