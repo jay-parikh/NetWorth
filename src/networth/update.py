@@ -20,7 +20,8 @@ from .compute.cashflows import compute_all_xirr
 from .compute.projections import fy_expected_by_person
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
-from .model import load_fmv
+from .fetch import corporate_actions as ca_mod
+from .model import adjustment_factor, load_fmv
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -100,7 +101,7 @@ def _replace_mf_master(existing: list[tuple[str, str, str]],
     return merged
 
 
-def run(path: Path, *, price_data=None, amfi_data=None,
+def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
     summary: dict = {"warnings": []}
@@ -195,6 +196,36 @@ def run(path: Path, *, price_data=None, amfi_data=None,
         summary["mf_matched"] = matched
         summary["mf_total"] = len(data.mutual_funds)
 
+    # ---- corporate actions (SPEC §6.7): fetch auto, keep manual, factor rows ----
+    isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
+    symbol_by_isin = {isin: sym for sym, _n, isin in data.masters.stock_rows}
+    held_isins = {row.isin_override or isin_by_name.get(row.scrip, "")
+                  for row in data.equity}
+    held_isins.discard("")
+    if ca_data is None:
+        symbols = {symbol_by_isin[i]: i for i in held_isins if symbol_by_isin.get(i)}
+        try:
+            ca_data = ca_mod.fetch(symbols) if symbols else []
+        except Exception as e:  # noqa: BLE001
+            summary["warnings"].append(
+                f"corporate-actions fetch failed, keeping existing rows: {e}")
+    if ca_data is not None:
+        manual = [a for a in data.corporate_actions if a.source != "Auto"]
+        manual_keys = {(a.isin, a.type, a.ex_date) for a in manual}
+        auto = [a for a in ca_data
+                if (a.isin, a.type, a.ex_date) not in manual_keys]
+        auto.sort(key=lambda a: (a.symbol, a.ex_date or today))
+        data.corporate_actions = auto + manual
+        summary["ca_rows"] = len(data.corporate_actions)
+
+    adjusted = 0
+    for row in data.equity:
+        isin = row.isin_override or isin_by_name.get(row.scrip, "")
+        f = adjustment_factor(isin, row.cost_date, today, data.corporate_actions)
+        row.ca_factor = f if abs(f - 1.0) > 1e-9 else None
+        adjusted += row.ca_factor is not None
+    summary["ca_adjusted_rows"] = adjusted
+
     # ---- FMV 31-01-2018 fallback for unknown old costs (SPEC §6.6) ----
     fmv_filled = 0
     try:
@@ -241,6 +272,9 @@ def _print_summary(s: dict) -> None:
               f"{s['bonds_matched']} bond(s) priced")
     if "mf_matched" in s:
         print(f"Fund NAVs  : {s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")
+    if s.get("ca_rows") is not None:
+        print(f"Corp acts  : {s['ca_rows']} action(s) on file, "
+              f"{s['ca_adjusted_rows']} holding(s) adjusted (splits/bonuses)")
     if s.get("fmv_filled"):
         print(f"FMV filled : {s['fmv_filled']} row(s) got the 31-01-2018 grandfathering cost")
     if s.get("suspended"):

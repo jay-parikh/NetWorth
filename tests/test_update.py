@@ -45,7 +45,8 @@ def _fake_sources():
 
 def test_update_run(workbook):
     prices, amfi = _fake_sources()
-    summary = run(workbook, price_data=prices, amfi_data=amfi, today=TODAY)
+    summary = run(workbook, price_data=prices, amfi_data=amfi, ca_data=[],
+                  today=TODAY)
 
     assert summary["equity_matched"] == 10
     assert summary["stocks_added"] == 1
@@ -85,15 +86,16 @@ def test_update_degrades_gracefully(workbook):
 
     # both sources fail: values stay, warnings recorded, file still regenerated
     import networth.update as U
-    orig_bhav, orig_amfi = U.bhav_mod.fetch, U.amfi_mod.fetch
+    orig = (U.bhav_mod.fetch, U.amfi_mod.fetch, U.ca_mod.fetch)
     U.bhav_mod.fetch = lambda **kw: (_ for _ in ()).throw(RuntimeError("bhav down"))
     U.amfi_mod.fetch = lambda **kw: (_ for _ in ()).throw(RuntimeError("amfi down"))
+    U.ca_mod.fetch = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("ca down"))
     try:
         summary = run(workbook, today=TODAY)
     finally:
-        U.bhav_mod.fetch, U.amfi_mod.fetch = orig_bhav, orig_amfi
+        U.bhav_mod.fetch, U.amfi_mod.fetch, U.ca_mod.fetch = orig
 
-    assert len(summary["warnings"]) == 2
+    assert len(summary["warnings"]) == 3
     back = read_workbook(str(workbook))
     assert back.equity[0].close == 1520          # unchanged
     assert back.xirr.portfolio is not None        # XIRR still recomputed

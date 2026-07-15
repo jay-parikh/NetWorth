@@ -26,7 +26,7 @@ def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
         if r.cost_date >= today:
             continue
         flows.append((r.cost_date, -r.qty * r.avg_cost))
-        flows.append((today, r.qty * r.close))
+        flows.append((today, r.qty * (r.ca_factor or 1.0) * r.close))
     return flows
 
 

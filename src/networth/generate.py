@@ -346,7 +346,8 @@ def _write_person(wb, F, name: str):
 def _write_equity(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Equity")
     _widths(ws, {"A": 12, "B": 15, "C": 34, "D": 10, "E": 12, "F": 13, "G": 12,
-                 "H": 16, "I": 14, "J": 14, "K": 13, "L": 12, "M": 13, "N": 9, "P": 13})
+                 "H": 16, "I": 14, "J": 14, "K": 13, "L": 12, "M": 13, "N": 9,
+                 "P": 13, "Q": 6, "R": 10})
     _sheet_head(ws, F, "EQUITY HOLDINGS",
                 "Yellow-ish/blue cells are inputs. Pick the Scrip from the dropdown — "
                 "ISIN fills itself. Prices refresh via the updater.")
@@ -356,9 +357,14 @@ def _write_equity(wb, F, data: PortfolioData):
                         "Cost date", "XIRR"], F["header"])
     ws.write("P3", "Key", F["header"])
     ws.write("Q3", "Flags", F["key"])
+    ws.write("R3", "Adj factor", F["header"])
     ws.write_comment("E3", "Leave blank for pre-Feb-2018 purchases whose price you "
                            "don't know - the updater fills the 31-Jan-2018 FMV "
                            "(LTCG grandfathering value) and marks the cell amber.")
+    ws.write_comment("R3", "Split/bonus multiplier since your Cost date, from the "
+                           "Corporate_Actions sheet (written by the updater). "
+                           "Cur. val and Day chg. use Quantity x Adj factor; your "
+                           "typed Quantity and Avg. cost stay as-purchased.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.equity)}
     for r in range(M.FIRST_DATA_ROW, M.EQUITY_LAST_ROW + 1):
@@ -393,10 +399,16 @@ def _write_equity(wb, F, data: PortfolioData):
                 ws.write_datetime(f"H{r}", row.close_date, F["date_disp"])
             if row.cost_date is not None:
                 ws.write_datetime(f"M{r}", row.cost_date, F["in_date"])
-        ws.write_formula(f"I{r}", f'=IF($D{r}="","",$D{r}*$F{r})', F["c_money"])
+        if row and row.ca_factor is not None:
+            ws.write_number(f"R{r}", row.ca_factor, F["c_units"])
+        ws.write_formula(f"I{r}",
+                         f'=IF($D{r}="","",$D{r}*IF($R{r}="",1,$R{r})*$F{r})',
+                         F["c_money"])
         ws.write_formula(f"J{r}", f'=IF(OR($D{r}="",$E{r}=""),"",$D{r}*$E{r})', F["c_money"])
         ws.write_formula(f"K{r}", f'=IF(OR($E{r}="",$D{r}=""),"",$I{r}-$J{r})', F["c_money"])
-        ws.write_formula(f"L{r}", f'=IF(OR($G{r}="",$D{r}=""),"",$D{r}*($F{r}-$G{r}))',
+        ws.write_formula(f"L{r}",
+                         f'=IF(OR($G{r}="",$D{r}=""),"",'
+                         f'$D{r}*IF($R{r}="",1,$R{r})*($F{r}-$G{r}))',
                          F["c_money"])
         ws.write_formula(
             f"N{r}",
@@ -781,6 +793,54 @@ def _write_by_scrip(wb, F, data: PortfolioData):
     return ws
 
 
+def _write_corporate_actions(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("Corporate_Actions")
+    _widths(ws, {"A": 14, "B": 16, "C": 16, "D": 12, "E": 11, "F": 11, "G": 9,
+                 "H": 9, "I": 60})
+    _sheet_head(ws, F, "CORPORATE ACTIONS (SPLITS / BONUSES)",
+                "Auto rows are fetched for your held stocks on every update. Add "
+                "Manual rows for anything the feed missed. Your Equity rows are "
+                "never rewritten - the Adj factor column applies these at "
+                "valuation time, from each row's Cost date.")
+    ws.write_row("A3", ["Symbol", "ISIN", "Type", "Ex-Date", "Ratio From",
+                        "Ratio To", "Factor", "Source", "Details"], F["header"])
+    ws.write_comment("E3", "SPLIT/CONSOLIDATION: old face value. BONUS: A of A:B "
+                           "(A new shares per B held).")
+    ws.write_comment("F3", "SPLIT/CONSOLIDATION: new face value. BONUS: B of A:B.")
+
+    by_row = {M.FIRST_DATA_ROW + i: a for i, a in enumerate(data.corporate_actions)}
+    for r in range(M.FIRST_DATA_ROW, M.CA_LAST_ROW + 1):
+        a = by_row.get(r)
+        if a:
+            fmt = F["c_text"] if a.source == "Auto" else F["in_text"]
+            ws.write(f"A{r}", a.symbol, fmt)
+            ws.write(f"B{r}", a.isin, fmt)
+            ws.write(f"C{r}", a.type, fmt)
+            if a.ex_date:
+                ws.write_datetime(f"D{r}", a.ex_date,
+                                  F["date_disp"] if a.source == "Auto" else F["in_date"])
+            if a.ratio_from is not None:
+                ws.write_number(f"E{r}", a.ratio_from, fmt)
+            if a.ratio_to is not None:
+                ws.write_number(f"F{r}", a.ratio_to, fmt)
+            ws.write(f"H{r}", a.source, F["c_text"])
+            if a.details:
+                ws.write(f"I{r}", a.details, fmt)
+        ws.write_formula(f"G{r}",
+                         f'=IF(OR($C{r}="",$E{r}="",$F{r}=""),"",'
+                         f'IF($C{r}="BONUS",1+$E{r}/$F{r},$E{r}/$F{r}))',
+                         F["c_units"])
+    ws.data_validation(f"C4:C{M.CA_LAST_ROW}", {
+        "validate": "list",
+        "source": ["SPLIT", "BONUS", "CONSOLIDATION"],
+        "show_error": False,
+        "input_title": "Action type",
+        "input_message": "SPLIT / BONUS / CONSOLIDATION",
+    })
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_guide(wb, F):
     ws = wb.add_worksheet("Guide")
     ws.set_column("A:A", 100)
@@ -834,6 +894,7 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_ppf(wb, F, data)
     _write_bonds(wb, F, data)
     _write_by_scrip(wb, F, data)
+    _write_corporate_actions(wb, F, data)
     _write_guide(wb, F)
 
     wb.close()

@@ -17,8 +17,8 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    BondRow, ClassXirr, EquityRow, FDRow, Masters, MFRow, PPFRow,
-    PortfolioData, ScripRef, SIPRow,
+    BondRow, ClassXirr, CorporateAction, EquityRow, FDRow, Masters, MFRow,
+    PPFRow, PortfolioData, ScripRef, SIPRow,
 )
 
 
@@ -106,6 +106,7 @@ def read_workbook(path: str) -> PortfolioData:
             cost_date=_as_date(ws.cell(r, 13).value),
             isin_override=_manual(ws.cell(r, 2).value),
             fmv_used=_as_str(ws.cell(r, 17).value) == "FMV",
+            ca_factor=_as_float(ws.cell(r, 18).value),
         ))
 
     ws = wb["MutualFunds"]
@@ -200,6 +201,24 @@ def read_workbook(path: str) -> PortfolioData:
         if not isin:
             continue
         data.by_scrip.append(ScripRef(isin=isin, name=_as_str(ws.cell(r, 2).value)))
+
+    if "Corporate_Actions" in wb.sheetnames:
+        ws = wb["Corporate_Actions"]
+        h = _header_row(ws, "Symbol")
+        for r in _data_rows(ws, h):
+            symbol = _as_str(ws.cell(r, 1).value)
+            isin = _as_str(ws.cell(r, 2).value)
+            if not symbol and not isin:
+                continue
+            data.corporate_actions.append(CorporateAction(
+                symbol=symbol, isin=isin,
+                type=_as_str(ws.cell(r, 3).value).upper(),
+                ex_date=_as_date(ws.cell(r, 4).value),
+                ratio_from=_as_float(ws.cell(r, 5).value),
+                ratio_to=_as_float(ws.cell(r, 6).value),
+                source=_as_str(ws.cell(r, 8).value) or "Manual",
+                details=_as_str(ws.cell(r, 9).value),
+            ))
 
     def master_rows(sheet: str) -> list[tuple[str, str, str]]:
         m = wb[sheet]

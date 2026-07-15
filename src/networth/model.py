@@ -31,6 +31,7 @@ PPF_TOTAL_ROW = 45
 BOND_LAST_ROW = 53
 BOND_TOTAL_ROW = 55
 BYSCRIP_LAST_ROW = 29
+CA_LAST_ROW = 53                # Corporate_Actions data rows 4..53
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
 DASH_PERSON_LAST = 15
@@ -69,6 +70,7 @@ class EquityRow:
     cost_date: date | None = None
     isin_override: str = ""            # user typed an ISIN over the lookup
     fmv_used: bool = False             # avg_cost filled from the 31-01-2018 FMV (§6.6)
+    ca_factor: float | None = None     # updater-written split/bonus multiplier (§6.7)
 
 
 @dataclass
@@ -138,6 +140,41 @@ class ScripRef:
 
 
 @dataclass
+class CorporateAction:
+    """One split/bonus/consolidation (SPEC §5.4/§6.7). Auto rows are rewritten
+    from the feed on every update; Manual rows are the user's and persist."""
+    symbol: str = ""
+    isin: str = ""
+    type: str = ""                     # SPLIT | BONUS | CONSOLIDATION
+    ex_date: date | None = None
+    ratio_from: float | None = None    # SPLIT/CONSOLIDATION: old face; BONUS: A
+    ratio_to: float | None = None      # SPLIT/CONSOLIDATION: new face; BONUS: B
+    source: str = "Manual"             # Auto | Manual
+    details: str = ""
+
+    def factor(self) -> float:
+        """Quantity multiplier (SPEC §6.7)."""
+        if not (self.ratio_from and self.ratio_to):
+            return 1.0
+        if self.type == "BONUS":
+            return 1.0 + self.ratio_from / self.ratio_to
+        return self.ratio_from / self.ratio_to   # SPLIT >1, CONSOLIDATION <1
+
+
+def adjustment_factor(isin: str, cost_date: date | None, today: date,
+                      actions: list[CorporateAction]) -> float:
+    """Product of factors for actions with cost_date < ex_date ≤ today."""
+    f = 1.0
+    for a in actions:
+        if a.isin != isin or not a.ex_date or a.ex_date > today:
+            continue
+        if cost_date and a.ex_date <= cost_date:
+            continue
+        f *= a.factor()
+    return f
+
+
+@dataclass
 class ClassXirr:
     """Updater-written plain values (SPEC §6.2)."""
     portfolio: float | None = None
@@ -169,6 +206,7 @@ class PortfolioData:
     ppf: list[PPFRow] = field(default_factory=list)
     bonds: list[BondRow] = field(default_factory=list)
     by_scrip: list[ScripRef] = field(default_factory=list)
+    corporate_actions: list["CorporateAction"] = field(default_factory=list)
     inflation_pct: float = 7
     expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person

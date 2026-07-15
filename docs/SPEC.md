@@ -195,6 +195,7 @@ Header row 3, data rows 4…140. Columns:
 | N | XIRR (per row) | computed | `=IF(OR($M4="",N($J4)=0,$I4="",TODAY()<=$M4),"",($I4/$J4)^(365/(TODAY()-$M4))-1)` — simple two-flow annualisation |
 | P | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
 | v1: Q | Flags | updater helper | `FMV` marks an avg-cost filled by the §6.6 fallback so the flag round-trips regeneration |
+| v1: R | Adj factor | **updater-written** | split/bonus multiplier since Cost date (§6.7); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($R4="",1,$R4)*price`; `Invested` stays raw |
 
 Below the data block, one **updater-written** cell holds the equity-class
 XIRR (legacy: N142). v1 additions: status/staleness amber flags (§6.5),
@@ -385,18 +386,28 @@ Used when BSE is unreachable or an ISIN is NSE-only.
 
 ### 5.4 Corporate actions (v1, R7)
 
-Per held ISIN, fetch forthcoming + historical actions from the BSE corporate
-actions endpoint (exact endpoint pinned at R7 implementation time; the spec
-contract is the *record*, not the URL):
+Per held stock, fetch historical + announced actions from the NSE
+per-symbol API (cookie warm-up required, like §5.3):
 
 ```
-{ isin, ex_date, type ∈ {SPLIT, BONUS, CONSOLIDATION}, ratio_from, ratio_to, source }
+https://www.nseindia.com/api/corporates-corporateActions?index=equities&symbol=<SYM>
+```
+
+Each JSON record's free-text `subject` is classified: `Bonus A:B` → BONUS;
+"split"/"sub-division" with "From <face> To <face>" → SPLIT; "consolidation"
+→ CONSOLIDATION; everything else (dividends, rights, AGMs) is ignored. The
+normative contract is the record, not the URL:
+
+```
+{ symbol, isin, ex_date, type ∈ {SPLIT, BONUS, CONSOLIDATION},
+  ratio_from, ratio_to, source ∈ {Auto, Manual}, details }
 ```
 
 SPLIT/CONSOLIDATION ratio = old face : new face (e.g. 10:2 split → factor 5).
 BONUS ratio A:B = A new shares per B held (factor 1 + A/B). Manual rows with
 the same shape are entered on the Corporate_Actions sheet and take precedence
-on conflict.
+over an Auto row with the same (isin, type, ex_date). One symbol failing must
+not abort the sweep; only an all-symbol failure degrades (keep existing rows).
 
 ### 5.5 Bundled static data (in `data/`, refreshed only by releases)
 
@@ -512,14 +523,18 @@ for each Equity row (isin, qty_raw, cost_raw, cost_date):
   cost_adj = cost_raw / factor
 ```
 
-The updater writes `factor` (or qty_adj/cost_adj) into helper columns; the
-sheet's Cur. val / Day chg. formulas use adjusted qty, while Invested
-(qty_raw·cost_raw) is unchanged by construction. Idempotent: recomputed from
+The updater writes `factor` into the Equity **R (Adj factor)** column (blank
+when 1); the sheet's Cur. val / Day chg. formulas multiply Quantity by it,
+while Invested (qty_raw·cost_raw) is unchanged by construction. XIRR and the
+FY-end estimate use the adjusted current value. Idempotent: recomputed from
 raw + action list every run; a future-dated action has factor 1 until its
-ex-date arrives. The **Corporate_Actions sheet** lists every fetched/manual
-action for held ISINs with: scrip, type, ex-date, ratio, source, affected
-owners, qty_raw→qty_adj, cost_raw→cost_adj. Rows where factor ≠ 1 get an info
-flag on the Equity sheet.
+ex-date arrives.
+
+The **Corporate_Actions sheet** is the audit trail: columns
+`Symbol, ISIN, Type (dropdown), Ex-Date, Ratio From, Ratio To, Factor
+(=IF(type="BONUS",1+E/F,E/F), computed), Source, Details`. Auto rows are
+rewritten from the feed each run; Manual rows are user inputs and persist
+(they also override an Auto row with the same isin/type/ex-date).
 
 ### 6.8 Expected value at FY-end (v1)
 

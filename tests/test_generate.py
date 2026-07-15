@@ -12,7 +12,7 @@ from networth.sample_data import sample_portfolio
 EXPECTED_SHEETS = [
     "Dashboard", "Projection", "Amit", "Priya", "Rahul", "Equity",
     "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master", "Bank_Master",
-    "FixedDeposits", "PPF", "Bonds", "By Scrip", "Guide",
+    "FixedDeposits", "PPF", "Bonds", "By Scrip", "Corporate_Actions", "Guide",
 ]
 
 
@@ -74,7 +74,7 @@ def test_dashboard_formulas(wb):
 
 def test_equity_sheet(wb):
     e = wb["Equity"]
-    assert e["I4"].value == '=IF($D4="","",$D4*$F4)'
+    assert e["I4"].value == '=IF($D4="","",$D4*IF($R4="",1,$R4)*$F4)'
     assert "MATCH($C4,Stock_Master!$B:$B,0)" in e["B4"].value
     assert e["N142"].value == pytest.approx(0.0664365522)
     assert e["C142"].value == "TOTAL"

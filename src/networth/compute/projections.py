@@ -36,7 +36,7 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
 
     for r in data.equity:
         if r.qty and r.close:
-            add(r.owner, r.qty * r.close * growth)
+            add(r.owner, r.qty * (r.ca_factor or 1.0) * r.close * growth)
 
     nav_units: dict[tuple[str, str], float] = {}
     for s in data.sip:
