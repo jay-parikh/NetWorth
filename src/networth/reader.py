@@ -18,7 +18,7 @@ from openpyxl import load_workbook
 
 from .model import (
     BondRow, ClassXirr, CorporateAction, EquityRow, FDRow, Masters, MFRow,
-    PPFRow, PortfolioData, ScripRef, SIPRow,
+    PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
 )
 
 
@@ -173,7 +173,24 @@ def read_workbook(path: str) -> PortfolioData:
             as_on=_as_date(ws.cell(r, 5).value),
             rate=_as_float(ws.cell(r, 6).value),
             notes=_as_str(ws.cell(r, 7).value),
+            balance_today=_as_float(ws.cell(r, 8).value),    # H (formula → None)
+            interest_earned=_as_float(ws.cell(r, 9).value),  # I
+            xirr=_as_float(ws.cell(r, 10).value),            # J
         ))
+
+    if "PPF_Ledger" in wb.sheetnames:
+        ws = wb["PPF_Ledger"]
+        h = _header_row(ws, "Owner")
+        for r in range(h + 1, ws.max_row + 1):
+            owner = _as_str(ws.cell(r, 1).value)
+            acct = _as_str(ws.cell(r, 2).value)
+            if not owner and not acct:
+                continue
+            data.ppf_ledger.append(PPFLedgerRow(
+                owner=owner, account_no=acct,
+                txn_date=_as_date(ws.cell(r, 3).value),
+                amount=_as_float(ws.cell(r, 4).value),
+            ))
 
     ws = wb["Bonds"]
     h = _header_row(ws, "Owner")

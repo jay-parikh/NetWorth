@@ -588,6 +588,37 @@ column; the estimate nature is stated in the header comment.
 Applied by the generator as column-range conditional formats (see §3.2).
 Precedence: amber (data quality) overrides red/green on the affected cells.
 
+### 6.10 PPF interest — optional ledger + fallback (v1.1)
+
+Official rule: interest accrues each month on the **minimum balance between
+the close of the 5th and the last day of the month**, and is **credited on 31
+March**. A deposit on/before the 5th earns that month; a later one does not.
+Rates are bundled (`data/ppf_rates.csv`, `from_date,rate_pct` ascending step
+table; quarterly since Apr-2016, annual before) and refreshed via releases —
+no API exists. No withdrawals modelled (accumulation), so the monthly minimum
+is the balance as of the 5th.
+
+```
+ppf_value(deposits, rates, as_of) -> (balance, total_interest):
+  walk months from the first deposit to as_of
+  each completed month: interest = (credited + deposits_on_or_before_5th)
+                                   * rate(mid-month)/1200 ; accrue
+  add all the month's deposits to the credited balance
+  at each 31 March: credit the FY's accrued interest (annual compounding)
+  balance = credited + interest accrued since the last 31 March
+```
+
+**Optional ledger:** the **PPF_Ledger** sheet holds one row per deposit
+(Owner, Account No., Date, Amount). An account with matching ledger rows gets
+exact `balance_today`, `interest_earned` and a real dated-cashflow XIRR,
+written by the updater into PPF columns H/I/J. An account with no ledger keeps
+today's behaviour: Balance today (H) is the live formula `=IF($D="","",$D)`
+(the typed Current Balance). The updater also auto-fills a blank Rate% (F)
+with the current bundled rate. Dashboard and person-sheet PPF totals sum
+**Balance today (H)**, so both paths flow through identically. Class PPF XIRR
+and the FY-end estimate use ledger accrual where a ledger exists, else the
+flat estimate.
+
 ---
 
 ## 7. Updater behaviour

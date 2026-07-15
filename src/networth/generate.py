@@ -175,7 +175,7 @@ def _write_dashboard(wb, F, data: PortfolioData):
     class_cols = [("B", "Equity!$I:$I", "Equity!$A:$A"),
                   ("C", "MutualFunds!$I:$I", "MutualFunds!$A:$A"),
                   ("D", "FixedDeposits!$I:$I", "FixedDeposits!$A:$A"),
-                  ("E", "PPF!$D:$D", "PPF!$A:$A"),
+                  ("E", "PPF!$H:$H", "PPF!$A:$A"),
                   ("F", "Bonds!$K:$K", "Bonds!$A:$A")]
     for r in range(M.DASH_PERSON_FIRST, M.DASH_PERSON_LAST + 1):
         idx = r - M.DASH_PERSON_FIRST
@@ -283,7 +283,7 @@ _PERSON_BLOCKS = [
      ["c_text", "c_money", "c_text", "c_text", "c_money"]),
     ("PPF", M.PERSON_PPF_BLOCK,
      ["Institution", "Balance", "As-on"],
-     "PPF", ["B", "D", "E"], "I",
+     "PPF", ["B", "H", "E"], "L",       # H = Balance today, L = Key
      ["c_text", "c_money", "c_text"]),
     ("BONDS", M.PERSON_BOND_BLOCK,
      ["Issuer / Bond", "Qty", "Buy Price", "Cur Price", "Cur. val", "Net chg."],
@@ -306,7 +306,7 @@ def _write_person(wb, F, name: str):
     rows = [("Equity", "Equity!$I:$I", "Equity!$A:$A"),
             ("Mutual Funds", "MutualFunds!$I:$I", "MutualFunds!$A:$A"),
             ("Fixed Deposits", "FixedDeposits!$I:$I", "FixedDeposits!$A:$A"),
-            ("PPF", "PPF!$D:$D", "PPF!$A:$A"),
+            ("PPF", "PPF!$H:$H", "PPF!$A:$A"),
             ("Bonds", "Bonds!$K:$K", "Bonds!$A:$A")]
     for i, (label, val_rng, own_rng) in enumerate(rows):
         r = 6 + i
@@ -684,13 +684,26 @@ def _write_bank_master(wb, F):
 
 def _write_ppf(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("PPF")
-    _widths(ws, {"A": 12, "B": 20, "C": 16, "D": 16, "E": 14, "F": 12, "G": 24, "I": 13})
+    _widths(ws, {"A": 12, "B": 18, "C": 16, "D": 15, "E": 13, "F": 11, "G": 20,
+                 "H": 14, "I": 14, "J": 9, "L": 13})
     _sheet_head(ws, F, "PPF ACCOUNTS",
-                "Enter Owner, Institution, Account no., Current balance and the date "
-                "it was true. XIRR treats the balance as growing at Rate% from that date.")
+                "Enter Owner, Institution, Account no. For accuracy, log deposits on "
+                "the PPF_Ledger sheet - then Balance today, Interest and XIRR are "
+                "computed exactly. No ledger? Just type a Current Balance and it is "
+                "used as-is.")
     ws.write_row("A3", ["Owner", "Institution", "Account No.", "Current Balance",
-                        "Balance as-on", "Rate % (ref)", "Notes"], F["header"])
-    ws.write("I3", "Key", F["header"])
+                        "Balance as-on", "Rate % (ref)", "Notes", "Balance today",
+                        "Interest earned", "XIRR"], F["header"])
+    ws.write("L3", "Key", F["header"])
+    ws.write_comment("D3", "Only used when this account has NO rows on PPF_Ledger. "
+                           "With a ledger, Balance today is computed from the deposits.")
+    ws.write_comment("F3", "Auto-filled with the current PPF rate by the updater if "
+                           "left blank; overtype to pin a specific rate.")
+    ws.write_comment("H3", "With a PPF_Ledger: deposits + interest to date (official "
+                           "monthly-minimum-balance rule). Without: your Current "
+                           "Balance. This is what the Dashboard totals.")
+    ws.write_comment("I3", "Total interest earned to date (ledger accounts only), "
+                           "written by the updater.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.ppf)}
     for r in range(M.FIRST_DATA_ROW, M.PPF_LAST_ROW + 1):
@@ -707,11 +720,44 @@ def _write_ppf(wb, F, data: PortfolioData):
                 ws.write_number(f"F{r}", row.rate, F["in_rate"])
             if row.notes:
                 ws.write(f"G{r}", row.notes, F["in_text"])
-        ws.write_formula(f"I{r}", _key_formula(r), F["key"])
+            if row.balance_today is not None:      # ledger account, updater-computed
+                ws.write_number(f"H{r}", row.balance_today, F["c_money"])
+            if row.interest_earned is not None:
+                ws.write_number(f"I{r}", row.interest_earned, F["c_money"])
+            if row.xirr is not None:
+                ws.write_number(f"J{r}", row.xirr, F["u_pct"])
+        if not (row and row.balance_today is not None):
+            # no ledger (or not yet updated) → Balance today = Current Balance
+            ws.write_formula(f"H{r}", f'=IF($D{r}="","",$D{r})', F["c_money"])
+        ws.write_formula(f"L{r}", _key_formula(r), F["key"])
 
     tr = M.PPF_TOTAL_ROW
     ws.write(f"C{tr}", "TOTAL", F["total_label"])
-    ws.write_formula(f"D{tr}", f"=SUM(D4:D{M.PPF_LAST_ROW})", F["total"])
+    ws.write_formula(f"H{tr}", f"=SUM(H4:H{M.PPF_LAST_ROW})", F["total"])
+    _redgreen(ws, F, f"J4:J{M.PPF_LAST_ROW}")
+    ws.freeze_panes("A4")
+    return ws
+
+
+def _write_ppf_ledger(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("PPF_Ledger")
+    _widths(ws, {"A": 12, "B": 18, "C": 13, "D": 14})
+    _sheet_head(ws, F, "PPF DEPOSIT LEDGER (optional)",
+                "One row per PPF deposit. Match Owner + Account No. to a row on the "
+                "PPF sheet. Fill this in and the updater computes exact balance, "
+                "interest and XIRR (monthly-minimum-balance rule). Leave empty to "
+                "keep using the Current Balance you typed on the PPF sheet.")
+    ws.write_row("A3", ["Owner", "Account No.", "Date", "Amount"], F["header"])
+    by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.ppf_ledger)}
+    for r in range(M.FIRST_DATA_ROW, M.PPF_LEDGER_LAST_ROW + 1):
+        row = by_row.get(r)
+        if row:
+            ws.write(f"A{r}", row.owner, F["in_text"])
+            ws.write(f"B{r}", row.account_no, F["in_text"])
+            if row.txn_date is not None:
+                ws.write_datetime(f"C{r}", row.txn_date, F["in_date"])
+            if row.amount is not None:
+                ws.write_number(f"D{r}", row.amount, F["in_money"])
     ws.freeze_panes("A4")
     return ws
 
@@ -911,6 +957,7 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_bank_master(wb, F)
     _write_fd(wb, F, data)
     _write_ppf(wb, F, data)
+    _write_ppf_ledger(wb, F, data)
     _write_bonds(wb, F, data)
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)

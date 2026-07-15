@@ -14,6 +14,18 @@ commits, prefixed `R<n>:`. Tags follow `v0.<n>` per milestone; `v1.0` at R7.
 | R6 | FMV 2018 + delisted | `data/fmv_2018-01-31.csv` bundled; blank buy-price falls back to FMV (amber + comment); Stock_Master Status/Last-Traded-Date; stale-price flagging | Unknown-cost holding values correctly with visible flag; a delisted sample scrip shows last price, amber, excluded from day-change |
 | R7 | Corporate actions → **v1.0** | BSE corporate-action fetch for held ISINs, split/bonus/consolidation adjustment engine, Corporate_Actions audit sheet, manual-action rows | Scenario tests pass (split, bonus, combined, future-dated, idempotent re-run); raw user rows never mutated |
 
+## v1.1 — "PPF done right + your money over time"
+
+Post-v1.0 milestone, three independent features, each its own commit + tests.
+
+| Feature | Delivers | Acceptance criteria |
+|---|---|---|
+| PPF accurate interest | `data/ppf_rates.csv` (historical quarterly rates), `compute/ppf.py` (monthly-minimum-balance rule, annual crediting), a new **PPF_Ledger** sheet (Owner/Account/Date/Amount). **Optional-ledger + fallback**: accounts with ledger rows get exact balance/interest/XIRR; accounts without keep today's flat estimate. Current PPF rate auto-filled from the table for everyone. | `compute/ppf.py` matches a hand-worked example; a ledger account's Balance today = deposits + credited/accrued interest; non-ledger accounts unchanged; Dashboard/person PPF totals use the computed balance |
+| Net-worth history + trend | New **History** sheet (Date + per-class + total); the updater upserts one snapshot per day; Dashboard line chart of net worth over time. History rows round-trip regeneration (they are data). | After two updater runs on different dates, History has two rows and the Dashboard chart plots them; regeneration preserves history |
+| Auto-update check | The updater queries the latest GitHub release tag and prints a one-line hint when a newer version exists. Silent on network failure / no releases. | Newer remote tag → hint printed; same/older or offline → nothing; never blocks the run |
+
+Ships as **v1.1.0** once all three land and verify.
+
 Post-v1: see [ROADMAP.md](ROADMAP.md).
 
 ## Release artifact layout (from R4)

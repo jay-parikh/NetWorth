@@ -11,8 +11,8 @@ from __future__ import annotations
 from datetime import date
 
 from .model import (
-    BondRow, ClassXirr, EquityRow, FDRow, MFRow, PPFRow, PortfolioData,
-    SIPRow, ScripRef, load_masters,
+    BondRow, ClassXirr, EquityRow, FDRow, MFRow, PPFLedgerRow, PPFRow,
+    PortfolioData, SIPRow, ScripRef, load_masters,
 )
 
 PERSONS = ["Amit", "Priya", "Rahul"]
@@ -75,9 +75,20 @@ def sample_portfolio() -> PortfolioData:
                   date(2025, 1, 15), date(2028, 1, 15), 4),
         ],
         ppf=[
+            # Priya: no ledger → flat estimate from the current balance
             PPFRow("Priya", "Post Office", "PPF-104522", 860000,
                    date(2026, 3, 31), 7.1, "Matures 2031"),
-            PPFRow("Amit", "SBI", "PPF-778101", 425000, date(2026, 3, 31), 7.1),
+            # Amit: ledgered (see ppf_ledger) → Balance today computed from deposits;
+            # Current Balance left blank so the ledger is the single source of truth
+            PPFRow("Amit", "SBI", "PPF-778101", None, None, None,
+                   "Balance computed from PPF_Ledger"),
+        ],
+        ppf_ledger=[
+            PPFLedgerRow("Amit", "PPF-778101", date(2021, 4, 5), 150000),
+            PPFLedgerRow("Amit", "PPF-778101", date(2022, 4, 4), 150000),
+            PPFLedgerRow("Amit", "PPF-778101", date(2023, 4, 5), 150000),
+            PPFLedgerRow("Amit", "PPF-778101", date(2024, 4, 5), 150000),
+            PPFLedgerRow("Amit", "PPF-778101", date(2025, 4, 4), 150000),
         ],
         bonds=[
             BondRow("Rahul", "8.5% NHAI Bond 2029", "INE906B07CB9", 50, 1000,

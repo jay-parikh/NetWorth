@@ -16,8 +16,10 @@ from datetime import date
 from pathlib import Path
 
 from . import model as M
-from .compute.cashflows import compute_all_xirr
+from .compute.cashflows import compute_all_xirr, ppf_ledger_by_account
 from .compute.projections import fy_expected_by_person
+from .compute.ppf import current_rate, load_ppf_rates, ppf_cashflows, ppf_value
+from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .fetch import corporate_actions as ca_mod
@@ -271,6 +273,26 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 fmv_filled += 1
     summary["fmv_filled"] = fmv_filled
 
+    # ---- PPF: exact balance/interest/XIRR for ledgered accounts (SPEC §6.10) ----
+    rates = load_ppf_rates()
+    led = ppf_ledger_by_account(data)
+    ledgered = 0
+    for row in data.ppf:
+        if row.rate is None:
+            row.rate = current_rate(rates)          # auto-fill blank rate
+        deposits = led.get((row.owner, row.account_no))
+        if deposits:
+            bal, interest = ppf_value(deposits, rates, today)
+            row.balance_today = round(bal, 2)
+            row.interest_earned = round(interest, 2)
+            row.xirr = xirr(ppf_cashflows(deposits, bal, today))
+            ledgered += 1
+        else:
+            row.balance_today = None                 # generate → Balance today = D
+            row.interest_earned = None
+            row.xirr = None
+    summary["ppf_ledgered"] = ledgered
+
     # ---- XIRR + FY-end estimate (always recomputed from current values) ----
     data.xirr = compute_all_xirr(data, today)
     summary["portfolio_xirr"] = data.xirr.portfolio
@@ -301,6 +323,9 @@ def _print_summary(s: dict) -> None:
         print(f"FMV filled : {s['fmv_filled']} row(s) got the 31-01-2018 grandfathering cost")
     if s.get("suspended"):
         print(f"Suspended  : {s['suspended']} held scrip(s) not traded for 21+ days (amber)")
+    if s.get("ppf_ledgered"):
+        print(f"PPF        : {s['ppf_ledgered']} account(s) computed from the deposit "
+              f"ledger (exact interest)")
     x = s.get("portfolio_xirr")
     print(f"XIRR       : portfolio {x:.2%}" if x is not None else
           "XIRR       : not enough dated cashflows yet")

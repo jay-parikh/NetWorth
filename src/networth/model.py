@@ -28,6 +28,7 @@ FD_LAST_ROW = 53
 FD_TOTAL_ROW = 55
 PPF_LAST_ROW = 43
 PPF_TOTAL_ROW = 45
+PPF_LEDGER_LAST_ROW = 503
 BOND_LAST_ROW = 53
 BOND_TOTAL_ROW = 55
 BYSCRIP_LAST_ROW = 29
@@ -112,10 +113,24 @@ class PPFRow:
     owner: str = ""
     institution: str = ""
     account_no: str = ""
-    balance: float | None = None
+    balance: float | None = None       # fallback current balance (no-ledger path)
     as_on: date | None = None
-    rate: float | None = None
+    rate: float | None = None          # updater auto-fills the current rate if blank
     notes: str = ""
+    # updater-written when a PPF_Ledger exists for this (owner, account_no):
+    balance_today: float | None = None
+    interest_earned: float | None = None
+    xirr: float | None = None
+
+
+@dataclass
+class PPFLedgerRow:
+    """One PPF deposit (SPEC §6.10). Optional — accounts with no ledger rows
+    use the flat estimate from PPFRow.balance."""
+    owner: str = ""
+    account_no: str = ""
+    txn_date: date | None = None
+    amount: float | None = None
 
 
 @dataclass
@@ -204,6 +219,7 @@ class PortfolioData:
     sip: list[SIPRow] = field(default_factory=list)
     fixed_deposits: list[FDRow] = field(default_factory=list)
     ppf: list[PPFRow] = field(default_factory=list)
+    ppf_ledger: list[PPFLedgerRow] = field(default_factory=list)
     bonds: list[BondRow] = field(default_factory=list)
     by_scrip: list[ScripRef] = field(default_factory=list)
     corporate_actions: list["CorporateAction"] = field(default_factory=list)

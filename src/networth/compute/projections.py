@@ -57,8 +57,16 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
         n = r.comp_per_year
         add(r.owner, r.principal * (1 + (r.rate / 100) / n) ** (n * _yf(r.start, asof)))
 
+    from .cashflows import ppf_ledger_by_account
+    from .ppf import load_ppf_rates, ppf_value
+    led = ppf_ledger_by_account(data)
+    rates = load_ppf_rates() if led else []
     for r in data.ppf:
-        if r.balance and r.rate and r.as_on:
+        deposits = led.get((r.owner, r.account_no))
+        if deposits:                                    # exact ledger accrual to FY end
+            bal, _ = ppf_value(deposits, rates, end)
+            add(r.owner, bal)
+        elif r.balance and r.rate and r.as_on:
             add(r.owner, r.balance * (1 + r.rate / 100) ** _yf(r.as_on, end))
 
     for r in data.bonds:

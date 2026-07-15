@@ -74,12 +74,33 @@ def fd_flows(data: PortfolioData, today: date) -> list[Flow]:
     return flows
 
 
+def ppf_ledger_by_account(data: PortfolioData) -> dict[tuple[str, str], list[Flow]]:
+    """Group PPF deposits by (owner, account_no)."""
+    from collections import defaultdict
+    led: dict[tuple[str, str], list[Flow]] = defaultdict(list)
+    for lr in data.ppf_ledger:
+        if lr.owner and lr.account_no and lr.txn_date and lr.amount:
+            led[(lr.owner, lr.account_no)].append((lr.txn_date, lr.amount))
+    return led
+
+
 def ppf_flows(data: PortfolioData, today: date) -> list[Flow]:
+    """PPF class cashflows: exact ledger flows where a ledger exists, else the
+    flat balance-grows-at-rate estimate (SPEC §6.2/§6.10)."""
+    from .ppf import load_ppf_rates, ppf_value
+
+    led = ppf_ledger_by_account(data)
+    rates = load_ppf_rates() if led else []
     flows: list[Flow] = []
     for r in data.ppf:
-        if not (r.balance and r.rate and r.as_on):
+        deposits = led.get((r.owner, r.account_no))
+        if deposits:
+            bal, _ = ppf_value(deposits, rates, today)
+            flows.extend((d, -a) for d, a in deposits)
+            if bal:
+                flows.append((today, bal))
             continue
-        if r.as_on >= today:
+        if not (r.balance and r.rate and r.as_on) or r.as_on >= today:
             continue
         value = r.balance * (1 + r.rate / 100) ** _yearfrac(r.as_on, today)
         flows.append((r.as_on, -r.balance))
