@@ -1,7 +1,9 @@
-# Roadmap — beyond v1
+# Roadmap — what's next
 
-Backlog of brainstormed features, roughly ordered by value/effort. Nothing here
-is committed; promote items into [RELEASES.md](RELEASES.md) when scheduled.
+Ideas beyond the shipped releases (v1.0 core, v1.1 = PPF ledger + net‑worth
+history + auto‑update check), roughly ordered by value vs. effort. Nothing here
+is a promise — an item becomes real only when it moves into
+[RELEASES.md](RELEASES.md) with acceptance criteria.
 
 ## Money & tax
 

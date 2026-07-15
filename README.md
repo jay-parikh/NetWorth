@@ -1,120 +1,169 @@
-# NetWorth — Family Portfolio Tracker
+<div align="center">
 
-One Excel workbook to track a family's entire net worth — **Equity, Mutual Funds
-(incl. SIPs), Fixed Deposits, PPF and Bonds** — refreshed by one double-click:
-live prices and NAVs, true XIRR (annualised returns), automatic split/bonus
-handling, inflation-adjusted projections, and per-person views.
+# 💰 NetWorth
 
-- **100% local.** Your data never leaves your computer. The only network calls
-  are direct downloads of public market data (AMFI, BSE, NSE). No cloud, no
-  server, no account, no telemetry.
-- **Windows & macOS.** One double-clickable updater per OS. No Python or any
-  other install needed to *use* it — just Excel (or LibreOffice) to open the file.
-- **Open & portable.** The workbook is generated from code against a written
-  specification ([docs/SPEC.md](docs/SPEC.md)), so the whole product can be
-  re-implemented on any platform or language from the spec alone.
+### One Excel workbook for your family's entire net worth — refreshed with a double‑click.
 
-> Status: **v1.1 feature-complete** — v1.0 (R0–R7) plus the v1.1 milestone
-> (accurate PPF interest via an optional deposit ledger, net-worth history +
-> trend chart, auto-update check). 80 tests, live-verified against real
-> BSE/AMFI/NSE data. See [docs/RELEASES.md](docs/RELEASES.md).
+Track **Equity · Mutual Funds · Fixed Deposits · PPF · Bonds** in a single file.
+Live prices, real returns (XIRR), automatic tax & corporate‑action handling —
+all on **your own computer**.
 
-## The workbook
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/works%20on-Windows%20·%20macOS%20·%20Linux-lightgrey)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
+![Tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)
 
-| Sheet | Purpose |
+</div>
+
+---
+
+## Contents
+
+- [Why NetWorth](#-why-networth)
+- [What's in the workbook](#-whats-in-the-workbook)
+- [Quick start (for everyone)](#-quick-start-for-everyone)
+- [The smart bits](#-the-smart-bits-what-it-does-for-you)
+- [Your data stays yours](#-your-data-stays-yours)
+- [For developers](#-for-developers)
+- [Project documents](#-project-documents)
+- [License](#-license)
+
+---
+
+## ✨ Why NetWorth
+
+|  |  |
 |---|---|
-| Dashboard | Family net worth, per-person × per-asset-class matrix, portfolio & per-class XIRR, inflation check (real return), expected value at FY-end, allocation pie + per-person bar chart |
-| Projection | 20-year corpus trajectory: your return vs inflation, nominal & real (live line chart) |
-| One sheet per person | That member's allocation, pie chart, and their holdings across all five classes |
-| Equity | Holdings with live BSE/NSE prices, day/net change, per-stock XIRR, split/bonus adjustment factor |
-| MutualFunds + MF_SIP | Fund summary auto-computed from a one-row-per-purchase SIP ledger (redemption = negative amount) |
-| FixedDeposits | Bank dropdown, value-as-on-today and maturity value from principal/rate/dates/compounding |
-| PPF | Balance tracking with reference rate |
-| Bonds | Invested/current value, **maturity value** and remaining coupons; coupon-aware XIRR |
-| By Scrip | Family-wide exposure per stock, split by person |
-| Corporate_Actions | Audit trail of every split/bonus/consolidation fetched for your holdings + manual rows for feed gaps |
-| MF_Master / Stock_Master / Bank_Master | ~14,000 AMFI schemes, ~4,500 listed stocks and 60 Indian banks powering the dropdowns; stock status (Active/Suspended/Delisted) per held ISIN |
-| Guide | The in-workbook manual, including a What's-New section |
+| 🔒 **100% local** | Your holdings never leave your computer. The only internet use is downloading *public* prices (AMFI, BSE, NSE). No cloud, no account, no sign‑up, no tracking. |
+| 🪟🍎 **Windows & macOS** | One thing to double‑click. No Python, no setup — just Excel (or the free LibreOffice) to open the file. |
+| 🧩 **Open & rebuildable** | The workbook is generated from code against a written [specification](docs/SPEC.md), so it can be re‑created — or re‑implemented in any language — from the spec alone. |
 
-**Colour language:** blue/yellow = you type here, grey = computed. **Green/red**
-on every gain, return and XIRR figure. **Amber** = look closer: a stale price
-(>7 days), a suspended/delisted stock, or an estimated cost.
+---
 
-**Smart behaviours** (see [docs/SPEC.md](docs/SPEC.md) for exact rules):
+## 📊 What's in the workbook
 
-- **Corporate actions** — splits, bonuses and consolidations are fetched from
-  **both NSE and BSE** for your holdings on every update, deduplicated, and
-  applied automatically, including future ex-dates when they arrive. Your
-  typed quantities and costs are never rewritten; an *Adj factor* column
-  applies the multiplier at valuation time, and the Corporate_Actions sheet
-  shows exactly what was applied and why. If any holding cannot be verified
-  on either exchange, the run summary says so by name — nothing is ever
-  skipped silently.
-- **FMV 31-01-2018 fallback** — bought before Feb 2018 and don't know the
-  price? Leave *Avg. cost* blank: the LTCG-grandfathering fair market value
-  (bundled, 1,639 ISINs, with symbol fallback for reissued ISINs) fills in,
-  amber-flagged with an explanatory comment.
-- **Delisted/suspended detection** — a held stock absent from the bhavcopy for
-  21+ days is marked Suspended, 180+ days Delisted, keeping its last traded
-  price/date; you can always type a price manually and it persists.
-- **Type-ahead dropdowns** — type the first letters, press Enter, re-open the
-  dropdown: only matching schemes/stocks/banks remain (14k schemes stay
-  usable). Current Microsoft 365 additionally filters the open list live as
-  you type.
-- **XIRR everywhere** — portfolio, per class, per fund and per stock, computed
-  from dated cashflows (SIP ledger, FD start dates, bond coupons) exactly like
-  Excel's `XIRR`.
+One file, a tab for everything. You only ever type into the **blue/yellow** cells;
+the **grey** ones calculate themselves.
 
-## Quick start
+| Tab | What it shows |
+|---|---|
+| **Dashboard** | Family net worth, a person × asset‑class grid, returns (XIRR), an inflation check, an FY‑end estimate, and charts — allocation, per‑person, and net worth over time |
+| **Projection** | Your money over the next 20 years: your return vs inflation |
+| **One tab per person** | Each family member's holdings and allocation |
+| **Equity** | Shares with live prices, day/total change, per‑stock return, and post‑split/bonus quantities |
+| **Mutual Funds** *(+ ledger)* | Fund summary, auto‑built from a one‑row‑per‑purchase SIP ledger |
+| **Fixed Deposits** | Value today and at maturity, from principal / rate / dates |
+| **PPF** *(+ ledger)* | Balance & interest — exact, by the official rules, if you log deposits |
+| **Bonds** | Value, maturity amount, and coupon‑aware returns |
+| **Corporate Actions** | A transparent record of every split/bonus applied to your stocks |
+| **History** | A dated net‑worth snapshot each time you update — feeds the trend chart |
+| **Guide** | A 2‑minute manual, right inside the file |
 
-1. Download the zip for your OS from **GitHub Releases** and extract it
-   anywhere; keep the files together.
-2. Open `Family_Portfolio_Tracker.xlsx` and read its **Guide** sheet
-   (2 minutes). Replace the fictional sample data (Amit/Priya/Rahul) with
-   your people and holdings — blue/yellow cells are inputs, dropdowns fill
-   the ISINs.
-3. Save, **close the file**, then double-click **`Update Portfolio`**
-   (`.exe` on Windows; on macOS right-click `Update Portfolio.command` →
-   Open the first time).
+> **Colours tell the story:** blue/yellow = *you type here*, grey = *calculated*.
+> **Green** = gain, **red** = loss, **amber** = *look closer* (a stale price, a
+> delisted stock, or an estimated cost).
 
-Each run: offers to **add a new person** (just type a name — their sheet is
-created for you) → backs up your file (`backups/`, last 10 kept) → fetches
-prices, NAVs, masters and corporate actions → recomputes every XIRR, the
-FY-end estimate and PPF interest → records a net-worth snapshot → rebuilds the
-workbook in place and prints a one-screen summary. Failed sources degrade
-gracefully (old values stay, a warning tells you).
+---
 
-First-run OS warnings (binaries are unsigned for now): Windows SmartScreen →
-*More info → Run anyway*; macOS Gatekeeper → *right-click → Open*.
+## 🚀 Quick start (for everyone)
 
-**Upgrading**: your workbook is yours — to upgrade the app, just replace the
-updater binary. The next run regenerates the workbook to the newest layout
-with all your data preserved.
+You need **5 minutes** and Excel (or LibreOffice). No technical skills.
 
-*(The original Windows-only PowerShell template that this project grew from
-is preserved in [legacy/](legacy/) and still works — see
-[legacy/README.txt](legacy/README.txt).)*
+1. **Download** the zip for your computer from the **Releases** page and unzip it
+   somewhere. Keep the files together.
+2. **Open** `Family_Portfolio_Tracker.xlsx` and skim the **Guide** tab. Replace the
+   sample family (Amit / Priya / Rahul) with your own — pick funds and stocks from
+   the dropdowns and the ID (ISIN) fills itself in.
+3. **Save and close** the file, then **double‑click `Update Portfolio`**
+   (`.bat` / `.exe` on Windows; on macOS, right‑click `Update Portfolio.command`
+   → **Open** the first time).
 
-## Developer guide — build & run on Windows and macOS
+That's it. Each run:
 
-Python is the dev-time toolchain only; end users never need it. Everything
-below works identically on Windows, macOS and Linux unless a per-OS block
-says otherwise.
+> 💾 backs up your file  →  🌐 fetches the latest prices, NAVs & corporate actions
+> →  🧮 recomputes every return, PPF interest and the FY‑end estimate  →  📸 saves a
+> net‑worth snapshot  →  ✅ rewrites the workbook and prints a one‑screen summary.
 
-### Prerequisites
+It even **offers to add a new family member** — just type a name and their tab is
+built for you. If the internet or a data source is down, your old numbers stay put
+and it tells you.
 
-| | Windows | macOS |
-|---|---|---|
-| Python **3.10+** | [python.org installer](https://www.python.org/downloads/) — defaults are fine (the `py` launcher is included; "Add to PATH" not required) | `python3` from [python.org](https://www.python.org/downloads/) or `brew install python` (the Xcode/CLT system Python 3.9 is too old) |
-| Git | [git-scm.com](https://git-scm.com/) or GitHub Desktop | `xcode-select --install` or `brew install git` |
-| Internet | needed once for `pip install`, and by the updater for market data | same |
+*First run only:* Windows may show a SmartScreen warning (**More info → Run anyway**)
+and macOS a Gatekeeper prompt (**right‑click → Open**) — the apps aren't
+code‑signed yet. Nothing is installed; nothing is uploaded.
 
-No compilers, no Excel, no admin rights needed to develop. Verify:
-`py -3 --version` (Windows) / `python3 --version` (macOS) prints ≥ 3.10.
+**Upgrading later** is painless: your workbook is yours forever — just replace the
+updater app, and the next run brings the file up to the newest layout with all your
+data intact.
 
-### Set up (once)
+---
 
-**Windows** (Command Prompt or PowerShell, inside the repo folder):
+## 🧠 The smart bits (what it does for you)
+
+You don't have to know any of this works — it just does. But here's what's quietly
+handled for you:
+
+- **Splits & bonuses, automatically.** Corporate actions are fetched from **both
+  NSE and BSE**, de‑duplicated, and applied to your holdings — past *and* future
+  ex‑dates. Your typed quantities are never overwritten; a *Qty today* column shows
+  the post‑bonus count, matching your demat. If a stock can't be verified on either
+  exchange, the summary **says so by name** — nothing is skipped silently.
+- **PPF, done properly.** List your deposits and the balance, interest and return
+  are computed by the *official* rule (interest on the monthly‑minimum balance,
+  historical rates). Don't want to? Just type your current balance instead.
+- **Old shares with a forgotten cost.** Bought before Feb 2018 and don't know the
+  price? Leave it blank — the tax "grandfathering" value (31‑Jan‑2018 fair value)
+  fills in, clearly flagged.
+- **Delisted / suspended stocks** are detected and marked, keeping their last known
+  price instead of quietly going stale.
+- **Real returns everywhere** — portfolio, per asset class, per fund, per stock —
+  computed from actual dated cashflows, exactly like Excel's `XIRR`.
+
+---
+
+## 🔒 Your data stays yours
+
+Every fetch is a plain download of **public** data, started from your machine:
+
+| What | Source |
+|---|---|
+| Fund NAVs | AMFI (`amfiindia.com`) |
+| Share prices | BSE (primary), NSE (fallback) |
+| Corporate actions | NSE + BSE |
+
+Reference data (Indian banks, PPF rate history, the 2018 fair‑value table) is
+**bundled** — no fetch needed. There's also a once‑per‑run check of the GitHub
+Releases page to tell you if a new version exists (it sends nothing about you; turn
+it off with `--no-update-check`).
+
+**Nothing about your holdings is ever uploaded, anywhere.**
+
+---
+
+## 🛠️ For developers
+
+The product is a **specification** ([docs/SPEC.md](docs/SPEC.md)); the Python here
+is its reference implementation. The workbook is a **build artifact** — code
+generates it; the updater reads your inputs, fetches data, recomputes, and
+regenerates it. End users never need Python.
+
+```
+┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: sheets, charts, formulas)
+│                            │
+│                     you edit inputs
+│                            ▼
+└── update.py  ◄── reader.py (openpyxl, read‑only)
+        │  fetch/  (amfi · bhavcopy BSE→NSE · corporate_actions)
+        │  compute/ (xirr · cashflows · ppf · projections · snapshot)
+        └─►  regenerate the workbook (atomic, with a backup)
+```
+
+### Set up once
+
+<table>
+<tr><th>Windows</th><th>macOS / Linux</th></tr>
+<tr><td>
 
 ```bat
 py -3 -m venv .venv
@@ -122,7 +171,7 @@ py -3 -m venv .venv
 pip install -e ".[dev]"
 ```
 
-**macOS / Linux** (Terminal, inside the repo folder):
+</td><td>
 
 ```bash
 python3 -m venv .venv
@@ -130,144 +179,95 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-`-e` is an editable install: code changes take effect without reinstalling.
-Re-activate the venv (`.venv\Scripts\activate` / `source .venv/bin/activate`)
-whenever you open a new shell.
+</td></tr>
+</table>
 
-### Everyday commands (venv active, any OS)
+Needs **Python 3.10+** and git. No compilers, no Excel, no admin rights. `-e` is an
+editable install (code changes take effect immediately).
 
-```bash
-python -m networth.generate                 # build Family_Portfolio_Tracker.xlsx
-                                            #   from code, with sample data
-python -m networth.generate -o my.xlsx      # ...to a custom path
-python -m networth.update                   # refresh the workbook in the current
-                                            #   folder (must be CLOSED in Excel):
-                                            #   prices, NAVs, corp actions, XIRR
-python -m networth.update path\to\file.xlsx # ...a specific workbook
-pytest                                      # full suite (~60 tests, ~30 s):
-                                            #   XIRR golden values, feed parsers,
-                                            #   corp-action scenarios, round-trip
-                                            #   identity — no network needed
-pytest tests/test_generate.py -q            # quick structural checks only
-```
-
-The dev loop for template changes: edit `src/networth/generate.py` → run
-`python -m networth.generate` → open the xlsx and look → `pytest`. Never edit
-the generated file directly (see the maintainers note below).
-
-### Build the one-click apps (what end users download)
-
-macOS build (run **on a Mac** — PyInstaller can't cross-compile a native binary),
-from the repo root, *without* any venv active (the script makes its own):
+### Everyday commands
 
 ```bash
-# macOS  → dist/NetWorth-<version>-macos.zip
-#          (+ networth-updater binary and "Update Portfolio.command" launcher)
-packaging/build-release.sh 1.1.0
+python -m networth.generate            # build the workbook from code (sample data)
+python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
+pytest                                 # 88 tests — XIRR golden values, parsers,
+                                       #   corp‑action & PPF scenarios, round‑trip identity
 ```
 
-The zip contains the generated workbook, the updater app and a one-page README.
-First-run warnings are expected for unsigned builds: macOS Gatekeeper →
-*right-click → Open*.
+**Dev loop for template changes:** edit `generate.py` → `python -m networth.generate`
+→ open the xlsx and look → `pytest`. Never hand‑edit the generated file or save it
+through openpyxl (that drops the charts) — change the code and rebuild.
 
-### Building the Windows app on Linux (no Windows machine, no Wine)
+### Build the double‑click apps
 
-Because NetWorth is **pure Python**, the Windows deliverable is assembled on
-Linux by *downloading* prebuilt Windows artifacts — never compiling and never
-emulating. One command:
+| Target | Command | Where to run |
+|---|---|---|
+| **macOS** | `packaging/build-release.sh 1.1.0` | a Mac |
+| **Windows** | `packaging/build-windows-nowine.sh 1.1.0` | **Linux/Mac/Windows** — no Wine, no compiler |
+
+Because NetWorth is **pure Python**, the Windows app is assembled by *downloading*
+prebuilt Windows pieces — the official embeddable CPython plus `win_amd64` dependency
+wheels (`pip download --platform win_amd64`) — and arranging them next to our code
+and data. Nothing is compiled or emulated. The launcher is `Update Portfolio.bat`
+(relocatable, correct‑by‑inspection); a single self‑contained `.exe` comes from
+`packaging\build-release.bat` on real Windows, or from CI.
+
+### Pre‑release checklist (build & verify on Ubuntu)
+
+With your dev venv active, before tagging a release:
 
 ```bash
-# → dist/NetWorth-<version>-windows.zip
-packaging/build-windows-nowine.sh 1.1.0          # optional 2nd arg: python ver
+# 0 · tests green
+pytest -q
+
+# 1 · build the Windows bundle (version must match the tag you'll cut)
+packaging/build-windows-nowine.sh 1.1.0
+
+# 2 · the zip carries genuine Windows binaries + our code + data
+python -m zipfile -l dist/NetWorth-1.1.0-windows.zip \
+  | grep -E "win_amd64|python\.exe|networth/update\.py|Lib/data/ppf_rates|Update Portfolio\.bat"
+
+# 3 · the bundled code imports and the entry point is wired
+PYTHONPATH="dist/NetWorth-1.1.0-windows/app/python/Lib/site-packages" \
+  python -c "import networth, networth._packaged as p; print('bundled', networth.__version__, '| entry:', callable(p.run))"
+
+# 4 · the shipped workbook opens with all its tabs
+python -c "from openpyxl import load_workbook; wb=load_workbook('dist/NetWorth-1.1.0-windows/Family_Portfolio_Tracker.xlsx'); print(len(wb.sheetnames), 'sheets')"
 ```
 
-It downloads the official Windows **embeddable CPython**, fetches Windows wheels
-for every dependency (`pip download --platform win_amd64` — even the one
-C-extension dep ships a `win_amd64` wheel), unpacks them alongside our own
-pure-Python wheel and the bundled `data/*.csv`, generates the workbook natively,
-and zips a folder the end user just unzips and runs. Only `curl`/`unzip` and a
-Python 3 are needed; nothing is installed system-wide.
+Expect step 2 to list all five markers, step 3 to print `entry: True`, and step 4 to
+report **19 sheets**. The only thing you *can't* verify on Linux is running the
+Windows binary itself — do that final smoke test on a real Windows PC (or in CI)
+before you publish.
 
-The end-user launcher is **`Update Portfolio.bat`** (double-click). It's a `.bat`
-rather than a single `.exe` on purpose: a relocatable Windows launcher `.exe`
-can't be *execute-verified* from Linux, and a `.bat` using `%~dp0` is
-correct-by-inspection and always finds its bundled Python, data and workbook.
-For a single self-contained `.exe`, build on real Windows
-(`packaging\build-release.bat`) or via CI. Verify the bundle assembled:
+### Releasing
 
-```bash
-python -m zipfile -l dist/NetWorth-1.1.0-windows.zip | grep win_amd64 | head
-```
+Push a `v*` tag → [`.github/workflows/release.yml`](.github/workflows/release.yml)
+runs the tests on Linux/Windows/macOS, builds the per‑OS apps, and attaches them to
+the GitHub Release (a tag with a `-`, e.g. `v1.2.0-rc.1`, is marked pre‑release).
 
-### Troubleshooting
+---
 
-- **`python`/`py` not found** — Windows: reinstall from python.org (the
-  Microsoft Store stub can shadow it; `py -3` is the reliable spelling).
-  macOS: use `python3`, not `python`.
-- **TLS/certificate errors during fetch** — corporate proxies/antivirus
-  intercept HTTPS; the updater already validates against the OS trust store
-  (`truststore`). In plain dev scripts, call
-  `import truststore; truststore.inject_into_ssl()` first.
-- **"workbook is open in Excel"** — the updater refuses by design; close the
-  file (and check for a leftover `~$...xlsx` lock file).
-- **NSE fetches are slow the first time** — the cookie warm-up request is
-  normal; BSE is the primary price source anyway.
-- **Charts vanished from a workbook you edited in code** — you saved it
-  through openpyxl. Regenerate with `python -m networth.generate`; openpyxl
-  is read-only in this codebase.
+## 📚 Project documents
 
-### Layout & releasing
+| Document | What it's for |
+|---|---|
+| [docs/SPEC.md](docs/SPEC.md) | **The product** — every sheet, data contract and algorithm, platform‑agnostic |
+| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
+| [docs/PLAN.md](docs/PLAN.md) | The approved architecture & decisions |
+| [CLAUDE.md](CLAUDE.md) | Working notes & conventions for contributors |
 
-Layout: `src/networth/generate.py` (xlsxwriter workbook builder) ·
-`reader.py` (openpyxl read-only round-trip) · `update.py` (orchestrator) ·
-`fetch/` (amfi, bhavcopy BSE→NSE, corporate_actions NSE+BSE) · `compute/`
-(xirr, cashflows, projections) · `data/` (bundled bank list + FMV table) ·
-`packaging/` (PyInstaller spec, per-OS build scripts) · `tests/`.
+> **Maintainer's golden rule:** end users edit the workbook freely — that's the
+> product, and the updater preserves it. What must *not* happen is changing the
+> template's **structure** (sheets, columns, formulas, charts) by hand. Structural
+> changes live in `src/networth/generate.py`; rebuild to apply them.
 
-Releasing: push a `v*` tag — [.github/workflows/release.yml](.github/workflows/release.yml)
-runs the test suite on Linux/Windows/macOS, builds both one-click zips and
-attaches them to the GitHub Release (tags containing `-` are marked
-pre-release automatically). To rehearse a release locally, run the
-`packaging/build-release.*` script for your OS as above.
+---
 
-Key documents:
+## 📄 License
 
-- [docs/SPEC.md](docs/SPEC.md) — the platform-agnostic specification (sheets,
-  data contracts, algorithms). **The spec is the product**; Python here is the
-  reference implementation. Behaviour changes update the spec in the same commit.
-- [docs/PLAN.md](docs/PLAN.md) — approved architecture & feature plan.
-- [docs/RELEASES.md](docs/RELEASES.md) — milestone plan & acceptance criteria (R0–R7 = v1).
-- [docs/ROADMAP.md](docs/ROADMAP.md) — backlog & ideas (PPF ledger, capital-gains report, CAS import…).
-- [CLAUDE.md](CLAUDE.md) — working notes/conventions for AI-assisted development.
+[MIT](LICENSE) — © 2026 Jay Parikh. Use it, fork it, make it yours.
 
-**For maintainers:** end users edit the workbook freely — entering and updating
-holdings in the input cells is the product, and the updater preserves all of it.
-What must *not* happen is changing the template's **structure** (sheets, columns,
-formulas, charts) by hand-editing the shipped xlsx, or saving it through
-openpyxl (which silently destroys the charts). Structural changes belong in
-`src/networth/generate.py`; rebuild to apply them.
-
-## Privacy & data sources
-
-All fetches are plain HTTPS GETs of public data, initiated from your machine
-(TLS validated against your OS certificate store, so corporate proxies work):
-
-- AMFI daily NAVs + scheme list: `https://www.amfiindia.com/spages/NAVAll.txt`
-- BSE bhavcopy (prices, primary): `https://www.bseindia.com/download/BhavCopy/Equity/...`
-- NSE bhavcopy (fallback): `https://nsearchives.nseindia.com/content/cm/...`
-- NSE corporate actions (per held stock): `https://www.nseindia.com/api/corporates-corporateActions?...`
-- BSE corporate actions (per held stock): `https://api.bseindia.com/BseIndiaAPI/api/DefaultData/w?...`
-
-On each run the updater also makes one call to the GitHub releases API to tell
-you if a newer version exists. It sends nothing about you (just a normal API
-request) and is easy to turn off: pass `--no-update-check` or set
-`NETWORTH_NO_UPDATE_CHECK=1`.
-
-Bundled static data (no fetch needed): the Indian bank list, the 31-01-2018
-FMV table, and the PPF interest-rate history — all refreshed via app releases.
-
-Nothing about your holdings is ever uploaded, anywhere.
-
-## License
-
-[MIT](LICENSE)
+*(The original Windows‑only PowerShell template this grew from is preserved under
+[legacy/](legacy/) and still works.)*

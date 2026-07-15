@@ -1,14 +1,32 @@
 # NetWorth — Product Specification
 
-Version: 1.0-draft (R1, 2026-07-15)
-Status: normative for the v1 rewrite. Reverse-engineered from the working
-legacy template (`legacy/Family_Portfolio_Tracker.xlsx`, 2026-07-14) and
-extended with the v1 features approved in [PLAN.md](PLAN.md).
+> **In one sentence:** this document describes *exactly* what the workbook and
+> the updater must do — every tab, every number, every data source — so that
+> anyone could rebuild NetWorth from scratch, in any language, without seeing
+> the code.
 
-**This document is the product.** Any implementation — the Python reference
-implementation in `src/networth/`, or a port to another language/platform —
-must satisfy this spec. Where the legacy workbook and this spec disagree on
-cosmetic details, this spec wins.
+**Version:** covers v1.0 + v1.1 · **Status:** normative.
+Reverse‑engineered from the original template and extended with the approved
+features in [PLAN.md](PLAN.md).
+
+**This document is the product.** The Python in `src/networth/` is its
+*reference implementation*; a port in any other language is conformant if it
+satisfies this spec. Where the workbook and this spec disagree on a cosmetic
+detail, **this spec wins**. When behaviour changes, the spec changes in the
+same commit.
+
+### How to read it
+
+| You want to… | Go to |
+|---|---|
+| Understand the design rules | §1 Scope & principles |
+| Know what every tab/column is | §3 Workbook specification |
+| Fetch or parse a data source | §5 Data contracts |
+| Reproduce a calculation | §6 Algorithms (pseudocode) |
+| Know what the updater does, in order | §7 Updater behaviour |
+| Ship it | §8 Packaging · §9 Portability checklist |
+
+Section numbers are stable references — code comments cite them (e.g. "SPEC §6.10").
 
 ---
 
