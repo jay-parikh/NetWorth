@@ -1,0 +1,57 @@
+# Roadmap — beyond v1
+
+Backlog of brainstormed features, roughly ordered by value/effort. Nothing here
+is committed; promote items into [RELEASES.md](RELEASES.md) when scheduled.
+
+## Money & tax
+
+- **PPF contribution ledger** — one row per deposit, proper monthly-minimum-
+  balance interest computation using the bundled quarterly `ppf_rates.csv`
+  (auto-refresh of that table via app releases; there is no official API).
+  Replaces today's flat Rate% estimate; enables true PPF XIRR and maturity
+  projection.
+- **Capital-gains tax report** — realised/unrealised STCG & LTCG per FY,
+  with 31-01-2018 grandfathering applied properly (reuses the bundled FMV
+  data), ₹1.25L LTCG exemption tracking, and a sell-planning helper.
+- **Dividend & interest tracking** — dividend ledger per scrip (feeds true
+  equity XIRR), FD interest payout mode (payout vs cumulative), bond coupon
+  receipts ledger.
+
+## Data in
+
+- **CAS import** — parse CAMS/KFintech Consolidated Account Statement PDFs to
+  auto-fill the MF_SIP ledger.
+- **Broker import** — Zerodha (tradebook/holdings CSV) first; then generic
+  contract-note CSV mapping.
+- **NSE as full peer source** — today NSE bhavcopy is fallback only.
+
+## More of the balance sheet
+
+- **New asset classes** — Gold/SGB, NPS, EPF, real estate, cash/savings,
+  insurance (surrender value), ESOPs/RSUs.
+- **Liabilities** — loans/EMIs, so the Dashboard shows true net worth
+  (assets − liabilities).
+
+## Insight & planning
+
+- **Net-worth history** — the updater appends a dated snapshot row on each run;
+  trend chart on the Dashboard.
+- **Asset-allocation targets** — target % per class, drift red/green,
+  rebalancing hints.
+- **Goal planning** — goals with target date/amount mapped to holdings;
+  on/off-track verdict using the projection engine.
+- **Live native-XIRR formulas** — replace script-written XIRR values with
+  Excel `XIRR()` over generated helper cashflow ranges, so returns update on
+  every edit without running the updater.
+
+## Platform & polish
+
+- **Signed/notarized binaries** (macOS notarization, Windows code signing) to
+  remove the right-click→Open / SmartScreen friction.
+- **Auto-update check** — updater compares its version against the latest
+  GitHub release tag and prints a one-line hint (still fully local/offline-safe).
+- **Multi-currency** — foreign stocks/funds, FX rates, INR-consolidated view.
+- **Workbook protection guidance** — password/encryption how-to; locked
+  computed columns to prevent accidental formula damage.
+- **Google Sheets port** — a second implementation of docs/SPEC.md (Apps
+  Script), proving the spec's portability promise.

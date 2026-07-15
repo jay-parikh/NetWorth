@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Build / packaging output
+build/
+dist/
+packaging/out/
+
+# Runtime artifacts of the updater
+backups/
+cache/
+*.log
+
+# Generated workbook at repo root (built via generate.py; released via GitHub Releases)
+/Family_Portfolio_Tracker.xlsx
+
+# The original hand-built template zip (contents preserved in legacy/)
+/Portfolio_Template.zip
+
+# OS noise
+.DS_Store
+Thumbs.db
