@@ -28,6 +28,7 @@ CLOSE_KEYS = ("clspric", "close", "close_price", "last", "lasttradedprice")
 PREV_KEYS = ("prvsclsgpric", "prevclose", "prev close", "previous close")
 SYMBOL_KEYS = ("tckrsymb", "symbol", "sc_name", "scrip name")
 NAME_KEYS = ("fininstrmnm", "security name", "sc_name")
+CODE_KEYS = ("fininstrmid", "sc_code", "scrip code", "scrip_code")
 
 
 @dataclass
@@ -35,6 +36,9 @@ class PriceData:
     prices: dict[str, dict] = field(default_factory=dict)  # isin -> {close, prev}
     # (symbol, name, isin) rows for the Stock_Master add-only merge
     master_rows: list[tuple[str, str, str]] = field(default_factory=list)
+    # isin -> exchange instrument code; meaningful only for BSE (scrip code,
+    # e.g. 500325) — feeds the BSE corporate-actions lookup
+    codes_by_isin: dict[str, str] = field(default_factory=dict)
     trade_date: date | None = None
     source: str = ""
 
@@ -63,6 +67,7 @@ def parse(csv_text: str) -> PriceData:
     pc = _find_col(headers, PREV_KEYS)
     sc = _find_col(headers, SYMBOL_KEYS)
     nc = _find_col(headers, NAME_KEYS)
+    idc = _find_col(headers, CODE_KEYS)
     if not ic or not cc:
         raise ValueError(f"ISIN/Close columns not found. Header: {headers}")
     for row in rdr:
@@ -87,6 +92,10 @@ def parse(csv_text: str) -> PriceData:
             sym = (row.get(sc) or "").strip() if sc else ""
             name = (row.get(nc) or "").strip() if nc else sym
             out.master_rows.append((sym, name or sym, isin))
+            if idc:
+                code = (row.get(idc) or "").strip()
+                if code:
+                    out.codes_by_isin[isin] = code
     return out
 
 
@@ -129,5 +138,8 @@ def fetch(session=None, today: date | None = None, timeout: int = 60) -> PriceDa
                 if out.prices:
                     out.trade_date = d
                     out.source = source
+                    if source != "BSE":
+                        # NSE's FinInstrmId is not a BSE scrip code
+                        out.codes_by_isin = {}
                     return out
     raise RuntimeError(f"No bhavcopy available in the last {MAX_BACK} days (BSE and NSE)")

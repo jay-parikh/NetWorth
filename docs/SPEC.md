@@ -390,19 +390,26 @@ record the date actually used (→ Closing Price Date column).
 `User-Agent` and a cookie warm-up GET on `https://www.nseindia.com/` first.
 Used when BSE is unreachable or an ISIN is NSE-only.
 
-### 5.4 Corporate actions (v1, R7)
+### 5.4 Corporate actions (v1, R7; dual-source since v1.0.0-rc)
 
-Per held stock, fetch historical + announced actions from the NSE
-per-symbol API (cookie warm-up required, like §5.3):
+Per held stock, fetch historical + announced actions from **both exchanges**
+and deduplicate:
 
 ```
-https://www.nseindia.com/api/corporates-corporateActions?index=equities&symbol=<SYM>
+NSE: https://www.nseindia.com/api/corporates-corporateActions?index=equities&symbol=<SYM>
+     (cookie warm-up required, like §5.3; free-text field: subject)
+BSE: https://api.bseindia.com/BseIndiaAPI/api/DefaultData/w?Fdate=&Purpose=&TDate=
+     &ddlcategorys=E&ddlindustrys=&scripcode=<CODE>&segment=0&strSearch=S
+     (Referer: https://www.bseindia.com/ required; free-text field: Purpose;
+      Ex_date format "28 Oct 2024"; scrip codes come from the daily BSE
+      bhavcopy's FinInstrmId column — no extra mapping source)
 ```
 
-Each JSON record's free-text `subject` is classified: `Bonus A:B` → BONUS;
-"split"/"sub-division" with "From <face> To <face>" → SPLIT; "consolidation"
-→ CONSOLIDATION; everything else (dividends, rights, AGMs) is ignored. The
-normative contract is the record, not the URL:
+The free text is classified identically for both: `Bonus A:B` / "Bonus issue
+A:B" → BONUS; "split"/"sub-division"/"Stock Split" with "From <face> To
+<face>" → SPLIT; "consolidation" → CONSOLIDATION; everything else (dividends,
+rights, AGMs, buybacks) is ignored. The normative contract is the record, not
+the URLs:
 
 ```
 { symbol, isin, ex_date, type ∈ {SPLIT, BONUS, CONSOLIDATION},
@@ -410,10 +417,21 @@ normative contract is the record, not the URL:
 ```
 
 SPLIT/CONSOLIDATION ratio = old face : new face (e.g. 10:2 split → factor 5).
-BONUS ratio A:B = A new shares per B held (factor 1 + A/B). Manual rows with
-the same shape are entered on the Corporate_Actions sheet and take precedence
-over an Auto row with the same (isin, type, ex_date). One symbol failing must
-not abort the sweep; only an all-symbol failure degrades (keep existing rows).
+BONUS ratio A:B = A new shares per B held (factor 1 + A/B).
+
+**Dedupe rule:** records from the two exchanges merge on
+`(isin, type, ex_date)` — ex-dates are exchange-synchronised — NSE record
+wins. Manual rows on the Corporate_Actions sheet take precedence over an
+Auto row with the same key.
+
+**Coverage rule (never skip silently):** the fetch reports which ISINs were
+successfully answered by at least one exchange. Any held ISIN answered by
+neither MUST surface as a user-visible warning naming the scrip ("corporate
+actions could NOT be verified for: …"), so an unverifiable holding is a known
+condition, not a silent gap. One security failing must not abort the sweep;
+only an all-security/all-source failure degrades (keep existing rows).
+Mergers/demergers/ISIN reassignments remain out of scope for auto-adjustment
+(no reliable free feed) — the Manual-row path covers them.
 
 ### 5.5 Bundled static data (in `data/`, refreshed only by releases)
 

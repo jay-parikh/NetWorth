@@ -43,7 +43,7 @@ def test_fmv_fallback_by_isin_and_symbol(tmp_path):
     build_workbook(data, str(path))
 
     prices, amfi = _empty_sources()
-    summary = run(path, price_data=prices, amfi_data=amfi, today=TODAY)
+    summary = run(path, price_data=prices, amfi_data=amfi, ca_data=[], today=TODAY)
     assert summary["fmv_filled"] == 2
 
     back = read_workbook(str(path))
@@ -68,7 +68,7 @@ def test_status_active_then_suspended_then_delisted(tmp_path):
     prices, amfi = _empty_sources()
     for row in data.equity:
         prices.prices[isin_by_name[row.scrip]] = {"close": 100.0, "prev": 99.0}
-    run(path, price_data=prices, amfi_data=amfi, today=TODAY)
+    run(path, price_data=prices, amfi_data=amfi, ca_data=[], today=TODAY)
     back = read_workbook(str(path))
     assert back.masters.stock_status[wipro][0] == "Active"
 
@@ -79,7 +79,7 @@ def test_status_active_then_suspended_then_delisted(tmp_path):
     for row in data.equity:
         if row.scrip != "WIPRO LTD.":
             prices2.prices[isin_by_name[row.scrip]] = {"close": 101.0, "prev": 100.0}
-    summary = run(path, price_data=prices2, amfi_data=AmfiData(), today=later)
+    summary = run(path, price_data=prices2, amfi_data=AmfiData(), ca_data=[], today=later)
     assert summary["suspended"] == 1
     back = read_workbook(str(path))
     st, last = back.masters.stock_status[wipro]
@@ -95,7 +95,7 @@ def test_status_active_then_suspended_then_delisted(tmp_path):
     for row in data.equity:
         if row.scrip != "WIPRO LTD.":
             prices3.prices[isin_by_name[row.scrip]] = {"close": 102.0, "prev": 101.0}
-    run(path, price_data=prices3, amfi_data=AmfiData(), today=much_later)
+    run(path, price_data=prices3, amfi_data=AmfiData(), ca_data=[], today=much_later)
     back = read_workbook(str(path))
     assert back.masters.stock_status[wipro][0] == "Delisted"
 

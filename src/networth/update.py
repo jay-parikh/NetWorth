@@ -196,19 +196,39 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         summary["mf_matched"] = matched
         summary["mf_total"] = len(data.mutual_funds)
 
-    # ---- corporate actions (SPEC §6.7): fetch auto, keep manual, factor rows ----
+    # ---- corporate actions (SPEC §6.7): fetch NSE+BSE, keep manual, factor rows,
+    # and warn about any holding NEITHER exchange could verify — never skip silently
     isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
     symbol_by_isin = {isin: sym for sym, _n, isin in data.masters.stock_rows}
+    name_by_isin = {isin: name for _s, name, isin in data.masters.stock_rows}
     held_isins = {row.isin_override or isin_by_name.get(row.scrip, "")
                   for row in data.equity}
     held_isins.discard("")
     if ca_data is None:
         symbols = {symbol_by_isin[i]: i for i in held_isins if symbol_by_isin.get(i)}
+        bse_codes = {code: isin
+                     for isin, code in getattr(price_data, "codes_by_isin", {}).items()
+                     if isin in held_isins} if price_data else {}
         try:
-            ca_data = ca_mod.fetch(symbols) if symbols else []
+            checked: set[str] = set()
+            if symbols or bse_codes:
+                ca_data, checked = ca_mod.fetch(symbols, bse_codes)
+            else:
+                ca_data = []
+            unchecked = held_isins - checked
+            summary["ca_unverified"] = sorted(
+                name_by_isin.get(i, i) for i in unchecked)
+            if unchecked:
+                summary["warnings"].append(
+                    "corporate actions could NOT be verified for: "
+                    + ", ".join(summary["ca_unverified"])
+                    + " — quantities for these may miss splits/bonuses; add any "
+                      "you know of as Manual rows on the Corporate_Actions sheet")
         except Exception as e:  # noqa: BLE001
             summary["warnings"].append(
                 f"corporate-actions fetch failed, keeping existing rows: {e}")
+    else:
+        summary["ca_unverified"] = []
     if ca_data is not None:
         manual = [a for a in data.corporate_actions if a.source != "Auto"]
         manual_keys = {(a.isin, a.type, a.ex_date) for a in manual}
@@ -273,8 +293,10 @@ def _print_summary(s: dict) -> None:
     if "mf_matched" in s:
         print(f"Fund NAVs  : {s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")
     if s.get("ca_rows") is not None:
-        print(f"Corp acts  : {s['ca_rows']} action(s) on file, "
-              f"{s['ca_adjusted_rows']} holding(s) adjusted (splits/bonuses)")
+        coverage = ("all held stocks verified" if not s.get("ca_unverified")
+                    else f"{len(s['ca_unverified'])} stock(s) UNVERIFIED")
+        print(f"Corp acts  : {s['ca_rows']} action(s) on file (NSE+BSE), "
+              f"{s['ca_adjusted_rows']} holding(s) adjusted, {coverage}")
     if s.get("fmv_filled"):
         print(f"FMV filled : {s['fmv_filled']} row(s) got the 31-01-2018 grandfathering cost")
     if s.get("suspended"):

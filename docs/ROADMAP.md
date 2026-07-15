@@ -23,7 +23,13 @@ is committed; promote items into [RELEASES.md](RELEASES.md) when scheduled.
   auto-fill the MF_SIP ledger.
 - **Broker import** — Zerodha (tradebook/holdings CSV) first; then generic
   contract-note CSV mapping.
-- **NSE as full peer source** — today NSE bhavcopy is fallback only.
+- **NSE as full peer source for prices** — today NSE bhavcopy is fallback only
+  (corporate actions already query both exchanges).
+- **Mergers / demergers / ISIN reassignments** — the one corporate-action
+  category that cannot be auto-adjusted (no reliable free feed for swap
+  ratios); today the updater flags unverifiable holdings and the
+  Corporate_Actions Manual rows cover it. A curated actions file shipped with
+  releases could close most of the gap.
 
 ## More of the balance sheet
 

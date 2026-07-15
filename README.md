@@ -42,11 +42,14 @@ on every gain, return and XIRR figure. **Amber** = look closer: a stale price
 
 **Smart behaviours** (see [docs/SPEC.md](docs/SPEC.md) for exact rules):
 
-- **Corporate actions** — splits, bonuses and consolidations are fetched for
-  your holdings on every update and applied automatically, including future
-  ex-dates when they arrive. Your typed quantities and costs are never
-  rewritten; an *Adj factor* column applies the multiplier at valuation time,
-  and the Corporate_Actions sheet shows exactly what was applied and why.
+- **Corporate actions** — splits, bonuses and consolidations are fetched from
+  **both NSE and BSE** for your holdings on every update, deduplicated, and
+  applied automatically, including future ex-dates when they arrive. Your
+  typed quantities and costs are never rewritten; an *Adj factor* column
+  applies the multiplier at valuation time, and the Corporate_Actions sheet
+  shows exactly what was applied and why. If any holding cannot be verified
+  on either exchange, the run summary says so by name — nothing is ever
+  skipped silently.
 - **FMV 31-01-2018 fallback** — bought before Feb 2018 and don't know the
   price? Leave *Avg. cost* blank: the LTCG-grandfathering fair market value
   (bundled, 1,639 ISINs, with symbol fallback for reissued ISINs) fills in,
@@ -139,6 +142,7 @@ All fetches are plain HTTPS GETs of public data, initiated from your machine
 - BSE bhavcopy (prices, primary): `https://www.bseindia.com/download/BhavCopy/Equity/...`
 - NSE bhavcopy (fallback): `https://nsearchives.nseindia.com/content/cm/...`
 - NSE corporate actions (per held stock): `https://www.nseindia.com/api/corporates-corporateActions?...`
+- BSE corporate actions (per held stock): `https://api.bseindia.com/BseIndiaAPI/api/DefaultData/w?...`
 
 Bundled static data (no fetch needed): the Indian bank list and the
 31-01-2018 FMV table, refreshed via app releases. A PPF rate-history table is
