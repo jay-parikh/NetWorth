@@ -19,6 +19,7 @@ from . import model as M
 from .compute.cashflows import compute_all_xirr, ppf_ledger_by_account
 from .compute.projections import fy_expected_by_person
 from .compute.ppf import current_rate, load_ppf_rates, ppf_cashflows, ppf_value
+from .compute.snapshot import net_worth_snapshot, upsert_snapshot
 from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
@@ -299,6 +300,13 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     data.fy_expected = fy_expected_by_person(data, today)
     summary["fy_expected_total"] = round(sum(data.fy_expected.values()), 2)
 
+    # ---- net-worth history: one snapshot per day (SPEC §6.11) ----
+    snap = net_worth_snapshot(data, today)
+    data.history = upsert_snapshot(data.history, snap,
+                                   keep=M.HISTORY_LAST_ROW - M.FIRST_DATA_ROW + 1)
+    summary["net_worth"] = round(snap.total, 2)
+    summary["history_points"] = len(data.history)
+
     # ---- regenerate, atomically ----
     tmp = path.with_name(path.stem + ".new" + path.suffix)
     build_workbook(data, str(tmp))
@@ -331,6 +339,9 @@ def _print_summary(s: dict) -> None:
           "XIRR       : not enough dated cashflows yet")
     if s.get("fy_expected_total"):
         print(f"FY-end est : {s['fy_expected_total']:,.0f} (family total)")
+    if s.get("net_worth") is not None:
+        print(f"Net worth  : {s['net_worth']:,.0f}  "
+              f"({s.get('history_points', 0)} day(s) of history)")
     if s.get("backup"):
         print(f"Backup     : {s['backup']}")
     for w in s["warnings"]:

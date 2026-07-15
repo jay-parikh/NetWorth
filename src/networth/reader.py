@@ -17,8 +17,8 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    BondRow, ClassXirr, CorporateAction, EquityRow, FDRow, Masters, MFRow,
-    PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
+    BondRow, ClassXirr, CorporateAction, EquityRow, FDRow, HistorySnapshot,
+    Masters, MFRow, PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
 )
 
 
@@ -245,6 +245,22 @@ def read_workbook(path: str) -> PortfolioData:
             if isin:
                 out.append((_as_str(m.cell(r, 1).value), _as_str(m.cell(r, 2).value), isin))
         return out
+
+    if "History" in wb.sheetnames:
+        ws = wb["History"]
+        h = _header_row(ws, "Date")
+        for r in range(h + 1, ws.max_row + 1):
+            d = _as_date(ws.cell(r, 1).value)
+            if d is None:
+                continue
+            data.history.append(HistorySnapshot(
+                snap_date=d,
+                equity=_as_float(ws.cell(r, 2).value) or 0.0,
+                mutual_funds=_as_float(ws.cell(r, 3).value) or 0.0,
+                fixed_deposits=_as_float(ws.cell(r, 4).value) or 0.0,
+                ppf=_as_float(ws.cell(r, 5).value) or 0.0,
+                bonds=_as_float(ws.cell(r, 6).value) or 0.0,
+            ))
 
     sm = wb["Stock_Master"]
     stock_status: dict[str, tuple[str, object]] = {}

@@ -33,6 +33,7 @@ BOND_LAST_ROW = 53
 BOND_TOTAL_ROW = 55
 BYSCRIP_LAST_ROW = 29
 CA_LAST_ROW = 53                # Corporate_Actions data rows 4..53
+HISTORY_LAST_ROW = 400          # net-worth snapshots, one per day (rows 4..400)
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
 DASH_PERSON_LAST = 15
@@ -190,6 +191,23 @@ def adjustment_factor(isin: str, cost_date: date | None, today: date,
 
 
 @dataclass
+class HistorySnapshot:
+    """One dated net-worth snapshot (SPEC §6.11). Updater-written data that
+    round-trips regeneration; one row per calendar day."""
+    snap_date: date | None = None
+    equity: float = 0.0
+    mutual_funds: float = 0.0
+    fixed_deposits: float = 0.0
+    ppf: float = 0.0
+    bonds: float = 0.0
+
+    @property
+    def total(self) -> float:
+        return (self.equity + self.mutual_funds + self.fixed_deposits
+                + self.ppf + self.bonds)
+
+
+@dataclass
 class ClassXirr:
     """Updater-written plain values (SPEC §6.2)."""
     portfolio: float | None = None
@@ -223,6 +241,7 @@ class PortfolioData:
     bonds: list[BondRow] = field(default_factory=list)
     by_scrip: list[ScripRef] = field(default_factory=list)
     corporate_actions: list["CorporateAction"] = field(default_factory=list)
+    history: list["HistorySnapshot"] = field(default_factory=list)
     inflation_pct: float = 7
     expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person

@@ -13,7 +13,7 @@ EXPECTED_SHEETS = [
     "Dashboard", "Projection", "Amit", "Priya", "Rahul", "Equity",
     "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master", "Bank_Master",
     "FixedDeposits", "PPF", "PPF_Ledger", "Bonds", "By Scrip",
-    "Corporate_Actions", "Guide",
+    "Corporate_Actions", "History", "Guide",
 ]
 
 
@@ -38,14 +38,14 @@ def test_defined_names(wb):
     assert {"MF_SchemeList", "Stock_NameList"} <= names
 
 
-def test_six_charts_present(built):
+def test_charts_present(built):
     with zipfile.ZipFile(built) as z:
         charts = [n for n in z.namelist() if re.fullmatch(r"xl/charts/chart\d+\.xml", n)]
-        assert len(charts) == 6
+        assert len(charts) == 7
         types = "".join(z.read(c).decode() for c in charts)
     assert types.count("<c:pieChart>") == 4      # dashboard + 3 persons
     assert types.count("<c:barChart>") == 1
-    assert types.count("<c:lineChart>") == 1
+    assert types.count("<c:lineChart>") == 2      # projection + net-worth trend
 
 
 def test_dropdown_tip_within_excel_limit():

@@ -230,6 +230,17 @@ def _write_dashboard(wb, F, data: PortfolioData):
     bar.set_legend({"none": True})
     ws.insert_chart("I21", bar, {"x_scale": 1.1, "y_scale": 1.1})
 
+    trend = wb.add_chart({"type": "line"})
+    trend.add_series({
+        "name": "Net worth",
+        "categories": f"=History!$A$4:$A${M.HISTORY_LAST_ROW}",
+        "values": f"=History!$G$4:$G${M.HISTORY_LAST_ROW}",
+    })
+    trend.set_title({"name": "Net worth over time"})
+    trend.set_legend({"none": True})
+    trend.set_x_axis({"num_format": "dd-mmm-yy"})
+    ws.insert_chart("I38", trend, {"x_scale": 1.6, "y_scale": 1.2})
+
     _redgreen(ws, F, "B4")
     _redgreen(ws, F, "E4")
     _redgreen(ws, F, "C20:C24")
@@ -906,6 +917,30 @@ def _write_corporate_actions(wb, F, data: PortfolioData):
     return ws
 
 
+def _write_history(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("History")
+    _widths(ws, {"A": 13, "B": 14, "C": 14, "D": 15, "E": 12, "F": 12, "G": 15})
+    _sheet_head(ws, F, "NET WORTH HISTORY",
+                "One snapshot per day, written by the updater (the same run that "
+                "refreshes prices). The Dashboard trend chart reads this sheet. "
+                "Machine-managed - no need to edit it.")
+    ws.write_row("A3", ["Date", "Equity", "Mutual Funds", "Fixed Deposits",
+                        "PPF", "Bonds", "Total"], F["header"])
+    by_row = {M.FIRST_DATA_ROW + i: s for i, s in enumerate(data.history)}
+    for r in range(M.FIRST_DATA_ROW, M.HISTORY_LAST_ROW + 1):
+        snap = by_row.get(r)
+        if snap and snap.snap_date is not None:
+            ws.write_datetime(f"A{r}", snap.snap_date, F["date_disp"])
+            ws.write_number(f"B{r}", snap.equity, F["c_money"])
+            ws.write_number(f"C{r}", snap.mutual_funds, F["c_money"])
+            ws.write_number(f"D{r}", snap.fixed_deposits, F["c_money"])
+            ws.write_number(f"E{r}", snap.ppf, F["c_money"])
+            ws.write_number(f"F{r}", snap.bonds, F["c_money"])
+            ws.write_formula(f"G{r}", f"=SUM(B{r}:F{r})", F["c_money"])
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_guide(wb, F):
     ws = wb.add_worksheet("Guide")
     ws.set_column("A:A", 100)
@@ -961,6 +996,7 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_bonds(wb, F, data)
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)
+    _write_history(wb, F, data)
     _write_guide(wb, F)
 
     wb.close()

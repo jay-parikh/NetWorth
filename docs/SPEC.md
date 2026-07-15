@@ -619,6 +619,19 @@ with the current bundled rate. Dashboard and person-sheet PPF totals sum
 and the FY-end estimate use ledger accrual where a ledger exists, else the
 flat estimate.
 
+### 6.11 Net-worth history (v1.1)
+
+The updater records one dated snapshot per run into the **History** sheet
+(Date, Equity, Mutual Funds, Fixed Deposits, PPF, Bonds; Total is
+`=SUM(B:F)`). Per-class values are computed in Python to mirror the Dashboard
+(equity qty×factor×close, MF units×NAV, FD compound value, PPF Balance-today,
+bonds qty×price; FD uses actual/365, a hair off Excel's 30/360 — immaterial
+for a trend). **One row per calendar day**: a re-run on the same day overwrites
+that day's row; rows are capped to the most recent `HISTORY_LAST_ROW-3`. The
+Dashboard carries a line chart over History Date × Total. History rows are
+**data** — the reader loads them and the generator writes them back, so they
+survive regeneration.
+
 ---
 
 ## 7. Updater behaviour
