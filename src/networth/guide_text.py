@@ -1,83 +1,76 @@
 """Guide sheet content — the friendly, in-workbook manual for end users.
 
-Each row is (style, text). Styles the generator understands:
-  "title"   the big heading (once, at the top)
-  "h"       a section heading
-  "legend"  a sentinel: the generator draws the two coloured colour-legend lines
-  ""        ordinary body text (blank text = spacer row)
+Each row is a small tuple whose first item is its KIND; the generator
+(`_write_guide`) turns these into a designed page (title banner, coloured
+section bars with icons, numbered step badges, a colour legend with swatches,
+key/value rows). Kinds:
 
-Plain language on purpose — keep it simple, keep the meaning. Update it when a
-feature changes what the user does.
+    ("title", heading, subtitle)
+    ("section", emoji, heading)     coloured header bar
+    ("legend",)                     the colour key (swatches)
+    ("step", n, text)               numbered badge + text
+    ("kv", key, value)              bold key — value
+    ("bullet", text)                • text
+    ("tip", text)                   muted "Tip · …"
+    ("text", text)                  plain line
+    ("footer", text)                muted footer
+    ("space",)                      breathing room
+
+Plain language on purpose — keep it simple, keep the meaning.
 """
 
-GUIDE_ROWS: list[tuple[str, str]] = [
-    ("title", "How to use your Family Portfolio Tracker"),
-    ("", ""),
-    ("", "This one file keeps track of your whole family's net worth in one place."),
-    ("", "You type in what you own — the file does all the maths for you. Every so"),
-    ('', 'often you double-click "Update Portfolio" to pull in fresh prices. That\'s it.'),
-    ("", ""),
+GUIDE_ROWS: list[tuple] = [
+    ("title", "Your Family Portfolio Tracker",
+     "One file for your whole family's net worth. You type in what you own — it does the maths."),
+    ("space",),
 
-    ("h", "What the colours mean"),
-    ("legend", ""),
-    ("", "In short: only ever type into the blue/yellow cells. Leave the grey ones alone."),
-    ("", ""),
+    ("section", "🎨", "What the colours mean"),
+    ("legend",),
+    ("text", "Rule of thumb: only ever type into the blue / yellow cells."),
+    ("space",),
 
-    ("h", "Do this first"),
-    ("", "1.  On the Dashboard, delete the sample family (Amit, Priya, Rahul) and type"),
-    ("", "    your own people's names into the yellow boxes."),
-    ("", "2.  Delete the sample holdings and add your own (see the next section)."),
-    ('', '3.  Save, close the file, and double-click "Update Portfolio".'),
-    ("", ""),
+    ("section", "🚀", "Do this first"),
+    ("step", "1", "On the Dashboard, replace the sample names (Amit, Priya, Rahul) with your family."),
+    ("step", "2", "Delete the sample holdings and add your own — see 'Where each holding goes' below."),
+    ("step", "3", 'Save, close the file, and double-click "Update Portfolio".'),
+    ("space",),
 
-    ("h", "Where each thing goes"),
-    ("", "    Shares .............  the Equity tab"),
-    ("", "    Mutual funds .......  the MutualFunds tab (one row per fund), and log"),
-    ("", "                          each purchase on the MF_SIP tab"),
-    ("", "    Fixed deposits .....  the FixedDeposits tab"),
-    ("", "    PPF ................  the PPF tab (list deposits on PPF_Ledger for exact"),
-    ("", "                          interest — optional)"),
-    ("", "    Bonds ..............  the Bonds tab"),
-    ("", ""),
-    ("", "Tip: pick the fund, share or bank from the dropdown and its ID fills in for"),
-    ("", "you. To search a long list: type the first few letters, press Enter, then"),
-    ("", "open the dropdown — it now shows only the matching names."),
-    ("", "(Selling a fund? Log it on MF_SIP as a purchase with a minus amount.)"),
-    ("", ""),
+    ("section", "📒", "Where each holding goes"),
+    ("kv", "Shares", "the Equity tab"),
+    ("kv", "Mutual funds", "the MutualFunds tab (one row per fund) + log each purchase on MF_SIP"),
+    ("kv", "Fixed deposits", "the FixedDeposits tab"),
+    ("kv", "PPF", "the PPF tab   (list deposits on PPF_Ledger for exact interest — optional)"),
+    ("kv", "Bonds", "the Bonds tab"),
+    ("space",),
+    ("tip", "Pick funds, shares and banks from the dropdown — the ID fills in for you."),
+    ("tip", "Searching a long list? Type a few letters, press Enter, then open the dropdown."),
+    ("tip", "Selling a fund? Log it on MF_SIP as a purchase with a minus amount."),
+    ("space",),
 
-    ("h", "Add a family member"),
-    ('', 'When you run "Update Portfolio" it asks "Add a new person?" — just type a'),
-    ("", "name and their tab is built for you. (Or type the name into a yellow box on"),
-    ("", "the Dashboard yourself.) Then use that same name in the Owner column of any"),
-    ("", "holding, and their totals roll into the family total and charts."),
-    ("", ""),
+    ("section", "👥", "Add a family member"),
+    ("text", 'When you run "Update Portfolio" it asks “Add a new person?” — type a name and'),
+    ("text", "their tab is built for you. Then use that same name in the Owner column of any holding."),
+    ("space",),
 
-    ("h", "Keep it up to date"),
-    ('', 'Close the file and double-click "Update Portfolio". One run backs up your'),
-    ("", "file first, then refreshes share prices, fund values, splits & bonuses, and"),
-    ("", "every return figure. Do it whenever you like — once a week is plenty."),
-    ("", ""),
+    ("section", "🔄", "Keep it up to date"),
+    ("text", 'Close the file and double-click "Update Portfolio". It backs up your file first, then'),
+    ("text", "refreshes prices, fund values, splits & bonuses and every return figure. Weekly is plenty."),
+    ("space",),
 
-    ("h", "What it quietly handles for you (nothing to do)"),
-    ("", "    Splits & bonuses  —  your share count updates in the 'Qty today' column;"),
-    ("", "                         the numbers you typed are never changed."),
-    ("", "    PPF interest      —  worked out exactly if you list deposits on PPF_Ledger,"),
-    ("", "                         otherwise it uses the balance you typed."),
-    ("", "    An old share whose —  bought before Feb 2018? Leave 'Avg. cost' blank and"),
-    ("", "    price you forget       it fills in the official 2018 value for you."),
-    ("", "    A delisted stock  —  kept at its last known price and shaded amber."),
-    ("", ""),
+    ("section", "✨", "What it quietly handles for you"),
+    ("kv", "Splits & bonuses", "your share count updates in 'Qty today' — your typed numbers never change"),
+    ("kv", "PPF interest", "exact if you list deposits on PPF_Ledger, otherwise your typed balance is used"),
+    ("kv", "A forgotten old cost", "bought before Feb 2018? leave 'Avg. cost' blank — it fills in the 2018 value"),
+    ("kv", "Delisted stocks", "kept at their last known price and shaded amber"),
+    ("space",),
 
-    ("h", "Good to know"),
-    ("", "    •  Return figures (XIRR) are filled in by the updater — run it again after"),
-    ("", "       you add or change holdings."),
-    ("", "    •  Add, delete or sort rows freely. Just don't rename the tabs — the"),
-    ("", "       Dashboard finds them by name."),
-    ('', '    •  Change "Inflation %" on the Dashboard to watch the 20-year Projection'),
-    ("", "       react instantly."),
-    ("", "    •  The Master tabs (the fund and stock lists) look after themselves —"),
-    ("", "       don't edit them by hand."),
-    ("", "    •  Nothing about your money ever leaves your computer."),
-    ("", ""),
-    ("", "Questions, help and new versions:   github.com/jay-parikh/NetWorth"),
+    ("section", "💡", "Good to know"),
+    ("bullet", "Return figures (XIRR) are filled in by the updater — run it again after you make changes."),
+    ("bullet", "Add, delete or sort rows freely. Just don't rename the tabs — the Dashboard finds them by name."),
+    ("bullet", 'Change "Inflation %" on the Dashboard to watch the 20-year Projection react instantly.'),
+    ("bullet", "The Master tabs (fund & stock lists) look after themselves — don't edit them by hand."),
+    ("bullet", "Nothing about your money ever leaves your computer."),
+    ("space",),
+
+    ("footer", "Questions, help and new versions:    github.com/jay-parikh/NetWorth"),
 ]

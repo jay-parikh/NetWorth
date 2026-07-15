@@ -70,16 +70,6 @@ def _formats(wb: xlsxwriter.Workbook) -> dict:
         # amber = degraded data: stale price, suspended/delisted, FMV-estimated cost
         "cf_amber": f(bg_color="#FFE8C4"),
         "amber_price": f(bg_color="#FFE8C4", num_format="#,##0.00"),
-        # Guide sheet
-        "g_title": f(bold=True, font_size=16, font_color="#1F3864"),
-        "g_h": f(bold=True, font_size=12, font_color="#1F4E9C", bottom=1,
-                 bottom_color="#BFBFBF"),
-        "g_body": f(font_size=11, font_color="#333333"),
-        "g_blue": f(bold=True, font_size=11, font_color=BLUE),
-        "g_grey": f(bold=True, font_size=11, font_color="#7F7F7F"),
-        "g_green": f(bold=True, font_size=11, font_color="#1F7A1F"),
-        "g_red": f(bold=True, font_size=11, font_color="#C00000"),
-        "g_amber": f(bold=True, font_size=11, font_color="#B8860B"),
     }
 
 
@@ -953,32 +943,81 @@ def _write_history(wb, F, data: PortfolioData):
 
 def _write_guide(wb, F):
     ws = wb.add_worksheet("Guide")
-    ws.set_column("A:A", 96)
-    ws.hide_gridlines(2)                      # cleaner, page-like look
-    b = F["g_body"]
-    r = 0
-    for style, text in GUIDE_ROWS:
-        if style == "title":
-            ws.set_row(r, 24)
-            ws.write(r, 0, text, F["g_title"])
-        elif style == "h":
-            ws.set_row(r, 20)
-            ws.write(r, 0, text, F["g_h"])
-        elif style == "legend":
-            ws.write_rich_string(
-                r, 0,
-                F["g_blue"], "Blue / yellow", b, " cells = you type here.        ",
-                F["g_grey"], "Grey", b, " cells = worked out for you.")
-            r += 1
-            ws.write_rich_string(
-                r, 0,
-                F["g_green"], "Green", b, " = gain.     ",
-                F["g_red"], "Red", b, " = loss.     ",
-                F["g_amber"], "Amber", b,
-                " = take a look (old price, delisted, or an estimate).")
-        elif text:
-            ws.write(r, 0, text, b)
-        r += 1
+    ws.hide_gridlines(2)                       # page-like look
+    ws.set_column("A:A", 2)                    # left margin
+    ws.set_column("B:B", 4)                    # icon / badge / swatch
+    ws.set_column("C:C", 96)                   # content
+
+    def fmt(**kw):
+        return wb.add_format(kw)
+
+    NAVY = "#1F3864"
+    PALETTE = ["#2E5A9C", "#2E7D5B", "#9C5A2E", "#6A4C93", "#1F6F78", "#B5522E", "#4C6A2E"]
+    f_title = fmt(bold=True, font_size=18, font_color="white", bg_color=NAVY,
+                  valign="vcenter", indent=1)
+    f_sub = fmt(font_size=11, italic=True, font_color="#D6E0F0", bg_color=NAVY,
+                valign="vcenter", indent=1)
+    f_body = fmt(font_size=11, font_color="#333333", valign="vcenter")
+    f_tip = fmt(font_size=10.5, italic=True, font_color="#6A6A6A", valign="vcenter")
+    f_footer = fmt(font_size=10.5, font_color="#8A8A8A", top=1, top_color="#D0D0D0",
+                   valign="vcenter")
+    f_badge = fmt(bold=True, font_color="white", bg_color="#2E5A9C",
+                  align="center", valign="vcenter")
+    sw_yellow = fmt(bg_color="#FFF2CC", border=1, border_color="#D6C089")
+    sw_grey = fmt(bg_color="#F2F2F2", border=1, border_color="#C9C9C9")
+    # font-only fragments for rich strings
+    rf_body = fmt(font_size=11, font_color="#333333")
+    rf_key = fmt(bold=True, font_size=11, font_color=NAVY)
+    rf_bul = fmt(bold=True, font_size=11, font_color="#2E5A9C")
+    rf_green = fmt(bold=True, font_size=11, font_color="#1F7A1F")
+    rf_red = fmt(bold=True, font_size=11, font_color="#C00000")
+    rf_amber = fmt(bold=True, font_size=11, font_color="#B8860B")
+    band_cache: dict[str, object] = {}
+
+    def band(color):
+        if color not in band_cache:
+            band_cache[color] = fmt(bold=True, font_size=12, font_color="white",
+                                    bg_color=color, valign="vcenter", indent=1)
+        return band_cache[color]
+
+    r, sec = 0, 0
+    for row in GUIDE_ROWS:
+        kind = row[0]
+        if kind == "title":
+            ws.merge_range(r, 0, r, 2, row[1], f_title); ws.set_row(r, 34); r += 1
+            ws.merge_range(r, 0, r, 2, row[2], f_sub); ws.set_row(r, 22); r += 1
+        elif kind == "section":
+            ws.merge_range(r, 0, r, 2, f"{row[1]}   {row[2]}",
+                           band(PALETTE[sec % len(PALETTE)])); sec += 1
+            ws.set_row(r, 24); r += 1
+        elif kind == "legend":
+            ws.write_blank(r, 1, None, sw_yellow)
+            ws.write(r, 2, "You type into the blue / yellow cells — only these.", f_body)
+            ws.set_row(r, 17); r += 1
+            ws.write_blank(r, 1, None, sw_grey)
+            ws.write(r, 2, "Grey cells are worked out for you — leave them alone.", f_body)
+            ws.set_row(r, 17); r += 1
+            ws.write_rich_string(r, 2, rf_green, "Green", rf_body, " = gain      ",
+                                 rf_red, "Red", rf_body, " = loss      ",
+                                 rf_amber, "Amber", rf_body, " = take a look")
+            ws.set_row(r, 17); r += 1
+        elif kind == "step":
+            ws.write(r, 1, row[1], f_badge)
+            ws.write(r, 2, row[2], f_body); ws.set_row(r, 20); r += 1
+        elif kind == "kv":
+            ws.write_rich_string(r, 2, rf_key, row[1] + "   ", rf_body, "— " + row[2])
+            ws.set_row(r, 16); r += 1
+        elif kind == "bullet":
+            ws.write_rich_string(r, 2, rf_bul, "•   ", rf_body, row[1])
+            ws.set_row(r, 16); r += 1
+        elif kind == "tip":
+            ws.write(r, 2, "Tip ·  " + row[1], f_tip); ws.set_row(r, 16); r += 1
+        elif kind == "text":
+            ws.write(r, 2, row[1], f_body); ws.set_row(r, 16); r += 1
+        elif kind == "footer":
+            ws.write(r, 2, row[1], f_footer); ws.set_row(r, 24); r += 1
+        elif kind == "space":
+            ws.set_row(r, 7); r += 1
     return ws
 
 
