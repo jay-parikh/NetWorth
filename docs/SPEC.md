@@ -421,7 +421,7 @@ not abort the sweep; only an all-symbol failure degrades (keep existing rows).
 |---|---|---|
 | `fmv_2018-01-31.csv` | `isin, symbol, fmv` | NSE bhavcopy of 2018-01-31 (EQ/BE/BZ series, 1,639 ISINs); FMV = that day's **high** price (IT Act grandfathering definition). The symbol column enables lookup when a later corporate action reissued the ISIN (e.g. HDFC Bank post-split) |
 | `banks_in.csv` | `bank_name, type` | RBI scheduled commercial banks list + major SFB/payment/co-op banks |
-| `ppf_rates.csv` | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
+| `ppf_rates.csv` *(roadmap — ships with the PPF contribution ledger)* | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
 
 ---
 
