@@ -8,7 +8,11 @@ VERSION="${1:?usage: packaging/build-release.sh <version>}"
 
 python -m venv .venv-build 2>/dev/null || true
 source .venv-build/bin/activate
-pip -q install -e . pyinstaller
+# Old pip cannot install a pyproject-only project; upgrade first, then a
+# regular (non-editable) install — editable is a dev convenience, not needed
+# to build a release artifact.
+pip -q install --upgrade pip setuptools wheel
+pip -q install . pyinstaller
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$OS" in
