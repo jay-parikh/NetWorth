@@ -1,0 +1,59 @@
+# Builds the per-OS release zips when a v* tag is pushed, and attaches them
+# to the GitHub Release. Runs the test suite first on all three OSes.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            osname: windows
+          - os: macos-latest
+            osname: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e . pyinstaller
+      - run: python -m networth.generate -o Family_Portfolio_Tracker.xlsx
+      - run: pyinstaller --distpath dist -y networth-update.spec
+        working-directory: packaging
+      - name: Stage release folder
+        shell: bash
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          STAGE="NetWorth-$V-${{ matrix.osname }}"
+          mkdir "$STAGE"
+          cp Family_Portfolio_Tracker.xlsx "$STAGE/"
+          cp packaging/README-enduser.txt "$STAGE/README.txt"
+          if [ "${{ matrix.osname }}" = "windows" ]; then
+            cp "packaging/dist/Update Portfolio.exe" "$STAGE/"
+          else
+            cp packaging/dist/networth-updater "$STAGE/"
+            cp "packaging/Update Portfolio.command" "$STAGE/"
+            chmod +x "$STAGE/Update Portfolio.command" "$STAGE/networth-updater"
+          fi
+          7z a "$STAGE.zip" "$STAGE"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: NetWorth-*.zip
