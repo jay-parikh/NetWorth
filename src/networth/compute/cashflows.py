@@ -1,0 +1,128 @@
+"""Cashflow assembly per asset class (SPEC §6.2) and XIRR aggregation.
+
+Rows missing a required input are silently skipped — same behaviour as the
+legacy PowerShell Update-PortfolioXirr. All results may be None (blank cell).
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from ..model import ClassXirr, PortfolioData
+from .xirr import xirr
+
+Flow = tuple[date, float]
+
+
+def _yearfrac(a: date, b: date) -> float:
+    return (b - a).days / 365.0
+
+
+def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
+    flows: list[Flow] = []
+    for r in data.equity:
+        if not (r.qty and r.avg_cost and r.close and r.cost_date):
+            continue
+        if r.cost_date >= today:
+            continue
+        flows.append((r.cost_date, -r.qty * r.avg_cost))
+        flows.append((today, r.qty * r.close))
+    return flows
+
+
+def _sip_units(row) -> float | None:
+    if row.units_override is not None:
+        return row.units_override
+    if row.amount and row.nav:
+        return row.amount / row.nav
+    return None
+
+
+def mf_flows_by_fund(data: PortfolioData, today: date,
+                     nav_by_key: dict[tuple[str, str], float]
+                     ) -> dict[tuple[str, str], list[Flow]]:
+    """Flows per (owner, scheme). nav_by_key gives the current NAV per fund."""
+    funds: dict[tuple[str, str], list[Flow]] = {}
+    units: dict[tuple[str, str], float] = {}
+    for r in data.sip:
+        if not (r.owner and r.scheme and r.txn_date and r.amount):
+            continue
+        key = (r.owner, r.scheme)
+        funds.setdefault(key, []).append((r.txn_date, -r.amount))
+        u = _sip_units(r)
+        if u is not None:
+            units[key] = units.get(key, 0.0) + u
+    for key, flows in funds.items():
+        nav = nav_by_key.get(key)
+        if nav and units.get(key):
+            flows.append((today, units[key] * nav))
+    return funds
+
+
+def fd_flows(data: PortfolioData, today: date) -> list[Flow]:
+    flows: list[Flow] = []
+    for r in data.fixed_deposits:
+        if not (r.principal and r.rate and r.start and r.maturity and r.comp_per_year):
+            continue
+        if r.start >= today:
+            continue
+        asof = min(today, r.maturity)
+        n = r.comp_per_year
+        value = r.principal * (1 + (r.rate / 100) / n) ** (n * _yearfrac(r.start, asof))
+        flows.append((r.start, -r.principal))
+        flows.append((asof, value))
+    return flows
+
+
+def ppf_flows(data: PortfolioData, today: date) -> list[Flow]:
+    flows: list[Flow] = []
+    for r in data.ppf:
+        if not (r.balance and r.rate and r.as_on):
+            continue
+        if r.as_on >= today:
+            continue
+        value = r.balance * (1 + r.rate / 100) ** _yearfrac(r.as_on, today)
+        flows.append((r.as_on, -r.balance))
+        flows.append((today, value))
+    return flows
+
+
+def bond_flows(data: PortfolioData, today: date) -> list[Flow]:
+    flows: list[Flow] = []
+    for r in data.bonds:
+        if not (r.qty and r.buy_price and r.cur_price and r.buy_date):
+            continue
+        if r.buy_date >= today:
+            continue
+        flows.append((r.buy_date, -r.qty * r.buy_price))
+        flows.append((today, r.qty * r.cur_price))
+    return flows
+
+
+def compute_all_xirr(data: PortfolioData, today: date | None = None) -> ClassXirr:
+    """Class + portfolio XIRR, plus per-fund XIRR written into data.mutual_funds."""
+    today = today or date.today()
+
+    nav_by_key = {
+        (m.owner, m.scheme): m.current_nav
+        for m in data.mutual_funds if m.current_nav
+    }
+    per_fund = mf_flows_by_fund(data, today, nav_by_key)
+    for m in data.mutual_funds:
+        flows = per_fund.get((m.owner, m.scheme))
+        m.xirr = xirr(flows) if flows else None
+
+    eq = equity_flows(data, today)
+    mf = [f for flows in per_fund.values() for f in flows]
+    fd = fd_flows(data, today)
+    ppf = ppf_flows(data, today)
+    bonds = bond_flows(data, today)
+
+    return ClassXirr(
+        portfolio=xirr(eq + mf + fd + ppf + bonds),
+        equity=xirr(eq),
+        mutual_funds=xirr(mf),
+        fixed_deposits=xirr(fd),
+        ppf=xirr(ppf),
+        bonds=xirr(bonds),
+    )
