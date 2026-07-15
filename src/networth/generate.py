@@ -70,6 +70,16 @@ def _formats(wb: xlsxwriter.Workbook) -> dict:
         # amber = degraded data: stale price, suspended/delisted, FMV-estimated cost
         "cf_amber": f(bg_color="#FFE8C4"),
         "amber_price": f(bg_color="#FFE8C4", num_format="#,##0.00"),
+        # Guide sheet
+        "g_title": f(bold=True, font_size=16, font_color="#1F3864"),
+        "g_h": f(bold=True, font_size=12, font_color="#1F4E9C", bottom=1,
+                 bottom_color="#BFBFBF"),
+        "g_body": f(font_size=11, font_color="#333333"),
+        "g_blue": f(bold=True, font_size=11, font_color=BLUE),
+        "g_grey": f(bold=True, font_size=11, font_color="#7F7F7F"),
+        "g_green": f(bold=True, font_size=11, font_color="#1F7A1F"),
+        "g_red": f(bold=True, font_size=11, font_color="#C00000"),
+        "g_amber": f(bold=True, font_size=11, font_color="#B8860B"),
     }
 
 
@@ -943,12 +953,32 @@ def _write_history(wb, F, data: PortfolioData):
 
 def _write_guide(wb, F):
     ws = wb.add_worksheet("Guide")
-    ws.set_column("A:A", 100)
-    for i, row in enumerate(GUIDE_ROWS):
-        fmt = F["title"] if i == 0 else None
-        for c, text in enumerate(row):
-            if text:
-                ws.write(i, c, text, fmt)
+    ws.set_column("A:A", 96)
+    ws.hide_gridlines(2)                      # cleaner, page-like look
+    b = F["g_body"]
+    r = 0
+    for style, text in GUIDE_ROWS:
+        if style == "title":
+            ws.set_row(r, 24)
+            ws.write(r, 0, text, F["g_title"])
+        elif style == "h":
+            ws.set_row(r, 20)
+            ws.write(r, 0, text, F["g_h"])
+        elif style == "legend":
+            ws.write_rich_string(
+                r, 0,
+                F["g_blue"], "Blue / yellow", b, " cells = you type here.        ",
+                F["g_grey"], "Grey", b, " cells = worked out for you.")
+            r += 1
+            ws.write_rich_string(
+                r, 0,
+                F["g_green"], "Green", b, " = gain.     ",
+                F["g_red"], "Red", b, " = loss.     ",
+                F["g_amber"], "Amber", b,
+                " = take a look (old price, delisted, or an estimate).")
+        elif text:
+            ws.write(r, 0, text, b)
+        r += 1
     return ws
 
 
