@@ -8,8 +8,11 @@ Track **Equity · Mutual Funds · Fixed Deposits · PPF · Bonds** in a single f
 Live prices, real returns (XIRR), automatic tax & corporate‑action handling —
 all on **your own computer**.
 
+![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)
+&nbsp;
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Platform](https://img.shields.io/badge/works%20on-Windows%20·%20macOS%20·%20Linux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
 ![Tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)
@@ -36,7 +39,7 @@ all on **your own computer**.
 |  |  |
 |---|---|
 | 🔒 **100% local** | Your holdings never leave your computer. The only internet use is downloading *public* prices (AMFI, BSE, NSE). No cloud, no account, no sign‑up, no tracking. |
-| 🪟🍎 **Windows & macOS** | One thing to double‑click. No Python, no setup — just Excel (or the free LibreOffice) to open the file. |
+| ![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white) ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white) **Works on both** | One thing to double‑click. No Python, no setup — just Excel (or the free LibreOffice) to open the file. |
 | 🧩 **Open & rebuildable** | The workbook is generated from code against a written [specification](docs/SPEC.md), so it can be re‑created — or re‑implemented in any language — from the spec alone. |
 
 ---
