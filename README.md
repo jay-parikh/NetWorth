@@ -14,7 +14,7 @@ handling, inflation-adjusted projections, and per-person views.
   specification ([docs/SPEC.md](docs/SPEC.md)), so the whole product can be
   re-implemented on any platform or language from the spec alone.
 
-> Status: **v1 feature-complete** — all milestones R0–R7 implemented, 55 tests,
+> Status: **v1 feature-complete** — all milestones R0–R7 implemented, 59 tests,
 > live-verified against real BSE/AMFI/NSE data. Next: the first tagged
 > release (`v1.0.0-rc.1` → binaries built by CI → verified on real
 > Windows/Mac → `v1.0.0`). See [docs/RELEASES.md](docs/RELEASES.md).
@@ -93,28 +93,117 @@ with all your data preserved.
 is preserved in [legacy/](legacy/) and still works — see
 [legacy/README.txt](legacy/README.txt).)*
 
-## For developers
+## Developer guide — build & run on Windows and macOS
 
-Python is the dev-time toolchain only; end users never need it.
+Python is the dev-time toolchain only; end users never need it. Everything
+below works identically on Windows, macOS and Linux unless a per-OS block
+says otherwise.
 
-```
+### Prerequisites
+
+| | Windows | macOS |
+|---|---|---|
+| Python **3.10+** | [python.org installer](https://www.python.org/downloads/) — defaults are fine (the `py` launcher is included; "Add to PATH" not required) | `python3` from [python.org](https://www.python.org/downloads/) or `brew install python` (the Xcode/CLT system Python 3.9 is too old) |
+| Git | [git-scm.com](https://git-scm.com/) or GitHub Desktop | `xcode-select --install` or `brew install git` |
+| Internet | needed once for `pip install`, and by the updater for market data | same |
+
+No compilers, no Excel, no admin rights needed to develop. Verify:
+`py -3 --version` (Windows) / `python3 --version` (macOS) prints ≥ 3.10.
+
+### Set up (once)
+
+**Windows** (Command Prompt or PowerShell, inside the repo folder):
+
+```bat
+py -3 -m venv .venv
+.venv\Scripts\activate
 pip install -e ".[dev]"
-python -m networth.generate           # build the template workbook from code
-python -m networth.update <file>      # run the updater against a workbook
-pytest                                # 55 tests: XIRR golden values, parsers,
-                                      # corp-action scenarios, round-trip identity
 ```
+
+**macOS / Linux** (Terminal, inside the repo folder):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+`-e` is an editable install: code changes take effect without reinstalling.
+Re-activate the venv (`.venv\Scripts\activate` / `source .venv/bin/activate`)
+whenever you open a new shell.
+
+### Everyday commands (venv active, any OS)
+
+```bash
+python -m networth.generate                 # build Family_Portfolio_Tracker.xlsx
+                                            #   from code, with sample data
+python -m networth.generate -o my.xlsx      # ...to a custom path
+python -m networth.update                   # refresh the workbook in the current
+                                            #   folder (must be CLOSED in Excel):
+                                            #   prices, NAVs, corp actions, XIRR
+python -m networth.update path\to\file.xlsx # ...a specific workbook
+pytest                                      # full suite (~60 tests, ~30 s):
+                                            #   XIRR golden values, feed parsers,
+                                            #   corp-action scenarios, round-trip
+                                            #   identity — no network needed
+pytest tests/test_generate.py -q            # quick structural checks only
+```
+
+The dev loop for template changes: edit `src/networth/generate.py` → run
+`python -m networth.generate` → open the xlsx and look → `pytest`. Never edit
+the generated file directly (see the maintainers note below).
+
+### Build the one-click apps (what end users download)
+
+Run **on the OS you're building for** — PyInstaller cannot cross-compile.
+From the repo root, *without* any venv active (the script makes its own):
+
+```bat
+:: Windows → dist\NetWorth-<version>-windows.zip  (+ Update Portfolio.exe)
+packaging\build-release.bat 1.0.0rc3
+```
+
+```bash
+# macOS  → dist/NetWorth-<version>-macos.zip
+#          (+ networth-updater binary and "Update Portfolio.command" launcher)
+packaging/build-release.sh 1.0.0rc3
+```
+
+Each zip contains the generated workbook, the updater app and a one-page
+README — the exact layout CI publishes on releases. First-run warnings are
+expected for unsigned builds: Windows SmartScreen → *More info → Run anyway*;
+macOS Gatekeeper → *right-click → Open*.
+
+### Troubleshooting
+
+- **`python`/`py` not found** — Windows: reinstall from python.org (the
+  Microsoft Store stub can shadow it; `py -3` is the reliable spelling).
+  macOS: use `python3`, not `python`.
+- **TLS/certificate errors during fetch** — corporate proxies/antivirus
+  intercept HTTPS; the updater already validates against the OS trust store
+  (`truststore`). In plain dev scripts, call
+  `import truststore; truststore.inject_into_ssl()` first.
+- **"workbook is open in Excel"** — the updater refuses by design; close the
+  file (and check for a leftover `~$...xlsx` lock file).
+- **NSE fetches are slow the first time** — the cookie warm-up request is
+  normal; BSE is the primary price source anyway.
+- **Charts vanished from a workbook you edited in code** — you saved it
+  through openpyxl. Regenerate with `python -m networth.generate`; openpyxl
+  is read-only in this codebase.
+
+### Layout & releasing
 
 Layout: `src/networth/generate.py` (xlsxwriter workbook builder) ·
 `reader.py` (openpyxl read-only round-trip) · `update.py` (orchestrator) ·
-`fetch/` (amfi, bhavcopy BSE→NSE, corporate_actions) · `compute/` (xirr,
-cashflows, projections) · `data/` (bundled bank list + FMV table) ·
-`packaging/` (PyInstaller spec, per-OS build scripts).
+`fetch/` (amfi, bhavcopy BSE→NSE, corporate_actions NSE+BSE) · `compute/`
+(xirr, cashflows, projections) · `data/` (bundled bank list + FMV table) ·
+`packaging/` (PyInstaller spec, per-OS build scripts) · `tests/`.
 
 Releasing: push a `v*` tag — [.github/workflows/release.yml](.github/workflows/release.yml)
 runs the test suite on Linux/Windows/macOS, builds both one-click zips and
 attaches them to the GitHub Release (tags containing `-` are marked
-pre-release automatically).
+pre-release automatically). To rehearse a release locally, run the
+`packaging/build-release.*` script for your OS as above.
 
 Key documents:
 
