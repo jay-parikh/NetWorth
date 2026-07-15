@@ -80,7 +80,10 @@ def test_dashboard_formulas(wb):
 
 def test_equity_sheet(wb):
     e = wb["Equity"]
-    assert e["I4"].value == '=IF($D4="","",$D4*IF($R4="",1,$R4)*$F4)'
+    assert e["I4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4)*$F4)'
+    assert e["O4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4))'
+    assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))'
+    assert e["O3"].value == "Qty today" and e["P3"].value == "Avg cost today"
     assert "MATCH($C4,Stock_Master!$B:$B,0)" in e["B4"].value
     assert e["N142"].value == pytest.approx(0.0664365522)
     assert e["C142"].value == "TOTAL"
@@ -113,7 +116,10 @@ def test_person_sheet_blocks(wb):
     a = wb["Amit"]
     assert a["B2"].value == "Amit"
     assert a["A14"].value == "EQUITY"
-    assert 'MATCH($B$2&"#"&1,Equity!$P:$P,0)' in a["A16"].value
+    assert 'MATCH($B$2&"#"&1,Equity!$Q:$Q,0)' in a["A16"].value
+    # person Qty/Avg-cost pull the post-action (demat) view
+    assert "INDEX(Equity!$O:$O" in a["C16"].value
+    assert "INDEX(Equity!$P:$P" in a["D16"].value
     assert a["A111"].value == "BONDS"
 
 

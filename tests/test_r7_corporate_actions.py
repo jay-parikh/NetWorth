@@ -159,8 +159,14 @@ def test_factor_flows_into_valuation_formulas(tmp_path):
     build_workbook(data, str(path))
     wb = load_workbook(path)
     e = wb["Equity"]
-    assert e["R4"].value == 2.0
-    assert e["I4"].value == '=IF($D4="","",$D4*IF($R4="",1,$R4)*$F4)'
+    assert e["S4"].value == 2.0
+    assert e["I4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4)*$F4)'
+    # demat-view columns derive from the same factor, zero user action
+    assert e["O4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4))'
+    assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))'
+    # family exposure counts post-action shares
+    bs = wb["By Scrip"]
+    assert "Equity!$O:$O" in bs["C4"].value
     ca = wb["Corporate_Actions"]
     assert ca["A3"].value == "Symbol"
     assert 'IF($C4="BONUS",1+$E4/$F4,$E4/$F4)' in ca["G4"].value

@@ -5,4 +5,4 @@ The workbook is a build artifact: `generate` builds it entirely from code,
 See docs/SPEC.md — this package is the reference implementation of that spec.
 """
 
-__version__ = "1.0.0rc2"
+__version__ = "1.0.0rc3"

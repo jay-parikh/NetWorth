@@ -105,8 +105,8 @@ def read_workbook(path: str) -> PortfolioData:
             close_date=_as_date(ws.cell(r, 8).value),
             cost_date=_as_date(ws.cell(r, 13).value),
             isin_override=_manual(ws.cell(r, 2).value),
-            fmv_used=_as_str(ws.cell(r, 17).value) == "FMV",
-            ca_factor=_as_float(ws.cell(r, 18).value),
+            fmv_used=_as_str(ws.cell(r, 18).value) == "FMV",      # R = Flags
+            ca_factor=_as_float(ws.cell(r, 19).value),            # S = Adj factor
         ))
 
     ws = wb["MutualFunds"]

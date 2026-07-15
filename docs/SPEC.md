@@ -193,9 +193,11 @@ Header row 3, data rows 4…140. Columns:
 | L | Day chg. | computed | `=IF(OR($G4="",$D4=""),"",$D4*($F4-$G4))` |
 | M | Cost date | input | drives per-row return annualisation & XIRR cashflows |
 | N | XIRR (per row) | computed | `=IF(OR($M4="",N($J4)=0,$I4="",TODAY()<=$M4),"",($I4/$J4)^(365/(TODAY()-$M4))-1)` — simple two-flow annualisation |
-| P | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
-| v1: Q | Flags | updater helper | `FMV` marks an avg-cost filled by the §6.6 fallback so the flag round-trips regeneration |
-| v1: R | Adj factor | **updater-written** | split/bonus multiplier since Cost date (§6.7); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($R4="",1,$R4)*price`; `Invested` stays raw |
+| v1: O | Qty today | computed | `=IF($D4="","",$D4*IF($S4="",1,$S4))` — post-split/bonus share count, the **demat view**; feeds By Scrip and the person sheets |
+| v1: P | Avg cost today | computed | `=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))` — cost per share in today's share terms |
+| Q | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
+| v1: R | Flags | updater helper | `FMV` marks an avg-cost filled by the §6.6 fallback so the flag round-trips regeneration |
+| v1: S | Adj factor | **updater-written** | split/bonus multiplier since Cost date (§6.7); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price`; `Invested` stays raw |
 
 Below the data block, one **updater-written** cell holds the equity-class
 XIRR (legacy: N142). v1 additions: status/staleness amber flags (§6.5),
@@ -547,12 +549,18 @@ for each Equity row (isin, qty_raw, cost_raw, cost_date):
   cost_adj = cost_raw / factor
 ```
 
-The updater writes `factor` into the Equity **R (Adj factor)** column (blank
+The updater writes `factor` into the Equity **S (Adj factor)** column (blank
 when 1); the sheet's Cur. val / Day chg. formulas multiply Quantity by it,
 while Invested (qty_raw·cost_raw) is unchanged by construction. XIRR and the
 FY-end estimate use the adjusted current value. Idempotent: recomputed from
 raw + action list every run; a future-dated action has factor 1 until its
 ex-date arrives.
+
+**Demat view — zero user action:** columns **O (Qty today)** and **P (Avg
+cost today)** re-express the holding in post-action terms (`D×factor`,
+`E÷factor`) so the sheet matches the user's demat/broker app after every
+split/bonus, purely from the Corporate_Actions sheet content. By Scrip
+quantities and the person-sheet Equity blocks read O/P (not raw D/E).
 
 The **Corporate_Actions sheet** is the audit trail: columns
 `Symbol, ISIN, Type (dropdown), Ex-Date, Ratio From, Ratio To, Factor

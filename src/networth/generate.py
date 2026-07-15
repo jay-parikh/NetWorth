@@ -271,7 +271,7 @@ _PERSON_BLOCKS = [
     # (title, block const, headers, source sheet, source cols, key col, fmts)
     ("EQUITY", M.PERSON_EQ_BLOCK,
      ["ISIN", "Scrip", "Qty", "Avg cost", "Cur. val", "Net chg.", "XIRR"],
-     "Equity", ["B", "C", "D", "E", "I", "K", "N"], "P",
+     "Equity", ["B", "C", "O", "P", "I", "K", "N"], "Q",   # O/P = post-action (demat) view
      ["c_text", "c_text", "c_text", "c_price", "c_money", "c_money", "c_pct"]),
     ("MUTUAL FUNDS", M.PERSON_MF_BLOCK,
      ["Fund House", "Scheme", "Units", "Cur NAV", "Cur. val", "Net chg.", "XIRR"],
@@ -350,7 +350,7 @@ def _write_equity(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Equity")
     _widths(ws, {"A": 12, "B": 15, "C": 34, "D": 10, "E": 12, "F": 13, "G": 12,
                  "H": 16, "I": 14, "J": 14, "K": 13, "L": 12, "M": 13, "N": 9,
-                 "P": 13, "Q": 6, "R": 10})
+                 "O": 11, "P": 15, "Q": 13, "R": 6, "S": 10})
     _sheet_head(ws, F, "EQUITY HOLDINGS",
                 "Yellow-ish/blue cells are inputs. Pick the Scrip from the dropdown — "
                 "ISIN fills itself. Prices refresh via the updater.")
@@ -358,16 +358,26 @@ def _write_equity(wb, F, data: PortfolioData):
                         "Closing Price", "Prev. close", "Closing Price Date",
                         "Cur. val", "Invested", "Net chg.", "Day chg.",
                         "Cost date", "XIRR"], F["header"])
-    ws.write("P3", "Key", F["header"])
-    ws.write("Q3", "Flags", F["key"])
-    ws.write("R3", "Adj factor", F["header"])
-    ws.write_comment("E3", "Leave blank for pre-Feb-2018 purchases whose price you "
-                           "don't know - the updater fills the 31-Jan-2018 FMV "
-                           "(LTCG grandfathering value) and marks the cell amber.")
-    ws.write_comment("R3", "Split/bonus multiplier since your Cost date, from the "
+    ws.write("O3", "Qty today", F["header"])
+    ws.write("P3", "Avg cost today", F["header"])
+    ws.write("Q3", "Key", F["header"])
+    ws.write("R3", "Flags", F["key"])
+    ws.write("S3", "Adj factor", F["header"])
+    ws.write_comment("D3", "As bought. After a split/bonus, 'Qty today' shows the "
+                           "post-action share count - matching your demat.")
+    ws.write_comment("E3", "As bought (per share). Leave blank for pre-Feb-2018 "
+                           "purchases whose price you don't know - the updater "
+                           "fills the 31-Jan-2018 FMV (LTCG grandfathering value) "
+                           "and marks the cell amber.")
+    ws.write_comment("O3", "Your holding after splits/bonuses (Quantity x Adj "
+                           "factor) - should match your demat. Updates "
+                           "automatically from the Corporate_Actions sheet.")
+    ws.write_comment("P3", "Cost per share today (Avg. cost / Adj factor) - "
+                           "comparable to your broker app after splits/bonuses.")
+    ws.write_comment("S3", "Split/bonus multiplier since your Cost date, from the "
                            "Corporate_Actions sheet (written by the updater). "
-                           "Cur. val and Day chg. use Quantity x Adj factor; your "
-                           "typed Quantity and Avg. cost stay as-purchased.")
+                           "Valuation uses Quantity x Adj factor; your typed "
+                           "Quantity and Avg. cost stay as-purchased.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.equity)}
     for r in range(M.FIRST_DATA_ROW, M.EQUITY_LAST_ROW + 1):
@@ -391,7 +401,7 @@ def _write_equity(wb, F, data: PortfolioData):
                                               "FMV (LTCG grandfathering value). "
                                               "Overtype with the real cost if you "
                                               "find it.")
-                    ws.write(f"Q{r}", "FMV", F["key"])
+                    ws.write(f"R{r}", "FMV", F["key"])
                 else:
                     ws.write_number(f"E{r}", row.avg_cost, F["in_price"])
             if row.close is not None:
@@ -403,21 +413,27 @@ def _write_equity(wb, F, data: PortfolioData):
             if row.cost_date is not None:
                 ws.write_datetime(f"M{r}", row.cost_date, F["in_date"])
         if row and row.ca_factor is not None:
-            ws.write_number(f"R{r}", row.ca_factor, F["c_units"])
+            ws.write_number(f"S{r}", row.ca_factor, F["c_units"])
         ws.write_formula(f"I{r}",
-                         f'=IF($D{r}="","",$D{r}*IF($R{r}="",1,$R{r})*$F{r})',
+                         f'=IF($D{r}="","",$D{r}*IF($S{r}="",1,$S{r})*$F{r})',
                          F["c_money"])
         ws.write_formula(f"J{r}", f'=IF(OR($D{r}="",$E{r}=""),"",$D{r}*$E{r})', F["c_money"])
         ws.write_formula(f"K{r}", f'=IF(OR($E{r}="",$D{r}=""),"",$I{r}-$J{r})', F["c_money"])
         ws.write_formula(f"L{r}",
                          f'=IF(OR($G{r}="",$D{r}=""),"",'
-                         f'$D{r}*IF($R{r}="",1,$R{r})*($F{r}-$G{r}))',
+                         f'$D{r}*IF($S{r}="",1,$S{r})*($F{r}-$G{r}))',
                          F["c_money"])
+        ws.write_formula(f"O{r}",
+                         f'=IF($D{r}="","",$D{r}*IF($S{r}="",1,$S{r}))',
+                         F["c_units"])
+        ws.write_formula(f"P{r}",
+                         f'=IF(OR($D{r}="",$E{r}=""),"",$E{r}/IF($S{r}="",1,$S{r}))',
+                         F["c_price"])
         ws.write_formula(
             f"N{r}",
             f'=IF(OR($M{r}="",N($J{r})=0,$I{r}="",TODAY()<=$M{r}),"",'
             f'($I{r}/$J{r})^(365/(TODAY()-$M{r}))-1)', F["c_pct"])
-        ws.write_formula(f"P{r}", _key_formula(r), F["key"])
+        ws.write_formula(f"Q{r}", _key_formula(r), F["key"])
 
     tr = M.EQUITY_TOTAL_ROW
     ws.write(f"C{tr}", "TOTAL", F["total_label"])
@@ -783,11 +799,11 @@ def _write_by_scrip(wb, F, data: PortfolioData):
             ws.write(f"A{r}", row.isin, F["in_text"])
             ws.write(f"B{r}", row.name, F["in_text"])
         ws.write_formula(f"C{r}",
-                         f'=IF($A{r}="","",SUMIF(Equity!$B:$B,$A{r},Equity!$D:$D))',
+                         f'=IF($A{r}="","",SUMIF(Equity!$B:$B,$A{r},Equity!$O:$O))',
                          F["c_text"])
         for col, person in zip(person_cols, data.persons):
             ws.write_formula(f"{col}{r}",
-                             f'=IF($A{r}="","",SUMIFS(Equity!$D:$D,Equity!$B:$B,$A{r},'
+                             f'=IF($A{r}="","",SUMIFS(Equity!$O:$O,Equity!$B:$B,$A{r},'
                              f'Equity!$A:$A,"{person}"))', F["c_text"])
         ws.write_formula(f"{curval_col}{r}",
                          f'=IF($A{r}="","",SUMIF(Equity!$B:$B,$A{r},Equity!$I:$I))',
