@@ -46,7 +46,13 @@ PERSON_PPF_BLOCK = (98, 100, 109)
 PERSON_BOND_BLOCK = (111, 113, 127)
 
 TEMPLATE_FILENAME = "Family_Portfolio_Tracker.xlsx"
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+# In a PyInstaller one-file binary the bundled data lives under _MEIPASS.
+import sys as _sys
+if getattr(_sys, "frozen", False):
+    DATA_DIR = Path(getattr(_sys, "_MEIPASS", ".")) / "data"
+else:
+    DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
 # ------------------------------------------------------------------ rows ----
@@ -161,8 +167,22 @@ class PortfolioData:
     bonds: list[BondRow] = field(default_factory=list)
     by_scrip: list[ScripRef] = field(default_factory=list)
     inflation_pct: float = 7
+    expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)
+    fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person
     xirr: ClassXirr = field(default_factory=ClassXirr)
     masters: Masters = field(default_factory=Masters)
+
+
+def load_banks(data_dir: Path = DATA_DIR) -> list[tuple[str, str]]:
+    """Bundled Indian bank list for the FD dropdown (SPEC §5.5)."""
+    import csv
+
+    with open(data_dir / "banks_in.csv", newline="", encoding="utf-8") as f:
+        rdr = csv.reader(f)
+        next(rdr)
+        rows = [(r[0], r[1] if len(r) > 1 else "") for r in rdr if r and r[0]]
+    rows.sort(key=lambda r: r[0].casefold())
+    return rows
 
 
 def load_masters(data_dir: Path = DATA_DIR,

@@ -71,7 +71,7 @@ def sample_portfolio() -> PortfolioData:
         fixed_deposits=[
             FDRow("Amit", "HDFC Bank", "FD-2024-0117", 500000, 7.1,
                   date(2024, 4, 1), date(2027, 4, 1), 4),
-            FDRow("Rahul", "SBI", "FD-2025-0342", 300000, 6.8,
+            FDRow("Rahul", "State Bank of India", "FD-2025-0342", 300000, 6.8,
                   date(2025, 1, 15), date(2028, 1, 15), 4),
         ],
         ppf=[

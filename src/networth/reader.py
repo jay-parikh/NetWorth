@@ -73,6 +73,13 @@ def read_workbook(path: str) -> PortfolioData:
     ]
     infl = _as_float(dash["E3"].value)
     data.inflation_pct = infl if infl is not None else 7
+    exp = _as_float(dash["E2"].value)
+    data.expected_return_pct = exp if exp is not None else 10
+    for r in range(6, 16):
+        person = _as_str(dash.cell(r, 1).value)
+        fy = _as_float(dash.cell(r, 8).value)
+        if person and fy is not None:
+            data.fy_expected[person] = fy
     data.xirr = ClassXirr(
         portfolio=_as_float(dash["B4"].value),
         equity=_as_float(dash["C20"].value),

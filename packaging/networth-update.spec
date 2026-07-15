@@ -9,7 +9,7 @@ a = Analysis(
     ["update_portfolio.py"],
     pathex=["../src"],
     binaries=[],
-    datas=[],
+    datas=[("../data/banks_in.csv", "data")],
     hiddenimports=["truststore"],
     hookspath=[],
     runtime_hooks=[],

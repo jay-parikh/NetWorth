@@ -64,7 +64,18 @@ def _formats(wb: xlsxwriter.Workbook) -> dict:
         "date_disp": f(num_format=DATE_FMT),
         "key": f(font_color=KEY, font_size=8),
         "section": f(bold=True, font_size=11),
+        # conditional-format overlays (SPEC §6.9)
+        "cf_green": f(font_color="#1F7A1F"),
+        "cf_red": f(font_color="#C00000"),
     }
+
+
+def _redgreen(ws, F, rng: str) -> None:
+    """Green ≥ 0 / red < 0 on gain-loss and return cells (SPEC §6.9)."""
+    ws.conditional_format(rng, {"type": "cell", "criteria": ">", "value": 0,
+                                "format": F["cf_green"]})
+    ws.conditional_format(rng, {"type": "cell", "criteria": "<", "value": 0,
+                                "format": F["cf_red"]})
 
 
 def _widths(ws, spec: dict[str, float]) -> None:
@@ -72,9 +83,10 @@ def _widths(ws, spec: dict[str, float]) -> None:
         ws.set_column(f"{col}:{col}", w)
 
 
-def _typeahead(anchor_sheet: str, name_list: str, col: str = "C") -> str:
+def _typeahead(anchor_sheet: str, name_list: str, col: str = "C",
+               anchor_col: str = "B") -> str:
     """SPEC §3.12 begins-with dropdown window formula."""
-    return (f"=OFFSET({anchor_sheet}!$B$3,"
+    return (f"=OFFSET({anchor_sheet}!${anchor_col}$3,"
             f"IFERROR(MATCH(${col}4&\"*\",{name_list},0),1),0,"
             f"MAX(1,COUNTIF({name_list},${col}4&\"*\")),1)")
 
@@ -114,13 +126,25 @@ def _master_lookup(scheme_cell: str, master_col: str) -> str:
 
 # ----------------------------------------------------------------- sheets ---
 
+def _fy_end_label() -> str:
+    from datetime import date as _date
+    today = _date.today()
+    fy_year = today.year if today <= _date(today.year, 3, 31) else today.year + 1
+    return f"Expected @ 31-Mar-{fy_year}"
+
+
 def _write_dashboard(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Dashboard")
-    _widths(ws, {"A": 16, "B": 15, "C": 15, "D": 15, "E": 14, "F": 15, "G": 16, "H": 15})
+    _widths(ws, {"A": 16, "B": 15, "C": 15, "D": 15, "E": 14, "F": 15, "G": 16, "H": 18})
     ws.write("A1", "FAMILY PORTFOLIO — NET WORTH TRACKER", F["title"])
     ws.set_row(0, 18)
     ws.write("A2", "As on", F["label"])
     ws.write_formula("B2", "=TODAY()", F["date_disp"])
+    ws.write("D2", "Expected return % p.a.", F["label"])
+    ws.write_number("E2", data.expected_return_pct, F["in_yellow"])
+    ws.write_comment("E2", "Your assumed annual return for Equity and Mutual Funds - "
+                           "drives only the 'Expected @ FY-end' estimate. Fixed income "
+                           "uses each row's own rate.")
     ws.write("A3", "Family net worth", F["label"])
     ws.write_formula("B3", "=G16", F["money_bold"])
     ws.write("A4", "Portfolio XIRR", F["label"])
@@ -135,8 +159,13 @@ def _write_dashboard(wb, F, data: PortfolioData):
     ws.write_formula(
         "F4", '=IF(B4="","",IF(B4>E3/100,"Beats inflation ✓","Below inflation ✗"))')
 
-    headers = ["Person", "Equity", "Mutual Funds", "Fixed Deposits", "PPF", "Bonds", "Total"]
+    headers = ["Person", "Equity", "Mutual Funds", "Fixed Deposits", "PPF", "Bonds",
+               "Total", _fy_end_label()]
     ws.write_row("A5", headers, F["header"])
+    ws.write_comment("H5", "Estimate of each person's total at the financial-year end: "
+                           "FDs/PPF/Bonds accrue at their own rates; Equity and Mutual "
+                           "Funds grow at the 'Expected return %' input (E2). Written "
+                           "by the updater.")
     class_cols = [("B", "Equity!$I:$I", "Equity!$A:$A"),
                   ("C", "MutualFunds!$I:$I", "MutualFunds!$A:$A"),
                   ("D", "FixedDeposits!$I:$I", "FixedDeposits!$A:$A"),
@@ -151,10 +180,14 @@ def _write_dashboard(wb, F, data: PortfolioData):
                              f'=IF($A{r}="","",SUMIFS({val_rng},{own_rng},$A{r}))',
                              F["c_money"])
         ws.write_formula(f"G{r}", f'=IF($A{r}="","",SUM(B{r}:F{r}))', F["c_money"])
+        fy = data.fy_expected.get(name)
+        if fy is not None:
+            ws.write_number(f"H{r}", fy, F["c_money"])
     tr = M.DASH_TOTAL_ROW
     ws.write(f"A{tr}", "TOTAL", F["total_label"])
     for col in "BCDEFG":
         ws.write_formula(f"{col}{tr}", f"=SUM({col}6:{col}15)", F["total"])
+    ws.write_formula(f"H{tr}", f"=IF(SUM(H6:H15)=0,\"\",SUM(H6:H15))", F["total"])
 
     ws.write("A18", "Allocation by asset class", F["section"])
     ws.write_row("A19", ["Asset class", "Value", "XIRR"], F["header"])
@@ -190,6 +223,10 @@ def _write_dashboard(wb, F, data: PortfolioData):
     bar.set_title({"name": "Net worth by person"})
     bar.set_legend({"none": True})
     ws.insert_chart("I21", bar, {"x_scale": 1.1, "y_scale": 1.1})
+
+    _redgreen(ws, F, "B4")
+    _redgreen(ws, F, "E4")
+    _redgreen(ws, F, "C20:C24")
     return ws
 
 
@@ -295,6 +332,10 @@ def _write_person(wb, F, name: str):
                     f'=IFERROR(INDEX({src}!${col}:${col},'
                     f'MATCH($B$2&"#"&{slot},{src}!${key_col}:${key_col},0)),"")',
                     F[fmt])
+        if title in ("EQUITY", "MUTUAL FUNDS"):
+            _redgreen(ws, F, f"F{first}:G{last}")      # Net chg. + XIRR
+        elif title == "BONDS":
+            _redgreen(ws, F, f"F{first}:F{last}")      # Net chg.
     ws.freeze_panes("A5")
     return ws
 
@@ -362,6 +403,10 @@ def _write_equity(wb, F, data: PortfolioData):
 
     _add_dropdown(ws, f"C4:C{M.EQUITY_LAST_ROW}",
                   _typeahead("Stock_Master", "Stock_NameList"), "Scrip")
+    _redgreen(ws, F, f"K4:L{M.EQUITY_LAST_ROW}")
+    _redgreen(ws, F, f"N4:N{M.EQUITY_LAST_ROW}")
+    _redgreen(ws, F, f"K{tr}:L{tr}")
+    _redgreen(ws, F, f"N{tr}")
     ws.freeze_panes("A4")
     return ws
 
@@ -428,6 +473,8 @@ def _write_mutualfunds(wb, F, data: PortfolioData):
 
     _add_dropdown(ws, f"C4:C{M.MF_LAST_ROW}",
                   _typeahead("MF_Master", "MF_SchemeList"), "Scheme Name")
+    _redgreen(ws, F, f"J4:L{M.MF_LAST_ROW}")
+    _redgreen(ws, F, f"J{tr}:L{tr}")
     ws.freeze_panes("A4")
     return ws
 
@@ -544,6 +591,26 @@ def _write_fd(wb, F, data: PortfolioData):
     ws.write(f"C{tr}", "TOTAL", F["total_label"])
     for col in "IJ":
         ws.write_formula(f"{col}{tr}", f"=SUM({col}4:{col}{M.FD_LAST_ROW})", F["total"])
+    _add_dropdown(ws, f"B4:B{M.FD_LAST_ROW}",
+                  _typeahead("Bank_Master", "Bank_NameList", col="B", anchor_col="A"),
+                  "Bank / Institution")
+    ws.freeze_panes("A4")
+    return ws
+
+
+def _write_bank_master(wb, F):
+    from .model import load_banks
+    ws = wb.add_worksheet("Bank_Master")
+    _widths(ws, {"A": 36, "B": 22})
+    ws.write("A1", "BANK MASTER (India)", F["title"])
+    ws.set_row(0, 18)
+    ws.write("A2", "Feeds the Bank dropdown on the FixedDeposits sheet. Bundled with "
+                   "the app and refreshed by new releases. Free text is always allowed "
+                   "on the FD sheet for anything not listed.", F["hint"])
+    ws.write_row("A3", ["Bank Name", "Type"], F["header"])
+    for i, (name, kind) in enumerate(load_banks()):
+        ws.write(3 + i, 0, name)
+        ws.write(3 + i, 1, kind)
     ws.freeze_panes("A4")
     return ws
 
@@ -585,7 +652,8 @@ def _write_ppf(wb, F, data: PortfolioData):
 def _write_bonds(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Bonds")
     _widths(ws, {"A": 12, "B": 26, "C": 16, "D": 8, "E": 12, "F": 11, "G": 13,
-                 "H": 13, "I": 14, "J": 13, "K": 13, "L": 12, "M": 12, "N": 13})
+                 "H": 13, "I": 14, "J": 13, "K": 13, "L": 12, "M": 12, "N": 13,
+                 "O": 15, "P": 19})
     _sheet_head(ws, F, "CORPORATE / OTHER BONDS",
                 "Fill Buy Date — rows without it stay out of XIRR. Current Price is "
                 "refreshed by the updater when the ISIN trades.")
@@ -594,6 +662,13 @@ def _write_bonds(wb, F, data: PortfolioData):
                         "Maturity Date", "Invested", "Cur. val", "Net chg.",
                         "Buy Date"], F["header"])
     ws.write("N3", "Key", F["header"])
+    ws.write("O3", "Maturity Value", F["header"])
+    ws.write("P3", "Coupons till maturity", F["header"])
+    ws.write_comment("O3", "Redemption at face value (Qty x Face). For cumulative/"
+                           "zero-coupon bonds set Face Value to the redemption amount "
+                           "and Coupon to 0.")
+    ws.write_comment("P3", "Simple sum of remaining annual coupons to maturity "
+                           "(not reinvested).")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.bonds)}
     for r in range(M.FIRST_DATA_ROW, M.BOND_LAST_ROW + 1):
@@ -620,11 +695,18 @@ def _write_bonds(wb, F, data: PortfolioData):
         ws.write_formula(f"K{r}", f'=IF(OR($D{r}="",$G{r}=""),"",$D{r}*$G{r})', F["c_money"])
         ws.write_formula(f"L{r}", f'=IF(OR($F{r}="",$D{r}=""),"",$K{r}-$J{r})', F["c_money"])
         ws.write_formula(f"N{r}", _key_formula(r), F["key"])
+        ws.write_formula(f"O{r}", f'=IF(OR($D{r}="",$E{r}=""),"",$D{r}*$E{r})', F["c_money"])
+        ws.write_formula(
+            f"P{r}",
+            f'=IF(OR($D{r}="",$E{r}="",$H{r}="",$I{r}="",$I{r}<=TODAY()),"",'
+            f'$D{r}*$E{r}*($H{r}/100)*YEARFRAC(TODAY(),$I{r}))', F["c_money"])
 
     tr = M.BOND_TOTAL_ROW
     ws.write(f"C{tr}", "TOTAL", F["total_label"])
-    for col in "JKL":
+    for col in "JKLOP":
         ws.write_formula(f"{col}{tr}", f"=SUM({col}4:{col}{M.BOND_LAST_ROW})", F["total"])
+    _redgreen(ws, F, f"L4:L{M.BOND_LAST_ROW}")
+    _redgreen(ws, F, f"L{tr}")
     ws.freeze_panes("A4")
     return ws
 
@@ -686,6 +768,9 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     wb.define_name(
         "Stock_NameList",
         "=Stock_Master!$B$4:INDEX(Stock_Master!$B:$B,COUNTA(Stock_Master!$B:$B)+2)")
+    wb.define_name(
+        "Bank_NameList",
+        "=Bank_Master!$A$4:INDEX(Bank_Master!$A:$A,COUNTA(Bank_Master!$A:$A)+2)")
 
     # tab order = SPEC §3.1
     _write_dashboard(wb, F, data)
@@ -707,6 +792,7 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
                   "stable. Do not edit by hand.",
                   ["Symbol", "Stock Name", "ISIN"],
                   data.masters.stock_rows, data.masters.stock_refreshed)
+    _write_bank_master(wb, F)
     _write_fd(wb, F, data)
     _write_ppf(wb, F, data)
     _write_bonds(wb, F, data)

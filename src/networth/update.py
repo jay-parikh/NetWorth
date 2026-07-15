@@ -17,6 +17,7 @@ from pathlib import Path
 
 from . import model as M
 from .compute.cashflows import compute_all_xirr
+from .compute.projections import fy_expected_by_person
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .generate import build_workbook
@@ -175,9 +176,11 @@ def run(path: Path, *, price_data=None, amfi_data=None,
         summary["mf_matched"] = matched
         summary["mf_total"] = len(data.mutual_funds)
 
-    # ---- XIRR (always recomputed from current values) ----
+    # ---- XIRR + FY-end estimate (always recomputed from current values) ----
     data.xirr = compute_all_xirr(data, today)
     summary["portfolio_xirr"] = data.xirr.portfolio
+    data.fy_expected = fy_expected_by_person(data, today)
+    summary["fy_expected_total"] = round(sum(data.fy_expected.values()), 2)
 
     # ---- regenerate, atomically ----
     tmp = path.with_name(path.stem + ".new" + path.suffix)
@@ -197,6 +200,8 @@ def _print_summary(s: dict) -> None:
     x = s.get("portfolio_xirr")
     print(f"XIRR       : portfolio {x:.2%}" if x is not None else
           "XIRR       : not enough dated cashflows yet")
+    if s.get("fy_expected_total"):
+        print(f"FY-end est : {s['fy_expected_total']:,.0f} (family total)")
     if s.get("backup"):
         print(f"Backup     : {s['backup']}")
     for w in s["warnings"]:

@@ -87,6 +87,38 @@ def ppf_flows(data: PortfolioData, today: date) -> list[Flow]:
     return flows
 
 
+def coupon_dates(maturity: date, after: date, before: date,
+                 freq: int = 1) -> list[date]:
+    """Coupon dates in (after, before], stepping back 12/freq months from
+    maturity (SPEC §6.3)."""
+    step_months = 12 // freq
+    dates = []
+    y, m, d = maturity.year, maturity.month, maturity.day
+    while True:
+        try:
+            c = date(y, m, d)
+        except ValueError:              # e.g. 29 Feb stepping into a non-leap year
+            c = date(y, m, 28)
+        if c <= after:
+            break
+        if c <= before:
+            dates.append(c)
+        m -= step_months
+        while m < 1:
+            m += 12
+            y -= 1
+    dates.sort()
+    return dates
+
+
+def bond_coupon_flows(r, today: date) -> list[Flow]:
+    """Historical coupons (buy_date, today] — feed XIRR (SPEC §6.3)."""
+    if not (r.qty and r.face and r.coupon and r.maturity and r.buy_date):
+        return []
+    amount = r.qty * r.face * (r.coupon / 100)
+    return [(c, amount) for c in coupon_dates(r.maturity, r.buy_date, today)]
+
+
 def bond_flows(data: PortfolioData, today: date) -> list[Flow]:
     flows: list[Flow] = []
     for r in data.bonds:
@@ -95,6 +127,7 @@ def bond_flows(data: PortfolioData, today: date) -> list[Flow]:
         if r.buy_date >= today:
             continue
         flows.append((r.buy_date, -r.qty * r.buy_price))
+        flows.extend(bond_coupon_flows(r, today))
         flows.append((today, r.qty * r.cur_price))
     return flows
 

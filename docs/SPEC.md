@@ -77,6 +77,7 @@ By Scrip. The generator derives all three from `persons`.
 | … | MF_SIP | data entry | one row per MF purchase/redemption |
 | … | MF_Master | master | AMFI scheme list (~14k rows) |
 | … | Stock_Master | master | listed-stock list (~4.5k rows) |
+| v1 | Bank_Master | master | bundled Indian bank list (Bank Name, Type; sorted; §3.11) |
 | … | FixedDeposits | data entry | FDs |
 | … | PPF | data entry | PPF accounts |
 | … | Bonds | data entry | corporate/other bonds |
@@ -135,8 +136,9 @@ Layout (columns A–G):
 | A19:B19 | headers `Asset class, Value` | static |
 | A20:B24 | Equity `=B16`, Mutual Funds `=C16`, Fixed Deposits `=D16`, PPF `=E16`, Bonds `=F16` | computed |
 | C20:C24 | per-class XIRR | **updater-written** |
-| v1: E5 area | `Expected return % p.a.` input (default 10) for the FY-end estimate; placed near the inflation input | **input** |
-| v1: H5, H6:H16 | `Expected @ 31-Mar-<FY>` per person + total (§6.8) | **updater-written** |
+| v1: D2/E2 | `Expected return % p.a.` label + input (default 10) for the FY-end estimate | **input** |
+| v1: H5, H6:H15 | `Expected @ 31-Mar-<FY>` header + per-person values (§6.8) | **updater-written** |
+| v1: H16 | total `=IF(SUM(H6:H15)=0,"",SUM(H6:H15))` | computed |
 
 Charts on Dashboard: **pie** “Allocation by asset class” (A20:B24) and
 **bar** “Net worth by person” (A6:A15 vs G6:G15).
@@ -281,7 +283,8 @@ FY-end purposes (contribution ledger is roadmap).
 | L | Net chg. | computed | `=K−J` |
 | M | Buy Date | input | required for XIRR; rows without it are skipped |
 | N | Key | helper | |
-| v1: O | Maturity Value | computed | `=IF(OR($D4="",$E4=""),"", $D4*$E4 + coupon remainder)` — for a plain coupon bond: redemption at face `D*E`; display alongside a `Total coupons till maturity` figure `D*E*(H/100)*YEARFRAC(TODAY(),I)` (simple, non-reinvested). Cumulative/zero bonds: leave H = 0 and set Face Value to the redemption amount |
+| v1: O | Maturity Value | computed | `=IF(OR($D4="",$E4=""),"",$D4*$E4)` — redemption at face. Cumulative/zero bonds: set H = 0 and Face Value = redemption amount |
+| v1: P | Coupons till maturity | computed | `=IF(OR($D4="",$E4="",$H4="",$I4="",$I4<=TODAY()),"",$D4*$E4*($H4/100)*YEARFRAC(TODAY(),$I4))` — simple, non-reinvested |
 
 v1: bond XIRR (per row and class) includes coupon cashflows: `+D*E*(H/100)/f`
 on each coupon date from Buy Date to today (f = coupon frequency, default
