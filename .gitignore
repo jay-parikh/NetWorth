@@ -1,20 +1,42 @@
-# Python
+# ---- Python ----
 __pycache__/
-*.pyc
-.venv/
-venv/
+*.py[cod]
+*.egg
 *.egg-info/
-.pytest_cache/
+.eggs/
+.Python
 
-# Build / packaging output
+# Virtual envs (dev + the build scripts' .venv-build / .venv-nowine)
+.venv/
+.venv*/
+venv/
+env/
+
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# ---- Build & packaging output ----
 build/
 dist/
 packaging/out/
+*.whl
+# NOTE: packaging/networth-update.spec is a tracked PyInstaller spec — do NOT ignore *.spec
 
-# Runtime artifacts of the updater
+# ---- Runtime artifacts of the updater ----
 backups/
 cache/
 *.log
+# atomic-replace temp if a run is interrupted
+*.new.xlsx
+# Excel lock file
+~$*.xlsx
 
 # Generated workbook at repo root (built via generate.py; released via GitHub Releases)
 /Family_Portfolio_Tracker.xlsx
@@ -22,6 +44,19 @@ cache/
 # The original hand-built template zip (contents preserved in legacy/)
 /Portfolio_Template.zip
 
-# OS noise
+# ---- Editors / IDEs ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bak
+
+# ---- OS noise ----
 .DS_Store
+.AppleDouble
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+Desktop.ini
