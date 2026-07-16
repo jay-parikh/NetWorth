@@ -108,6 +108,37 @@ def ppf_flows(data: PortfolioData, today: date) -> list[Flow]:
     return flows
 
 
+def epf_flows(data: PortfolioData, today: date) -> list[Flow]:
+    """EPF class cashflows (SPEC §6.2, v1.3): the PPF flat path verbatim —
+    passbook balance at as-on, accrued at the row's rate to today."""
+    flows: list[Flow] = []
+    for r in data.epf:
+        if not (r.balance and r.rate and r.as_on) or r.as_on >= today:
+            continue
+        value = r.balance * (1 + r.rate / 100) ** _yearfrac(r.as_on, today)
+        flows.append((r.as_on, -r.balance))
+        flows.append((today, value))
+    return flows
+
+
+def manual_asset_flows(data: PortfolioData, today: date,
+                       label: str) -> list[Flow]:
+    """Two-flow per hand-valued row (SPEC §6.2, v1.3): −Invested at cost
+    date, +Current value today. Rows without all three inputs are skipped;
+    Cash never reaches here (has_xirr = false)."""
+    flows: list[Flow] = []
+    for r in data.manual_assets:
+        if r.asset_class != label:
+            continue
+        if not (r.invested and r.cost_date and r.value):
+            continue
+        if r.cost_date >= today:
+            continue
+        flows.append((r.cost_date, -r.invested))
+        flows.append((today, r.value))
+    return flows
+
+
 def coupon_dates(maturity: date, after: date, before: date,
                  freq: int = 1) -> list[date]:
     """Coupon dates in (after, before], stepping back 12/freq months from
@@ -170,13 +201,22 @@ def compute_all_xirr(data: PortfolioData, today: date | None = None) -> ClassXir
     mf = [f for flows in per_fund.values() for f in flows]
     fd = fd_flows(data, today)
     ppf = ppf_flows(data, today)
+    epf = epf_flows(data, today)
     bonds = bond_flows(data, today)
+    re_ = manual_asset_flows(data, today, "Real Estate")
+    ins = manual_asset_flows(data, today, "Insurance")
+    oth = manual_asset_flows(data, today, "Other")
+    # Cash is excluded from XIRR entirely (has_xirr = false, SPEC §2.1)
 
     return ClassXirr(
-        portfolio=xirr(eq + mf + fd + ppf + bonds),
+        portfolio=xirr(eq + mf + fd + ppf + epf + bonds + re_ + ins + oth),
         equity=xirr(eq),
         mutual_funds=xirr(mf),
         fixed_deposits=xirr(fd),
         ppf=xirr(ppf),
+        epf=xirr(epf),
         bonds=xirr(bonds),
+        real_estate=xirr(re_),
+        insurance=xirr(ins),
+        other_assets=xirr(oth),
     )

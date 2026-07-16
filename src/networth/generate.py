@@ -140,6 +140,19 @@ def _fy_end_label() -> str:
     return f"Expected @ 31-Mar-{fy_year}"
 
 
+def _class_sumifs(cls, owner_ref: str) -> str:
+    """SUMIFS for a class total; shared-sheet classes add their Class filter."""
+    extra = (f',{cls.class_filter[0]},"{cls.class_filter[1]}"'
+             if cls.class_filter else "")
+    return f"SUMIFS({cls.value_col},{cls.owner_col},{owner_ref}{extra})"
+
+
+def _class_countifs(cls, owner_ref: str) -> str:
+    extra = (f',{cls.class_filter[0]},"{cls.class_filter[1]}"'
+             if cls.class_filter else "")
+    return f"COUNTIFS({cls.owner_col},{owner_ref}{extra})"
+
+
 def _history_classes(data: PortfolioData):
     """History columns: classes that are enabled OR carry nonzero history —
     an old trend line never disappears because a class was switched off."""
@@ -256,7 +269,7 @@ def _write_dashboard(wb, F, data: PortfolioData):
         for cls in enabled:
             ws.write_formula(
                 f"{col_of[cls.key]}{r}",
-                f'=IF($A{r}="","",SUMIFS({cls.value_col},{cls.owner_col},$A{r}))',
+                f'=IF($A{r}="","",{_class_sumifs(cls, f"$A{r}")})',
                 F["c_money"])
         if n:
             ws.write_formula(f"{total_col}{r}",
@@ -481,10 +494,8 @@ def _write_person(wb, F, name: str, data: PortfolioData):
     for i, cls in enumerate(enabled):
         r = 6 + i
         ws.write(f"A{r}", cls.label)
-        ws.write_formula(f"B{r}",
-                         f"=SUMIFS({cls.value_col},{cls.owner_col},$B$2)",
-                         F["c_money"])
-        ws.write_formula(f"C{r}", f"=COUNTIF({cls.owner_col},$B$2)", F["c_text"])
+        ws.write_formula(f"B{r}", f"={_class_sumifs(cls, '$B$2')}", F["c_money"])
+        ws.write_formula(f"C{r}", f"={_class_countifs(cls, '$B$2')}", F["c_text"])
     ws.write(f"A{total_row}", "Total", F["total_label"])
     ws.write_formula(f"B{total_row}", f"=SUM(B6:B{total_row - 1})", F["total"])
     ws.write_formula(f"C{total_row}", f"=SUM(C6:C{total_row - 1})", F["total"])
@@ -1009,6 +1020,115 @@ def _write_bonds(wb, F, data: PortfolioData):
     return ws
 
 
+def _write_epf(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("EPF")
+    _widths(ws, {"A": 12, "B": 24, "C": 16, "D": 15, "E": 12, "F": 10,
+                 "G": 24, "H": 15, "I": 2, "J": 12})
+    _sheet_head(ws, F, "EPF — EMPLOYEES' PROVIDENT FUND",
+                "Copy the balance and its date from your EPFO passbook - "
+                "that's all. It grows at the current EPF rate (filled in for "
+                "you) until you paste a newer balance.")
+    ws.write_row("A3", ["Owner", "Establishment / UAN", "Member ID",
+                        "Current Balance", "Balance as-on", "Rate %", "Notes",
+                        "Balance today"], F["header"])
+    ws.write("J3", "Key", F["key"])
+    ws.write_comment("D3", "The closing balance shown on your EPFO passbook "
+                           "(employee + employer share).")
+    ws.write_comment("F3", "The EPFO annual rate. Left blank, the updater "
+                           "fills the current declared rate.")
+    ws.write_comment("H3", "Passbook balance grown at Rate % from the as-on "
+                           "date - an estimate until a contribution ledger "
+                           "lands (roadmap). Exact figure: your passbook.")
+    by_row = {M.FIRST_DATA_ROW + i: e for i, e in enumerate(data.epf)}
+    for r in range(M.FIRST_DATA_ROW, M.EPF_LAST_ROW + 1):
+        e = by_row.get(r)
+        if e:
+            ws.write(f"A{r}", e.owner, F["in_text"])
+            ws.write(f"B{r}", e.establishment, F["in_text"])
+            ws.write(f"C{r}", e.member_id, F["in_text"])
+            if e.balance is not None:
+                ws.write_number(f"D{r}", e.balance, F["in_money"])
+            if e.as_on:
+                ws.write_datetime(f"E{r}", e.as_on, F["in_date"])
+            if e.rate is not None:
+                ws.write_number(f"F{r}", e.rate, F["in_rate"])
+            if e.notes:
+                ws.write(f"G{r}", e.notes, F["in_text"])
+        ws.write_formula(
+            f"H{r}",
+            f'=IF($D{r}="","",IF(OR($E{r}="",$F{r}=""),$D{r},'
+            f'$D{r}*(1+$F{r}/100)^YEARFRAC($E{r},TODAY())))',
+            F["c_money"])
+        ws.write_formula(f"J{r}", _key_formula(r), F["key"])
+    tr = M.EPF_LAST_ROW + 2
+    ws.write(f"C{tr}", "TOTAL", F["total_label"])
+    ws.write_formula(f"H{tr}", f"=SUM(H4:H{M.EPF_LAST_ROW})", F["total"])
+    ws.freeze_panes("A4")
+    return ws
+
+
+def _write_manual_assets(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("Manual_Assets")
+    _widths(ws, {"A": 12, "B": 13, "C": 28, "D": 20, "E": 14, "F": 13,
+                 "G": 16, "H": 13, "I": 14, "J": 30, "K": 12})
+    _sheet_head(ws, F, "OTHER ASSETS — VALUED BY YOU",
+                "The house, savings accounts, insurance surrender values, "
+                "anything else. Type today's value and its date - refresh it "
+                "now and then (the date turns amber after 90 days).")
+    ws.write_row("A3", ["Owner", "Class", "Description", "Institution / Ref",
+                        "Invested / Cost", "Cost date", "Current value ₹",
+                        "Value as-on", "Net chg.", "Notes"], F["header"])
+    ws.write("K3", "Key", F["key"])
+    ws.write_comment("B3", "Real Estate / Cash / Insurance / Other - each is "
+                           "its own line on the Dashboard.")
+    ws.write_comment("E3", "Optional. Real estate: purchase cost. Insurance: "
+                           "premiums paid so far. Enables Net chg. and a "
+                           "return figure.")
+    ws.write_comment("G3", "What it is worth today: market estimate, account "
+                           "balance, or the insurer's surrender value.")
+    ws.write_comment("H3", "When you last checked the value. Amber after 90 "
+                           "days - hand-typed values rot silently.")
+    by_row = {M.FIRST_DATA_ROW + i: a for i, a in enumerate(data.manual_assets)}
+    for r in range(M.FIRST_DATA_ROW, M.MA_LAST_ROW + 1):
+        a = by_row.get(r)
+        if a:
+            ws.write(f"A{r}", a.owner, F["in_text"])
+            ws.write(f"B{r}", a.asset_class, F["in_text"])
+            ws.write(f"C{r}", a.description, F["in_text"])
+            ws.write(f"D{r}", a.institution, F["in_text"])
+            if a.invested is not None:
+                ws.write_number(f"E{r}", a.invested, F["in_money"])
+            if a.cost_date:
+                ws.write_datetime(f"F{r}", a.cost_date, F["in_date"])
+            if a.value is not None:
+                ws.write_number(f"G{r}", a.value, F["in_money"])
+            if a.as_on:
+                ws.write_datetime(f"H{r}", a.as_on, F["in_date"])
+            if a.notes:
+                ws.write(f"J{r}", a.notes, F["in_text"])
+        ws.write_formula(f"I{r}",
+                         f'=IF(OR($E{r}="",$G{r}=""),"",$G{r}-$E{r})',
+                         F["c_money"])
+        ws.write_formula(f"K{r}", _key_formula(r), F["key"])
+    tr = M.MA_LAST_ROW + 2
+    ws.write(f"C{tr}", "TOTAL", F["total_label"])
+    ws.write_formula(f"G{tr}", f"=SUM(G4:G{M.MA_LAST_ROW})", F["total"])
+    ws.data_validation(f"B4:B{M.MA_LAST_ROW}", {
+        "validate": "list",
+        "source": M.MANUAL_CLASS_LABELS,
+        "show_error": False,
+        "input_title": "Asset class",
+        "input_message": "Real Estate / Cash / Insurance / Other",
+    })
+    _redgreen(ws, F, f"I4:I{M.MA_LAST_ROW}")
+    ws.conditional_format(f"H4:H{M.MA_LAST_ROW}", {
+        "type": "formula",
+        "criteria": f'=AND($H4<>"",TODAY()-$H4>90)',
+        "format": F["cf_amber"]})
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_by_scrip(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("By Scrip")
     _widths(ws, {"A": 16, "B": 34, "C": 11})
@@ -1329,7 +1449,9 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_fd(wb, F, data)
     _write_ppf(wb, F, data)
     _write_ppf_ledger(wb, F, data)
+    _write_epf(wb, F, data)
     _write_bonds(wb, F, data)
+    _write_manual_assets(wb, F, data)
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)
     _write_dividends(wb, F, data)
@@ -1337,12 +1459,17 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_guide(wb, F)
 
     # hide (never omit) the sheets of switched-off classes — data survives,
-    # formulas keep resolving, flipping Yes brings everything back (SPEC §3.14)
-    hidden = {sheet
-              for cls in ASSET_CLASSES if not effective_enabled(data, cls)
-              for sheet in cls.sheets}
+    # formulas keep resolving, flipping Yes brings everything back (SPEC §3.14).
+    # A shared sheet (e.g. Manual_Assets) hides only when EVERY class on it
+    # is off, hence the subtraction.
+    off = {sheet
+           for cls in ASSET_CLASSES if not effective_enabled(data, cls)
+           for sheet in cls.sheets}
+    on = {sheet
+          for cls in ASSET_CLASSES if effective_enabled(data, cls)
+          for sheet in cls.sheets}
     for ws in wb.worksheets():
-        if ws.get_name() in hidden:
+        if ws.get_name() in off - on:
             ws.hide()
 
     wb.close()

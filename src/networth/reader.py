@@ -18,8 +18,8 @@ from openpyxl import load_workbook
 
 from .model import (
     ASSET_CLASSES, BondRow, ClassSetting, ClassXirr, CorporateAction,
-    DividendRow, EquityRow, FDRow, HistorySnapshot, Masters, MFRow,
-    PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
+    DividendRow, EPFRow, EquityRow, FDRow, HistorySnapshot, ManualAssetRow,
+    Masters, MFRow, PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
 )
 
 
@@ -226,6 +226,42 @@ def read_workbook(path: str) -> PortfolioData:
                 owner=owner, account_no=acct,
                 txn_date=_as_date(ws.cell(r, 3).value),
                 amount=_as_float(ws.cell(r, 4).value),
+            ))
+
+    if "EPF" in wb.sheetnames:
+        ws = wb["EPF"]
+        h = _header_row(ws, "Owner")
+        for r in _data_rows(ws, h):
+            owner = _as_str(ws.cell(r, 1).value)
+            if not owner:
+                continue
+            data.epf.append(EPFRow(
+                owner=owner,
+                establishment=_as_str(ws.cell(r, 2).value),
+                member_id=_as_str(ws.cell(r, 3).value),
+                balance=_as_float(ws.cell(r, 4).value),
+                as_on=_as_date(ws.cell(r, 5).value),
+                rate=_as_float(ws.cell(r, 6).value),
+                notes=_as_str(ws.cell(r, 7).value),
+            ))
+
+    if "Manual_Assets" in wb.sheetnames:
+        ws = wb["Manual_Assets"]
+        h = _header_row(ws, "Owner")
+        for r in _data_rows(ws, h):
+            owner = _as_str(ws.cell(r, 1).value)
+            if not owner:
+                continue
+            data.manual_assets.append(ManualAssetRow(
+                owner=owner,
+                asset_class=_as_str(ws.cell(r, 2).value),
+                description=_as_str(ws.cell(r, 3).value),
+                institution=_as_str(ws.cell(r, 4).value),
+                invested=_as_float(ws.cell(r, 5).value),
+                cost_date=_as_date(ws.cell(r, 6).value),
+                value=_as_float(ws.cell(r, 7).value),
+                as_on=_as_date(ws.cell(r, 8).value),
+                notes=_as_str(ws.cell(r, 10).value),
             ))
 
     ws = wb["Bonds"]

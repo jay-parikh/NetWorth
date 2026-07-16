@@ -374,6 +374,17 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 fmv_filled += 1
     summary["fmv_filled"] = fmv_filled
 
+    # ---- EPF: auto-fill blank rates from the bundled EPFO table (SPEC §3.17)
+    if data.epf:
+        try:
+            from .model import current_epf_rate
+            epf_rate = current_epf_rate()
+            for r in data.epf:
+                if r.rate is None:
+                    r.rate = epf_rate
+        except OSError:
+            pass
+
     # ---- PPF: exact balance/interest/XIRR for ledgered accounts (SPEC §6.10) ----
     rates = load_ppf_rates()
     led = ppf_ledger_by_account(data)

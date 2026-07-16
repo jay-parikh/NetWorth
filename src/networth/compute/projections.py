@@ -81,4 +81,18 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
                 coupon_dates(r.maturity, today, end))
         add(r.owner, value)
 
+    for r in data.epf:                    # accrues at its own rate to FY end
+        if not r.balance:
+            continue
+        if r.as_on and r.rate:
+            add(r.owner, r.balance * (1 + r.rate / 100) ** _yf(r.as_on, end))
+        else:
+            add(r.owner, r.balance)
+
+    # hand-valued assets are held FLAT to FY end — estimating property or
+    # surrender-value appreciation would be false precision (SPEC §6.8)
+    for r in data.manual_assets:
+        if r.value:
+            add(r.owner, r.value)
+
     return {p: round(v, 2) for p, v in out.items() if v}

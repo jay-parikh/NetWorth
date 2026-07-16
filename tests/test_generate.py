@@ -12,8 +12,8 @@ from networth.sample_data import sample_portfolio
 EXPECTED_SHEETS = [
     "Dashboard", "Projection", "Settings", "Amit", "Priya", "Rahul", "Equity",
     "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master", "Bank_Master",
-    "FixedDeposits", "PPF", "PPF_Ledger", "Bonds", "By Scrip",
-    "Corporate_Actions", "Dividends", "History", "Guide",
+    "FixedDeposits", "PPF", "PPF_Ledger", "EPF", "Bonds", "Manual_Assets",
+    "By Scrip", "Corporate_Actions", "Dividends", "History", "Guide",
 ]
 
 

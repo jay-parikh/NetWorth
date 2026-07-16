@@ -47,12 +47,30 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
     ppf = sum((r.balance_today if r.balance_today is not None else (r.balance or 0.0))
               for r in data.ppf)
 
+    epf = 0.0
+    for r in data.epf:                     # mirrors the EPF sheet's H column
+        if not r.balance:
+            continue
+        if r.as_on and r.rate:
+            epf += r.balance * (1 + r.rate / 100) ** _yf(r.as_on, today)
+        else:
+            epf += r.balance
+
     bonds = sum(r.qty * r.cur_price for r in data.bonds if r.qty and r.cur_price)
+
+    def manual(label: str) -> float:
+        return sum(r.value for r in data.manual_assets
+                   if r.asset_class == label and r.value)
 
     return HistorySnapshot(snap_date=today, equity=round(equity, 2),
                            mutual_funds=round(mutual_funds, 2),
                            fixed_deposits=round(fixed_deposits, 2),
-                           ppf=round(ppf, 2), bonds=round(bonds, 2))
+                           ppf=round(ppf, 2), epf=round(epf, 2),
+                           bonds=round(bonds, 2),
+                           real_estate=round(manual("Real Estate"), 2),
+                           cash=round(manual("Cash"), 2),
+                           insurance=round(manual("Insurance"), 2),
+                           other_assets=round(manual("Other"), 2))
 
 
 def upsert_snapshot(history: list[HistorySnapshot], snap: HistorySnapshot,

@@ -133,7 +133,9 @@ brings everything back.
 | … | FixedDeposits | data entry | FDs |
 | … | PPF | data entry | PPF accounts |
 | v1.1 | PPF_Ledger | data entry | one row per PPF deposit (optional; §6.10) |
+| v1.3 | EPF | data entry (§3.17) | EPF accounts — passbook balance + rate accrual (default off) |
 | … | Bonds | data entry | corporate/other bonds |
+| v1.3 | Manual_Assets | data entry (§3.18) | hand-valued assets: Real Estate / Cash / Insurance / Other (default off) |
 | … | By Scrip | computed | family-wide exposure per stock |
 | v1 | Corporate_Actions | audit (§6.7) | fetched + manual corporate actions and their effect |
 | v1.2 | Dividends | mixed (§3.13) | FY dividend ledger — auto + manual rows, by-month chart |
@@ -470,6 +472,52 @@ has-data class round-trips unchanged (it is their setting — only the
 deliberately not used (xlsxwriter cannot write them; LibreOffice renders
 them poorly) — the Yes/No validation dropdown is the normative control.
 
+### 3.17 EPF (v1.3, R12; default off)
+
+Deliberately congruent with PPF's flat path: passbook balance in, accrual
+out. Title r1, hint r2, header r3, data r4..43, TOTAL r45.
+
+| Col | Header | Kind | Definition |
+|---|---|---|---|
+| A | Owner | input | |
+| B | Establishment / UAN | input | |
+| C | Member ID | input | |
+| D | Current Balance | input | EPFO passbook closing balance (employee + employer) |
+| E | Balance as-on | input (date) | the passbook date |
+| F | Rate % | input | blank ⇒ updater fills the latest `epf_rates.csv` rate |
+| G | Notes | input | |
+| H | Balance today | computed | `=IF(D="","",IF(OR(E="",F=""),D,D*(1+F/100)^YEARFRAC(E,TODAY())))` — flat accrual; the class value column |
+| J | Key | helper | person-block lookup |
+
+Exact monthly-run accrual + a contribution ledger is a roadmap follow-up
+(mirroring PPF's flat-first history); the H header comment states the
+estimate nature.
+
+### 3.18 Manual_Assets (v1.3, R12; shared sheet, four registry classes, default off)
+
+One sheet for every hand-valued asset; the `Class` column routes each row to
+its own registry class (Real Estate / Cash / Insurance / Other — each with
+its own Dashboard column, allocation row, target and History column via the
+`class_filter` SUMIFS criterion, §2.1). The sheet hides only when ALL four
+are off. Title r1, hint r2, header r3, data r4..63, TOTAL r65.
+
+| Col | Header | Kind | Definition |
+|---|---|---|---|
+| A | Owner | input | |
+| B | Class | input | dropdown (non-blocking): Real Estate / Cash / Insurance / Other |
+| C | Description | input | "2BHK Baner", "HDFC savings", "LIC Jeevan…" |
+| D | Institution / Ref | input | bank, insurer, registrar |
+| E | Invested / Cost | input (optional) | RE: purchase cost; Insurance: premiums paid; enables Net chg. + XIRR |
+| F | Cost date | input (optional) | XIRR anchor |
+| G | Current value ₹ | input | THE number: market estimate / balance / surrender value; the class value column |
+| H | Value as-on | input (date) | **amber when > 90 days old** — hand-typed values rot silently |
+| I | Net chg. | computed | `=IF(OR(E="",G=""),"",G−E)`, red/green |
+| J | Notes | input | |
+| K | Key | helper | |
+
+No per-person holding block (the sheet itself is the overview); person
+sheets show one summary row per subclass. XIRR per §6.2 (Cash excluded).
+
 ---
 
 ## 4. Sample data
@@ -601,6 +649,7 @@ Mergers/demergers/ISIN reassignments remain out of scope for auto-adjustment
 | `fmv_2018-01-31.csv` | `isin, symbol, fmv` | NSE bhavcopy of 2018-01-31 (EQ/BE/BZ series, 1,639 ISINs); FMV = that day's **high** price (IT Act grandfathering definition). The symbol column enables lookup when a later corporate action reissued the ISIN (e.g. HDFC Bank post-split) |
 | `banks_in.csv` | `bank_name, type` | RBI scheduled commercial banks list + major SFB/payment/co-op banks |
 | `ppf_rates.csv` *(roadmap — ships with the PPF contribution ledger)* | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
+| `epf_rates.csv` *(v1.3, R12)* | `fy_start, rate_pct` | EPFO annual declared rates, historical to present (no official API — refreshed via releases); the updater fills a blank EPF Rate % with the latest row |
 
 ---
 
@@ -630,10 +679,14 @@ Per asset class (skip rows with missing required inputs):
 | Fixed Deposits | −Principal @ Start | +Value-as-on @ min(today, maturity) |
 | PPF | −(Balance discounted at Rate% back to as-on date)… in practice: −Balance @ as-on | +Balance·(1+Rate%)^(days/365) @ today |
 | Bonds | −Qty·BuyPrice @ Buy Date (skip if no Buy Date) | +Qty·CurrentPrice @ today; **v1:** plus each coupon `+Qty·Face·(Coupon%/f)` on its historical coupon date |
+| EPF *(v1.3)* | −Balance @ as-on (PPF flat path verbatim) | +Balance·(1+Rate%)^(days/365) @ today |
+| Real Estate / Insurance / Other *(v1.3)* | −Invested @ Cost date (row skipped when Invested, Cost date or Value is blank) | +Current value @ today |
+| Cash *(v1.3)* | **excluded from XIRR entirely** (`has_xirr` false, §2.1) — a balance has no meaningful money-weighted return | |
 
 Class XIRR = solver over that class's union; Portfolio XIRR = solver over the
-union of **all** classes. Written as plain values to: Dashboard B4, C20:C24,
-Equity class cell, MutualFunds L column + MF_SIP J2.
+union of **all** classes. Written as plain values to: Dashboard B4, the
+allocation table's XIRR column, Equity class cell, MutualFunds L column +
+MF_SIP J2.
 
 ### 6.3 Coupon schedule (v1)
 
@@ -740,9 +793,13 @@ FY end = next 31 March ≥ today. Per holding:
 ```
 FD    : same compound formula with YEARFRAC(Start, min(FYend, Maturity))
 PPF   : Balance·(1+Rate%)^(YEARFRAC(as-on, FYend))
+EPF   : Balance·(1+Rate%)^(YEARFRAC(as-on, FYend))            (v1.3)
 Bonds : Qty·CurrentPrice + coupons falling in (today, FYend]   (redemption if Maturity ≤ FYend: Qty·Face instead)
 Equity/MF: CurVal·(1+ExpectedReturn%)^(YEARFRAC(today, FYend)) — estimate,
            driven by the Dashboard "Expected return %" input
+Manual (RE/Cash/Insurance/Other): held FLAT at Current value    (v1.3 —
+           estimating property or surrender-value appreciation would be
+           false precision; the header comment says so)
 ```
 
 Aggregated per person + TOTAL into the Dashboard `Expected @ 31-Mar-<FY>`

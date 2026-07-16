@@ -46,7 +46,7 @@ def test_target_formula_uses_registry_settings_row(tmp_path):
     assert "Settings!$C$4" in d["E20"].value      # Equity  -> registry row 4
     assert "Settings!$C$6" in d["E21"].value      # FD      -> registry row 6
     assert "Settings!$C$7" in d["E22"].value      # PPF     -> registry row 7
-    assert "Settings!$C$8" in d["E23"].value      # Bonds   -> registry row 8
+    assert "Settings!$C$9" in d["E23"].value      # Bonds   -> registry row 9 (EPF sits at 8)
 
 
 def test_drift_band_and_target_chart_present(tmp_path):

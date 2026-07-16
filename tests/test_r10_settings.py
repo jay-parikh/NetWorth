@@ -21,12 +21,16 @@ def test_default_template_shows_everything(tmp_path):
     build_workbook(sample_portfolio(), str(path))
     wb = load_workbook(path)
     assert "Settings" in wb.sheetnames
-    assert all(ws.sheet_state == "visible" for ws in wb.worksheets)
+    # classic five visible; the new default-off classes ship hidden
+    hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
+    assert hidden == {"EPF", "Manual_Assets"}
     st = wb["Settings"]
-    labels = [st.cell(r, 1).value for r in range(4, 9)]
+    n = len(ASSET_CLASSES)
+    labels = [st.cell(r, 1).value for r in range(4, 4 + n)]
     assert labels == [c.label for c in ASSET_CLASSES]
-    assert all(st.cell(r, 2).value == "Yes" for r in range(4, 9))
-    assert all(st.cell(r, 4).value == "On" for r in range(4, 9))
+    for i, c in enumerate(ASSET_CLASSES):
+        assert st.cell(4 + i, 2).value == ("Yes" if c.default_enabled else "No")
+        assert st.cell(4 + i, 4).value == ("On" if c.default_enabled else "Off")
     assert st["B17"].value == 5                     # drift tolerance default
 
 
@@ -55,7 +59,7 @@ def test_disabled_empty_class_hides_sheets_and_columns(tmp_path):
     assert a["B3"].value == "=B10"
     assert a["A14"].value == "EQUITY"
     st = wb["Settings"]
-    assert st.cell(8, 4).value == "Off"              # Bonds row status
+    assert st.cell(9, 4).value == "Off"              # Bonds registry row status
 
 
 def test_disabled_class_with_data_stays_visible_and_warns(tmp_path):
@@ -65,7 +69,7 @@ def test_disabled_class_with_data_stays_visible_and_warns(tmp_path):
     build_workbook(data, str(path))
     wb = load_workbook(path)
     assert wb["Bonds"].sheet_state == "visible"      # force-shown
-    assert wb["Settings"].cell(8, 4).value == "On (has data)"
+    assert wb["Settings"].cell(9, 4).value == "On (has data)"
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="T"),
                   amfi_data=AmfiData(), ca_data=[], div_data=[], today=TODAY)
     assert any("Bonds is set to No" in w for w in summary["warnings"])

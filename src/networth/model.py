@@ -34,6 +34,8 @@ BOND_TOTAL_ROW = 55
 BYSCRIP_LAST_ROW = 29
 CA_LAST_ROW = 53                # Corporate_Actions data rows 4..53
 DIV_LAST_ROW = 203              # Dividends data rows 4..203 (SPEC §3.13)
+MA_LAST_ROW = 63                # Manual_Assets data rows 4..63 (SPEC §3.18)
+EPF_LAST_ROW = 43               # EPF data rows 4..43 (SPEC §3.17)
 HISTORY_LAST_ROW = 400          # net-worth snapshots, one per day (rows 4..400)
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
@@ -75,9 +77,19 @@ class AssetClass:
     value_col: str                # SUMIFS value range, e.g. "Equity!$I:$I"
     owner_col: str                # SUMIFS owner range, e.g. "Equity!$A:$A"
     sheets: tuple[str, ...]       # sheets hidden together when the class is off
-    person_rows: int              # data rows in the person-sheet block
+    person_rows: int              # data rows in the person-sheet block (0 = none)
     default_enabled: bool = True
     has_xirr: bool = True
+    # (range, label) extra SUMIFS criterion for classes sharing a sheet,
+    # e.g. ("Manual_Assets!$B:$B", "Real Estate")
+    class_filter: tuple[str, str] | None = None
+
+
+def _manual(key: str, label: str) -> AssetClass:
+    return AssetClass(key, label, "Manual_Assets!$G:$G", "Manual_Assets!$A:$A",
+                      ("Manual_Assets",), person_rows=0, default_enabled=False,
+                      has_xirr=(key != "cash"),
+                      class_filter=("Manual_Assets!$B:$B", label))
 
 
 ASSET_CLASSES: list[AssetClass] = [
@@ -92,9 +104,18 @@ ASSET_CLASSES: list[AssetClass] = [
                person_rows=15),
     AssetClass("ppf", "PPF", "PPF!$H:$H", "PPF!$A:$A",
                ("PPF", "PPF_Ledger"), person_rows=10),
+    AssetClass("epf", "EPF", "EPF!$H:$H", "EPF!$A:$A",
+               ("EPF",), person_rows=10, default_enabled=False),
     AssetClass("bonds", "Bonds", "Bonds!$K:$K", "Bonds!$A:$A",
                ("Bonds",), person_rows=15),
+    _manual("real_estate", "Real Estate"),
+    _manual("cash", "Cash"),
+    _manual("insurance", "Insurance"),
+    _manual("other_assets", "Other"),
 ]
+
+# Manual_Assets Class-column values, in dropdown order
+MANUAL_CLASS_LABELS = ["Real Estate", "Cash", "Insurance", "Other"]
 
 
 @dataclass
@@ -110,6 +131,10 @@ def default_class_settings() -> dict[str, "ClassSetting"]:
             for c in ASSET_CLASSES}
 
 
+def _manual_rows(data: "PortfolioData", label: str) -> list:
+    return [r for r in data.manual_assets if r.asset_class == label]
+
+
 def class_has_data(data: "PortfolioData", key: str) -> bool:
     """A class holding user rows is never hidden (SPEC §3.14)."""
     return bool({
@@ -117,7 +142,12 @@ def class_has_data(data: "PortfolioData", key: str) -> bool:
         "mutual_funds": lambda: data.mutual_funds or data.sip,
         "fixed_deposits": lambda: data.fixed_deposits,
         "ppf": lambda: data.ppf or data.ppf_ledger,
+        "epf": lambda: data.epf,
         "bonds": lambda: data.bonds,
+        "real_estate": lambda: _manual_rows(data, "Real Estate"),
+        "cash": lambda: _manual_rows(data, "Cash"),
+        "insurance": lambda: _manual_rows(data, "Insurance"),
+        "other_assets": lambda: _manual_rows(data, "Other"),
     }.get(key, lambda: True)())
 
 
@@ -208,6 +238,36 @@ class PPFLedgerRow:
 
 
 @dataclass
+class ManualAssetRow:
+    """One hand-valued asset (SPEC §3.18): real estate, cash/savings,
+    insurance surrender value, or anything else. The user types the current
+    value; the as-on date flags staleness (amber past 90 days)."""
+    owner: str = ""
+    asset_class: str = ""              # Real Estate | Cash | Insurance | Other
+    description: str = ""
+    institution: str = ""
+    invested: float | None = None      # optional; enables Net chg. + XIRR
+    cost_date: date | None = None
+    value: float | None = None         # THE number: current worth in ₹
+    as_on: date | None = None
+    notes: str = ""
+
+
+@dataclass
+class EPFRow:
+    """One EPF account (SPEC §3.17) — deliberately congruent with PPFRow's
+    flat path: passbook balance + as-on + rate → accrued Balance today.
+    Exact monthly accrual + a contribution ledger is a roadmap follow-up."""
+    owner: str = ""
+    establishment: str = ""            # employer / UAN
+    member_id: str = ""
+    balance: float | None = None       # from the EPFO passbook
+    as_on: date | None = None
+    rate: float | None = None          # updater auto-fills current EPFO rate
+    notes: str = ""
+
+
+@dataclass
 class BondRow:
     owner: str = ""
     issuer: str = ""
@@ -290,29 +350,40 @@ class DividendRow:
 @dataclass
 class HistorySnapshot:
     """One dated net-worth snapshot (SPEC §6.11). Updater-written data that
-    round-trips regeneration; one row per calendar day."""
+    round-trips regeneration; one row per calendar day. One field per
+    registry class (label-keyed on the sheet)."""
     snap_date: date | None = None
     equity: float = 0.0
     mutual_funds: float = 0.0
     fixed_deposits: float = 0.0
     ppf: float = 0.0
+    epf: float = 0.0
     bonds: float = 0.0
+    real_estate: float = 0.0
+    cash: float = 0.0
+    insurance: float = 0.0
+    other_assets: float = 0.0
 
     @property
     def total(self) -> float:
-        return (self.equity + self.mutual_funds + self.fixed_deposits
-                + self.ppf + self.bonds)
+        return sum(getattr(self, c.key, 0.0) for c in ASSET_CLASSES)
 
 
 @dataclass
 class ClassXirr:
-    """Updater-written plain values (SPEC §6.2)."""
+    """Updater-written plain values (SPEC §6.2). One field per registry
+    class (cash stays None — has_xirr is false there)."""
     portfolio: float | None = None
     equity: float | None = None
     mutual_funds: float | None = None
     fixed_deposits: float | None = None
     ppf: float | None = None
+    epf: float | None = None
     bonds: float | None = None
+    real_estate: float | None = None
+    cash: float | None = None
+    insurance: float | None = None
+    other_assets: float | None = None
 
 
 @dataclass
@@ -335,7 +406,9 @@ class PortfolioData:
     fixed_deposits: list[FDRow] = field(default_factory=list)
     ppf: list[PPFRow] = field(default_factory=list)
     ppf_ledger: list[PPFLedgerRow] = field(default_factory=list)
+    epf: list["EPFRow"] = field(default_factory=list)
     bonds: list[BondRow] = field(default_factory=list)
+    manual_assets: list["ManualAssetRow"] = field(default_factory=list)
     by_scrip: list[ScripRef] = field(default_factory=list)
     corporate_actions: list["CorporateAction"] = field(default_factory=list)
     dividends: list["DividendRow"] = field(default_factory=list)
@@ -366,6 +439,23 @@ def load_fmv(data_dir: Path = DATA_DIR) -> tuple[dict[str, float], dict[str, flo
             by_isin[r["isin"]] = fmv
             by_symbol[r["symbol"]] = fmv
     return by_isin, by_symbol
+
+
+def load_epf_rates(data_dir: Path = DATA_DIR) -> list[tuple[int, float]]:
+    """Bundled EPFO annual rates (SPEC §5.5): [(fy_start_year, rate_pct)],
+    ascending. No official API — refreshed via app releases like ppf_rates."""
+    import csv
+
+    with open(data_dir / "epf_rates.csv", newline="", encoding="utf-8") as f:
+        rdr = csv.DictReader(f)
+        rows = [(int(r["fy_start"]), float(r["rate_pct"])) for r in rdr]
+    rows.sort()
+    return rows
+
+
+def current_epf_rate(rates: list[tuple[int, float]] | None = None) -> float:
+    rates = rates if rates is not None else load_epf_rates()
+    return rates[-1][1]
 
 
 def load_banks(data_dir: Path = DATA_DIR) -> list[tuple[str, str]]:
