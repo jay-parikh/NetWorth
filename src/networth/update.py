@@ -25,7 +25,8 @@ from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .fetch import corporate_actions as ca_mod
-from .model import DividendRow, adjustment_factor, fy_label, load_fmv
+from .model import (ASSET_CLASSES, DividendRow, adjustment_factor,
+                    class_has_data, fy_label, load_fmv)
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -145,6 +146,15 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 have.add(name.casefold())
                 added.append(name)
         summary["persons_added"] = added
+
+    # a class switched off on Settings but still holding rows stays visible
+    # (never lose data, never let a hidden value haunt the totals — SPEC §3.14)
+    for cls in ASSET_CLASSES:
+        s = data.class_settings.get(cls.key)
+        if s and not s.enabled and class_has_data(data, cls.key):
+            summary["warnings"].append(
+                f"{cls.label} is set to No on Settings but still holds rows — "
+                f"kept visible; delete or move its rows to hide it")
 
     if do_backup:
         summary["backup"] = str(make_backup(path))

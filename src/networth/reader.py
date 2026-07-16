@@ -17,9 +17,9 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    BondRow, ClassXirr, CorporateAction, DividendRow, EquityRow, FDRow,
-    HistorySnapshot, Masters, MFRow, PPFLedgerRow, PPFRow, PortfolioData,
-    ScripRef, SIPRow,
+    ASSET_CLASSES, BondRow, ClassSetting, ClassXirr, CorporateAction,
+    DividendRow, EquityRow, FDRow, HistorySnapshot, Masters, MFRow,
+    PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
 )
 
 
@@ -76,19 +76,54 @@ def read_workbook(path: str) -> PortfolioData:
     data.inflation_pct = infl if infl is not None else 7
     exp = _as_float(dash["E2"].value)
     data.expected_return_pct = exp if exp is not None else 10
-    for r in range(6, 16):
-        person = _as_str(dash.cell(r, 1).value)
-        fy = _as_float(dash.cell(r, 8).value)
-        if person and fy is not None:
-            data.fy_expected[person] = fy
-    data.xirr = ClassXirr(
-        portfolio=_as_float(dash["B4"].value),
-        equity=_as_float(dash["C20"].value),
-        mutual_funds=_as_float(dash["C21"].value),
-        fixed_deposits=_as_float(dash["C22"].value),
-        ppf=_as_float(dash["C23"].value),
-        bonds=_as_float(dash["C24"].value),
-    )
+    # the FY-expected column moves with the number of enabled classes —
+    # locate it by its "Expected @ ..." header in row 5
+    fy_col = None
+    for c in range(2, 30):
+        if _as_str(dash.cell(5, c).value).startswith("Expected @"):
+            fy_col = c
+            break
+    if fy_col:
+        for r in range(6, 16):
+            person = _as_str(dash.cell(r, 1).value)
+            fy = _as_float(dash.cell(r, fy_col).value)
+            if person and fy is not None:
+                data.fy_expected[person] = fy
+
+    # class XIRRs live in the allocation table — locate its header row and
+    # map rows back by class label (layout is dynamic since R10)
+    data.xirr = ClassXirr(portfolio=_as_float(dash["B4"].value))
+    key_by_label = {c.label: c.key for c in ASSET_CLASSES}
+    for r in range(15, 40):
+        if _as_str(dash.cell(r, 1).value) == "Asset class":
+            for rr in range(r + 1, r + 1 + len(ASSET_CLASSES) + 5):
+                key = key_by_label.get(_as_str(dash.cell(rr, 1).value))
+                if key is None:
+                    break
+                setattr(data.xirr, key, _as_float(dash.cell(rr, 3).value))
+            break
+
+    if "Settings" in wb.sheetnames:
+        st = wb["Settings"]
+        label_rows = {_as_str(st.cell(r, 1).value): r for r in range(4, 21)}
+        for cls in ASSET_CLASSES:
+            r = label_rows.get(cls.label)
+            if r is None:
+                continue
+            enabled_txt = _as_str(st.cell(r, 2).value).casefold()
+            data.class_settings[cls.key] = ClassSetting(
+                enabled=(enabled_txt != "no") if enabled_txt
+                else cls.default_enabled,
+                target_pct=_as_float(st.cell(r, 3).value),
+            )
+        tol_row = next((r for r in range(16, 25)
+                        if _as_str(st.cell(r, 1).value).startswith("Drift tolerance")),
+                       None)
+        if tol_row:
+            tol = _as_float(st.cell(tol_row, 2).value)
+            if tol is not None:
+                data.drift_tolerance_pct = tol
+    # no Settings sheet (pre-v1.3 workbook) → registry defaults already set
 
     ws = wb["Equity"]
     h = _header_row(ws, "Owner")
@@ -270,18 +305,22 @@ def read_workbook(path: str) -> PortfolioData:
     if "History" in wb.sheetnames:
         ws = wb["History"]
         h = _header_row(ws, "Date")
+        # columns are label-keyed (SPEC §6.11): a class column may be absent
+        # (never enabled) or in any position; unknown labels are ignored
+        key_by_label = {c.label: c.key for c in ASSET_CLASSES}
+        col_key: dict[int, str] = {}
+        for c in range(2, 40):
+            key = key_by_label.get(_as_str(ws.cell(h, c).value))
+            if key:
+                col_key[c] = key
         for r in range(h + 1, ws.max_row + 1):
             d = _as_date(ws.cell(r, 1).value)
             if d is None:
                 continue
-            data.history.append(HistorySnapshot(
-                snap_date=d,
-                equity=_as_float(ws.cell(r, 2).value) or 0.0,
-                mutual_funds=_as_float(ws.cell(r, 3).value) or 0.0,
-                fixed_deposits=_as_float(ws.cell(r, 4).value) or 0.0,
-                ppf=_as_float(ws.cell(r, 5).value) or 0.0,
-                bonds=_as_float(ws.cell(r, 6).value) or 0.0,
-            ))
+            snap = HistorySnapshot(snap_date=d)
+            for c, key in col_key.items():
+                setattr(snap, key, _as_float(ws.cell(r, c).value) or 0.0)
+            data.history.append(snap)
 
     sm = wb["Stock_Master"]
     stock_status: dict[str, tuple[str, object]] = {}

@@ -79,6 +79,39 @@ Person names appear in three places that must stay consistent: the Dashboard
 matrix input cells, one per-person sheet each, and the person columns of
 By Scrip. The generator derives all three from `persons`.
 
+### 2.1 Asset-class registry (v1.3, R10 — normative)
+
+Every per-class surface is derived from ONE ordered registry; adding an asset
+class means adding a registry row plus its sheet writer/reader/computes —
+never editing the Dashboard/person/History logic:
+
+| Field | Meaning |
+|---|---|
+| `key` | stable identifier; the per-class attribute on XIRR/History records |
+| `label` | header text everywhere (Dashboard, person sheets, History, Settings) |
+| `value_col` / `owner_col` | the SUMIFS ranges the Dashboard/person totals read |
+| `sheets` | sheet group hidden together when the class is off |
+| `person_rows` | data rows of the class's person-sheet block |
+| `default_enabled` | new-workbook default (classic five = Yes; later classes = No) |
+| `has_xirr` | blank the allocation-table XIRR cell when false (e.g. Cash) |
+
+v1.3 registry order: Equity (sheets: Equity, By Scrip, Corporate_Actions,
+Dividends, Stock_Master; 40 person rows) → Mutual Funds (MutualFunds, MF_SIP,
+MF_Master; 20) → Fixed Deposits (FixedDeposits, Bank_Master; 15) → PPF (PPF,
+PPF_Ledger; 10) → Bonds (Bonds; 15).
+
+**Effective enablement (normative):** `effective = enabled OR has_data`. A
+class holding user rows is never hidden — the generator shows it with Status
+`On (has data)` and the updater warns; data is never deleted, and a hidden
+value can never sit inside a visible total. Surfaces driven by the effective
+set: Dashboard matrix columns (Total and Expected-@-FY columns shift left),
+allocation-table rows and pie range, person summary rows and holding blocks
+(stacked from row 14 in registry order, each `person_rows` deep, one blank
+row between blocks), History columns (§6.11) and all chart ranges. Sheets of
+a non-effective class are **hidden, never omitted** — openpyxl reads hidden
+sheets, formulas keep resolving, and flipping Yes (or unhiding by hand)
+brings everything back.
+
 ---
 
 ## 3. Workbook specification
@@ -89,6 +122,7 @@ By Scrip. The generator derives all three from `persons`.
 |---|---|---|---|
 | 1 | Dashboard | mixed | family net worth, per-person × class matrix, XIRR, inflation, charts |
 | 2 | Projection | computed | 20-year corpus trajectory table + line chart |
+| v1.3 | Settings | input (§3.14) | per-class Yes/No + Target % + drift tolerance |
 | 3… | one per person (e.g. Amit) | computed | that person's allocation + pie chart |
 | … | Equity | data entry | stock holdings |
 | … | MutualFunds | computed summary | one row per (owner, scheme), derived from MF_SIP |
@@ -400,6 +434,28 @@ fresh). The Dashboard shows one cell: `Dividends FY <label>` =
 
 Dividends do **not** feed equity XIRR (roadmap; changing return semantics
 deserves its own release).
+
+### 3.14 Settings (v1.3, R10)
+
+The one place the user tunes the workbook. Title r1, hint r2, header r3
+(`Asset class, Enabled, Target %, Status, Notes`), one row per registry class
+from r4 (rows 4–15 reserved), then:
+
+| Cell | Content | Kind |
+|---|---|---|
+| B4:B15 | `Yes` / `No` dropdown (non-blocking) — show or hide the class | **input** |
+| C4:C15 | target allocation %, blank = no target (R11 drift view) | **input** |
+| D4:D15 | `On` / `Off` / `On (has data)` | generator-written |
+| E4:E15 | note (e.g. why a No class is still visible) | generator-written |
+| A17/B17 | `Drift tolerance (± % points)`, default **5** | **input** |
+| A18/B18 | `Targets total` = `SUM(C4:C15)`, **amber** when non-zero and ≠ 100 | computed |
+
+Reader rules: match class rows by label anywhere in rows 4–20 (tolerant);
+missing sheet (a pre-v1.3 workbook) ⇒ registry defaults; the user's No on a
+has-data class round-trips unchanged (it is their setting — only the
+*effective* visibility overrides it). Real form-control checkboxes are
+deliberately not used (xlsxwriter cannot write them; LibreOffice renders
+them poorly) — the Yes/No validation dropdown is the normative control.
 
 ---
 
@@ -715,18 +771,24 @@ with the current bundled rate. Dashboard and person-sheet PPF totals sum
 and the FY-end estimate use ledger accrual where a ledger exists, else the
 flat estimate.
 
-### 6.11 Net-worth history (v1.1)
+### 6.11 Net-worth history (v1.1; label-keyed since v1.3/R10)
 
-The updater records one dated snapshot per run into the **History** sheet
-(Date, Equity, Mutual Funds, Fixed Deposits, PPF, Bonds; Total is
-`=SUM(B:F)`). Per-class values are computed in Python to mirror the Dashboard
-(equity qty×factor×close, MF units×NAV, FD compound value, PPF Balance-today,
-bonds qty×price; FD uses actual/365, a hair off Excel's 30/360 — immaterial
-for a trend). **One row per calendar day**: a re-run on the same day overwrites
-that day's row; rows are capped to the most recent `HISTORY_LAST_ROW-3`. The
-Dashboard carries a line chart over History Date × Total. History rows are
-**data** — the reader loads them and the generator writes them back, so they
-survive regeneration.
+The updater records one dated snapshot per run into the **History** sheet.
+**Columns are label-keyed, not positional**: the header row is `Date` + the
+label of every class that is effective-enabled OR carries nonzero history
+(an old trend never disappears because a class was switched off) + `Total`
+(`=SUM` across that row's class columns). The reader maps columns back by
+header label — unknown labels are ignored, absent classes read as 0 — so a
+pre-v1.3 workbook (fixed five columns) reads losslessly and old totals
+recompute identically. Per-class values are computed in Python to mirror the
+Dashboard (equity qty×factor×close, MF units×NAV, FD compound value, PPF
+Balance-today, bonds qty×price; FD uses actual/365, a hair off Excel's
+30/360 — immaterial for a trend). **One row per calendar day**: a re-run on
+the same day overwrites that day's row; rows are capped to the most recent
+`HISTORY_LAST_ROW-3`. The Dashboard carries a line chart over History Date ×
+Total plus a stacked-area chart over the class columns ("Net worth by class
+over time"). History rows are **data** — the reader loads them and the
+generator writes them back, so they survive regeneration.
 
 ### 6.12 Dividend quantity at ex-date (v1.2, R9)
 
@@ -766,9 +828,11 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    never hang or break a run — any error is swallowed.
 3. refuse politely if the file is locked/open (detect via exclusive-open probe)
 4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
-5. READ  — all input columns of all data sheets + persons + settings cells
+5. READ  — all input columns of all data sheets (hidden ones too) + persons
+           + Settings (§3.14; missing sheet ⇒ defaults) + Dashboard cells
            (openpyxl read-only; header row located by matching known header
-           names within rows 1–5, so user row edits/sorts never break it)
+           names within rows 1–5, and dynamic Dashboard/History columns by
+           header label, so user row edits/sorts never break it)
 6. FETCH — AMFI, bhavcopy (BSE+NSE same-day union merge, §5.2), corporate
            actions + dividends (NSE+BSE, §5.4); per-source failure ⇒ keep
            previous values, note in summary
@@ -778,7 +842,8 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            accrual (§6.10), XIRR (§6.1–6.3), FY-end estimates (§6.8),
            net-worth snapshot (§6.11)
 8. REGENERATE — build the complete workbook (xlsxwriter): structure from this
-           spec + user inputs + computed/updater values; atomic replace
+           spec + user inputs + computed/updater values; sheets of
+           non-effective classes hidden (§2.1); atomic replace
            (write temp file, then swap)
 9. REPORT — console summary (rows matched/unmatched per sheet, sources used,
            XIRR figures, PPF/history/added-people, backup path); pause before

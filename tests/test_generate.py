@@ -10,7 +10,7 @@ from networth.generate import build_workbook
 from networth.sample_data import sample_portfolio
 
 EXPECTED_SHEETS = [
-    "Dashboard", "Projection", "Amit", "Priya", "Rahul", "Equity",
+    "Dashboard", "Projection", "Settings", "Amit", "Priya", "Rahul", "Equity",
     "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master", "Bank_Master",
     "FixedDeposits", "PPF", "PPF_Ledger", "Bonds", "By Scrip",
     "Corporate_Actions", "Dividends", "History", "Guide",
@@ -41,11 +41,12 @@ def test_defined_names(wb):
 def test_charts_present(built):
     with zipfile.ZipFile(built) as z:
         charts = [n for n in z.namelist() if re.fullmatch(r"xl/charts/chart\d+\.xml", n)]
-        assert len(charts) == 8
+        assert len(charts) == 9
         types = "".join(z.read(c).decode() for c in charts)
     assert types.count("<c:pieChart>") == 4      # dashboard + 3 persons
     assert types.count("<c:barChart>") == 2      # net worth by person + dividends by month
     assert types.count("<c:lineChart>") == 2      # projection + net-worth trend
+    assert types.count("<c:areaChart>") == 1      # net worth by class (stacked)
 
 
 def test_dropdown_tip_within_excel_limit():
@@ -56,7 +57,7 @@ def test_dropdown_tip_within_excel_limit():
 
 def test_typeahead_validations(built):
     with zipfile.ZipFile(built) as z:
-        eq = z.read("xl/worksheets/sheet6.xml").decode()   # Equity is 6th sheet
+        eq = z.read("xl/worksheets/sheet7.xml").decode()   # Equity is 7th sheet
     assert "OFFSET(Stock_Master!$B$3" in eq
     assert 'sqref="C4:C140"' in eq
 

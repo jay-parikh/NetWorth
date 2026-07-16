@@ -15,7 +15,8 @@ import xlsxwriter
 
 from . import model as M
 from .guide_text import GUIDE_ROWS
-from .model import PortfolioData
+from .model import (ASSET_CLASSES, PortfolioData, class_has_data,
+                    effective_enabled, enabled_classes)
 
 
 # ---------------------------------------------------------------- formats ---
@@ -139,6 +140,74 @@ def _fy_end_label() -> str:
     return f"Expected @ 31-Mar-{fy_year}"
 
 
+def _history_classes(data: PortfolioData):
+    """History columns: classes that are enabled OR carry nonzero history —
+    an old trend line never disappears because a class was switched off."""
+    return [c for c in ASSET_CLASSES
+            if effective_enabled(data, c)
+            or any(getattr(s, c.key, 0) for s in data.history)]
+
+
+def _write_settings(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("Settings")
+    _widths(ws, {"A": 18, "B": 10, "C": 10, "D": 14, "E": 44})
+    _sheet_head(ws, F, "SETTINGS",
+                "Yes/No shows or hides each asset class - a class holding data "
+                "is never hidden. Target % feeds the Dashboard drift view. "
+                "Run the update after changing anything here.")
+    ws.write_row("A3", ["Asset class", "Enabled", "Target %", "Status", "Notes"],
+                 F["header"])
+    ws.write_comment("B3", "Yes = show this class's sheets and Dashboard "
+                           "presence. No = hide them. Data is never deleted.")
+    ws.write_comment("C3", "Your target share of the family total, in percent. "
+                           "Leave blank for no target. Drives the Dashboard "
+                           "drift view.")
+    for i, cls in enumerate(ASSET_CLASSES):
+        r = M.SETTINGS_FIRST_ROW + i
+        setting = data.class_settings.get(cls.key)
+        enabled = setting.enabled if setting else cls.default_enabled
+        target = setting.target_pct if setting else None
+        ws.write(f"A{r}", cls.label)
+        ws.write(f"B{r}", "Yes" if enabled else "No", F["in_text"])
+        if target is not None:
+            ws.write_number(f"C{r}", target, F["in_rate"])
+        else:
+            ws.write_blank(f"C{r}", None, F["in_rate"])
+        if enabled:
+            status = "On"
+        elif class_has_data(data, cls.key):
+            status = "On (has data)"
+        else:
+            status = "Off"
+        ws.write(f"D{r}", status, F["c_text"])
+        if status == "On (has data)":
+            ws.write(f"E{r}", "Holds rows, so it stays visible - delete or "
+                              "move them to hide it.", F["hint"])
+    ws.data_validation(
+        f"B{M.SETTINGS_FIRST_ROW}:B{M.SETTINGS_LAST_ROW}",
+        {"validate": "list", "source": ["Yes", "No"], "show_error": False,
+         "input_title": "Show this class?",
+         "input_message": "Yes shows its sheets, No hides them. "
+                          "Data is never deleted."})
+    tol = M.SETTINGS_TOL_ROW
+    ws.write(f"A{tol}", "Drift tolerance (± % points)", F["label"])
+    ws.write_number(f"B{tol}", data.drift_tolerance_pct, F["in_rate"])
+    ws.write_comment(f"B{tol}", "How far a class may drift from its target "
+                                "before the Dashboard flags it red. 5 means "
+                                "±5 percentage points.")
+    tot = M.SETTINGS_SUM_ROW
+    ws.write(f"A{tot}", "Targets total", F["label"])
+    ws.write_formula(
+        f"B{tot}",
+        f"=SUM(C{M.SETTINGS_FIRST_ROW}:C{M.SETTINGS_LAST_ROW})", F["c_text"])
+    ws.conditional_format(f"B{tot}", {
+        "type": "formula",
+        "criteria": f"=AND(B{tot}>0,B{tot}<>100)",
+        "format": F["cf_amber"]})
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_dashboard(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Dashboard")
     _widths(ws, {"A": 16, "B": 15, "C": 15, "D": 15, "E": 14, "F": 15, "G": 16, "H": 18})
@@ -152,7 +221,9 @@ def _write_dashboard(wb, F, data: PortfolioData):
                            "drives only the 'Expected @ FY-end' estimate. Fixed income "
                            "uses each row's own rate.")
     ws.write("A3", "Family net worth", F["label"])
-    ws.write_formula("B3", "=G16", F["money_bold"])
+    ws.write_formula(
+        "B3", f'={chr(ord("B") + len(enabled_classes(data)))}{M.DASH_TOTAL_ROW}',
+        F["money_bold"])
     ws.write("A4", "Portfolio XIRR", F["label"])
     if data.xirr.portfolio is not None:
         ws.write_number("B4", data.xirr.portfolio, F["u_pct_bold"])
@@ -165,94 +236,121 @@ def _write_dashboard(wb, F, data: PortfolioData):
     ws.write_formula(
         "F4", '=IF(B4="","",IF(B4>E3/100,"Beats inflation ✓","Below inflation ✗"))')
 
-    headers = ["Person", "Equity", "Mutual Funds", "Fixed Deposits", "PPF", "Bonds",
-               "Total", _fy_end_label()]
-    ws.write_row("A5", headers, F["header"])
-    ws.write_comment("H5", "Estimate of each person's total at the financial-year end: "
-                           "FDs/PPF/Bonds accrue at their own rates; Equity and Mutual "
-                           "Funds grow at the 'Expected return %' input (E2). Written "
-                           "by the updater.")
-    class_cols = [("B", "Equity!$I:$I", "Equity!$A:$A"),
-                  ("C", "MutualFunds!$I:$I", "MutualFunds!$A:$A"),
-                  ("D", "FixedDeposits!$I:$I", "FixedDeposits!$A:$A"),
-                  ("E", "PPF!$H:$H", "PPF!$A:$A"),
-                  ("F", "Bonds!$K:$K", "Bonds!$A:$A")]
+    enabled = enabled_classes(data)
+    n = len(enabled)
+    col_of = {c.key: chr(ord("B") + i) for i, c in enumerate(enabled)}
+    total_col = chr(ord("B") + n)
+    fy_col = chr(ord("B") + n + 1)
+
+    ws.write_row("A5", ["Person"] + [c.label for c in enabled]
+                 + ["Total", _fy_end_label()], F["header"])
+    ws.write_comment(f"{fy_col}5",
+                     "Estimate of each person's total at the financial-year end: "
+                     "FDs/PPF/Bonds accrue at their own rates; Equity and Mutual "
+                     "Funds grow at the 'Expected return %' input (E2). Written "
+                     "by the updater.")
     for r in range(M.DASH_PERSON_FIRST, M.DASH_PERSON_LAST + 1):
         idx = r - M.DASH_PERSON_FIRST
         name = data.persons[idx] if idx < len(data.persons) else ""
         ws.write(f"A{r}", name, F["in_yellow"])
-        for col, val_rng, own_rng in class_cols:
-            ws.write_formula(f"{col}{r}",
-                             f'=IF($A{r}="","",SUMIFS({val_rng},{own_rng},$A{r}))',
+        for cls in enabled:
+            ws.write_formula(
+                f"{col_of[cls.key]}{r}",
+                f'=IF($A{r}="","",SUMIFS({cls.value_col},{cls.owner_col},$A{r}))',
+                F["c_money"])
+        if n:
+            ws.write_formula(f"{total_col}{r}",
+                             f'=IF($A{r}="","",SUM(B{r}:{chr(ord("B") + n - 1)}{r}))',
                              F["c_money"])
-        ws.write_formula(f"G{r}", f'=IF($A{r}="","",SUM(B{r}:F{r}))', F["c_money"])
         fy = data.fy_expected.get(name)
         if fy is not None:
-            ws.write_number(f"H{r}", fy, F["c_money"])
+            ws.write_number(f"{fy_col}{r}", fy, F["c_money"])
     tr = M.DASH_TOTAL_ROW
     ws.write(f"A{tr}", "TOTAL", F["total_label"])
-    for col in "BCDEFG":
+    for i in range(n + 1):                       # class columns + Total
+        col = chr(ord("B") + i)
         ws.write_formula(f"{col}{tr}", f"=SUM({col}6:{col}15)", F["total"])
-    ws.write_formula(f"H{tr}", f"=IF(SUM(H6:H15)=0,\"\",SUM(H6:H15))", F["total"])
+    ws.write_formula(f"{fy_col}{tr}",
+                     f'=IF(SUM({fy_col}6:{fy_col}15)=0,"",SUM({fy_col}6:{fy_col}15))',
+                     F["total"])
 
-    fy_now = _fy_label_today()
-    ws.write("A17", f"Dividends FY {fy_now}", F["label"])
-    ws.write_formula(
-        "B17", f'=SUMIFS(Dividends!$I:$I,Dividends!$A:$A,"{fy_now}")',
-        F["money_bold"])
-    ws.write_comment("B17", "Cash your shares declared this financial year - "
-                            "details and a month-by-month chart on the "
-                            "Dividends tab. Estimated from your current rows.")
+    if "equity" in col_of:
+        fy_now = _fy_label_today()
+        ws.write("A17", f"Dividends FY {fy_now}", F["label"])
+        ws.write_formula(
+            "B17", f'=SUMIFS(Dividends!$I:$I,Dividends!$A:$A,"{fy_now}")',
+            F["money_bold"])
+        ws.write_comment("B17", "Cash your shares declared this financial year - "
+                                "details and a month-by-month chart on the "
+                                "Dividends tab. Estimated from your current rows.")
 
     ws.write("A18", "Allocation by asset class", F["section"])
     ws.write_row("A19", ["Asset class", "Value", "XIRR"], F["header"])
-    classes = [("Equity", "B16", data.xirr.equity),
-               ("Mutual Funds", "C16", data.xirr.mutual_funds),
-               ("Fixed Deposits", "D16", data.xirr.fixed_deposits),
-               ("PPF", "E16", data.xirr.ppf),
-               ("Bonds", "F16", data.xirr.bonds)]
-    for i, (label, ref, x) in enumerate(classes):
+    alloc_last = 19 + n
+    for i, cls in enumerate(enabled):
         r = 20 + i
-        ws.write(f"A{r}", label)
-        ws.write_formula(f"B{r}", f"={ref}", F["c_money"])
+        ws.write(f"A{r}", cls.label)
+        ws.write_formula(f"B{r}", f"={col_of[cls.key]}16", F["c_money"])
+        x = getattr(data.xirr, cls.key, None) if cls.has_xirr else None
         if x is not None:
             ws.write_number(f"C{r}", x, F["u_pct"])
         else:
             ws.write_blank(f"C{r}", None, F["u_pct"])
+    if n:
+        ws.conditional_format(f"B20:B{alloc_last}", {
+            "type": "data_bar", "bar_color": "#9DB9E3",
+            "bar_solid": True, "bar_no_border": True})
 
-    pie = wb.add_chart({"type": "pie"})
-    pie.add_series({
-        "categories": "=Dashboard!$A$20:$A$24",
-        "values": "=Dashboard!$B$20:$B$24",
-        "data_labels": {"percentage": True},
-    })
-    pie.set_title({"name": "Allocation by asset class"})
-    ws.insert_chart("I4", pie, {"x_scale": 1.1, "y_scale": 1.1})
+    if n:
+        pie = wb.add_chart({"type": "pie"})
+        pie.add_series({
+            "categories": f"=Dashboard!$A$20:$A${alloc_last}",
+            "values": f"=Dashboard!$B$20:$B${alloc_last}",
+            "data_labels": {"percentage": True},
+        })
+        pie.set_title({"name": "Allocation by asset class"})
+        ws.insert_chart("I4", pie, {"x_scale": 1.1, "y_scale": 1.1})
 
     bar = wb.add_chart({"type": "column"})
     bar.add_series({
-        "name": "=Dashboard!$G$5",
+        "name": f"=Dashboard!${total_col}$5",
         "categories": "=Dashboard!$A$6:$A$15",
-        "values": "=Dashboard!$G$6:$G$15",
+        "values": f"=Dashboard!${total_col}$6:${total_col}$15",
     })
     bar.set_title({"name": "Net worth by person"})
     bar.set_legend({"none": True})
     ws.insert_chart("I21", bar, {"x_scale": 1.1, "y_scale": 1.1})
 
+    hist_classes = _history_classes(data)
+    hist_total_col = chr(ord("B") + len(hist_classes))
     trend = wb.add_chart({"type": "line"})
     trend.add_series({
         "name": "Net worth",
         "categories": f"=History!$A$4:$A${M.HISTORY_LAST_ROW}",
-        "values": f"=History!$G$4:$G${M.HISTORY_LAST_ROW}",
+        "values": f"=History!${hist_total_col}$4:${hist_total_col}${M.HISTORY_LAST_ROW}",
     })
     trend.set_title({"name": "Net worth over time"})
     trend.set_legend({"none": True})
     trend.set_x_axis({"num_format": "dd-mmm-yy"})
     ws.insert_chart("I38", trend, {"x_scale": 1.6, "y_scale": 1.2})
 
+    if hist_classes:
+        area = wb.add_chart({"type": "area", "subtype": "stacked"})
+        for i, cls in enumerate(hist_classes):
+            col = chr(ord("B") + i)
+            area.add_series({
+                "name": cls.label,
+                "categories": f"=History!$A$4:$A${M.HISTORY_LAST_ROW}",
+                "values": f"=History!${col}$4:${col}${M.HISTORY_LAST_ROW}",
+            })
+        area.set_title({"name": "Net worth by class over time"})
+        area.set_x_axis({"num_format": "dd-mmm-yy"})
+        ws.insert_chart("I56", area, {"x_scale": 1.6, "y_scale": 1.2})
+
     _redgreen(ws, F, "B4")
     _redgreen(ws, F, "E4")
-    _redgreen(ws, F, "C20:C24")
+    if n:
+        _redgreen(ws, F, f"C20:C{alloc_last}")
     return ws
 
 
@@ -287,66 +385,84 @@ def _write_projection(wb, F):
     return ws
 
 
-_PERSON_BLOCKS = [
-    # (title, block const, headers, source sheet, source cols, key col, fmts)
-    ("EQUITY", M.PERSON_EQ_BLOCK,
-     ["ISIN", "Scrip", "Qty", "Avg cost", "Cur. val", "Net chg.", "XIRR"],
-     "Equity", ["B", "C", "O", "P", "I", "K", "N"], "Q",   # O/P = post-action (demat) view
-     ["c_text", "c_text", "c_text", "c_price", "c_money", "c_money", "c_pct"]),
-    ("MUTUAL FUNDS", M.PERSON_MF_BLOCK,
-     ["Fund House", "Scheme", "Units", "Cur NAV", "Cur. val", "Net chg.", "XIRR"],
-     "MutualFunds", ["B", "C", "E", "G", "I", "J", "L"], "N",
-     ["c_text", "c_text", "c_units", "c_price", "c_money", "c_money", "c_pct"]),
-    ("FIXED DEPOSITS", M.PERSON_FD_BLOCK,
-     ["Bank", "Principal", "Rate %", "Maturity", "Value today"],
-     "FixedDeposits", ["B", "D", "E", "G", "I"], "L",
-     ["c_text", "c_money", "c_text", "c_text", "c_money"]),
-    ("PPF", M.PERSON_PPF_BLOCK,
-     ["Institution", "Balance", "As-on"],
-     "PPF", ["B", "H", "E"], "L",       # H = Balance today, L = Key
-     ["c_text", "c_money", "c_text"]),
-    ("BONDS", M.PERSON_BOND_BLOCK,
-     ["Issuer / Bond", "Qty", "Buy Price", "Cur Price", "Cur. val", "Net chg."],
-     "Bonds", ["B", "D", "F", "G", "K", "L"], "N",
-     ["c_text", "c_text", "c_price", "c_price", "c_money", "c_money"]),
-]
+# Per-class person-sheet holding block: headers, source sheet columns, key
+# column, formats, and the red/green column range within the block (or None).
+_PERSON_BLOCK_SPECS = {
+    "equity": ("EQUITY",
+               ["ISIN", "Scrip", "Qty", "Avg cost", "Cur. val", "Net chg.", "XIRR"],
+               "Equity", ["B", "C", "O", "P", "I", "K", "N"], "Q",  # O/P = demat view
+               ["c_text", "c_text", "c_text", "c_price", "c_money", "c_money", "c_pct"],
+               "F:G"),
+    "mutual_funds": ("MUTUAL FUNDS",
+                     ["Fund House", "Scheme", "Units", "Cur NAV", "Cur. val",
+                      "Net chg.", "XIRR"],
+                     "MutualFunds", ["B", "C", "E", "G", "I", "J", "L"], "N",
+                     ["c_text", "c_text", "c_units", "c_price", "c_money",
+                      "c_money", "c_pct"],
+                     "F:G"),
+    "fixed_deposits": ("FIXED DEPOSITS",
+                       ["Bank", "Principal", "Rate %", "Maturity", "Value today"],
+                       "FixedDeposits", ["B", "D", "E", "G", "I"], "L",
+                       ["c_text", "c_money", "c_text", "c_text", "c_money"],
+                       None),
+    "ppf": ("PPF",
+            ["Institution", "Balance", "As-on"],
+            "PPF", ["B", "H", "E"], "L",        # H = Balance today, L = Key
+            ["c_text", "c_money", "c_text"],
+            None),
+    "bonds": ("BONDS",
+              ["Issuer / Bond", "Qty", "Buy Price", "Cur Price", "Cur. val",
+               "Net chg."],
+              "Bonds", ["B", "D", "F", "G", "K", "L"], "N",
+              ["c_text", "c_text", "c_price", "c_price", "c_money", "c_money"],
+              "F:F"),
+}
 
 
-def _write_person(wb, F, name: str):
+def _write_person(wb, F, name: str, data: PortfolioData):
     ws = wb.add_worksheet(name)
     _widths(ws, {"A": 26, "B": 30, "C": 12, "D": 12, "E": 14, "F": 13, "G": 10})
     ws.write("A1", f"{name} — PORTFOLIO", F["title"])
     ws.set_row(0, 18)
     ws.write("A2", "Owner", F["label"])
     ws.write("B2", name)
+
+    enabled = enabled_classes(data)
+    n = len(enabled)
+    total_row = 6 + n
     ws.write("A3", "Net worth", F["label"])
-    ws.write_formula("B3", "=B11", F["money_bold"])
+    ws.write_formula("B3", f"=B{total_row}", F["money_bold"])
 
     ws.write_row("A5", ["Asset class", "Value", "# holdings"], F["header"])
-    rows = [("Equity", "Equity!$I:$I", "Equity!$A:$A"),
-            ("Mutual Funds", "MutualFunds!$I:$I", "MutualFunds!$A:$A"),
-            ("Fixed Deposits", "FixedDeposits!$I:$I", "FixedDeposits!$A:$A"),
-            ("PPF", "PPF!$H:$H", "PPF!$A:$A"),
-            ("Bonds", "Bonds!$K:$K", "Bonds!$A:$A")]
-    for i, (label, val_rng, own_rng) in enumerate(rows):
+    for i, cls in enumerate(enabled):
         r = 6 + i
-        ws.write(f"A{r}", label)
-        ws.write_formula(f"B{r}", f"=SUMIFS({val_rng},{own_rng},$B$2)", F["c_money"])
-        ws.write_formula(f"C{r}", f"=COUNTIF({own_rng},$B$2)", F["c_text"])
-    ws.write("A11", "Total", F["total_label"])
-    ws.write_formula("B11", "=SUM(B6:B10)", F["total"])
-    ws.write_formula("C11", "=SUM(C6:C10)", F["total"])
+        ws.write(f"A{r}", cls.label)
+        ws.write_formula(f"B{r}",
+                         f"=SUMIFS({cls.value_col},{cls.owner_col},$B$2)",
+                         F["c_money"])
+        ws.write_formula(f"C{r}", f"=COUNTIF({cls.owner_col},$B$2)", F["c_text"])
+    ws.write(f"A{total_row}", "Total", F["total_label"])
+    ws.write_formula(f"B{total_row}", f"=SUM(B6:B{total_row - 1})", F["total"])
+    ws.write_formula(f"C{total_row}", f"=SUM(C6:C{total_row - 1})", F["total"])
 
-    pie = wb.add_chart({"type": "pie"})
-    pie.add_series({
-        "categories": f"='{name}'!$A$6:$A$10",
-        "values": f"='{name}'!$B$6:$B$10",
-        "data_labels": {"percentage": True},
-    })
-    pie.set_title({"name": f"{name} — allocation"})
-    ws.insert_chart("E4", pie)
+    if n:
+        pie = wb.add_chart({"type": "pie"})
+        pie.add_series({
+            "categories": f"='{name}'!$A$6:$A${total_row - 1}",
+            "values": f"='{name}'!$B$6:$B${total_row - 1}",
+            "data_labels": {"percentage": True},
+        })
+        pie.set_title({"name": f"{name} — allocation"})
+        ws.insert_chart("E4", pie)
 
-    for title, (title_row, first, last), headers, src, cols, key_col, fmts in _PERSON_BLOCKS:
+    title_row = max(M.PERSON_BLOCKS_START, total_row + 3)
+    for cls in enabled:
+        spec = _PERSON_BLOCK_SPECS.get(cls.key)
+        if spec is None:
+            continue
+        title, headers, src, cols, key_col, fmts, rg = spec
+        first = title_row + 2
+        last = first + cls.person_rows - 1
         ws.write(f"A{title_row}", title, F["section"])
         ws.write_row(f"A{title_row + 1}", headers, F["header"])
         for r in range(first, last + 1):
@@ -358,10 +474,10 @@ def _write_person(wb, F, name: str):
                     f'=IFERROR(INDEX({src}!${col}:${col},'
                     f'MATCH($B$2&"#"&{slot},{src}!${key_col}:${key_col},0)),"")',
                     F[fmt])
-        if title in ("EQUITY", "MUTUAL FUNDS"):
-            _redgreen(ws, F, f"F{first}:G{last}")      # Net chg. + XIRR
-        elif title == "BONDS":
-            _redgreen(ws, F, f"F{first}:F{last}")      # Net chg.
+        if rg:
+            c1, c2 = rg.split(":")
+            _redgreen(ws, F, f"{c1}{first}:{c2}{last}")
+        title_row = last + 2
     ws.freeze_panes("A5")
     return ws
 
@@ -471,6 +587,11 @@ def _write_equity(wb, F, data: PortfolioData):
                   _typeahead("Stock_Master", "Stock_NameList"), "Scrip")
     _redgreen(ws, F, f"K4:L{M.EQUITY_LAST_ROW}")
     _redgreen(ws, F, f"N4:N{M.EQUITY_LAST_ROW}")
+    # ▲/▼ arrows on Day chg. — up above zero, down below (absolute thresholds)
+    ws.conditional_format(f"L4:L{M.EQUITY_LAST_ROW}", {
+        "type": "icon_set", "icon_style": "3_arrows",
+        "icons": [{"criteria": ">", "type": "number", "value": 0},
+                  {"criteria": ">=", "type": "number", "value": 0}]})
     _redgreen(ws, F, f"K{tr}:L{tr}")
     _redgreen(ws, F, f"N{tr}")
     # amber flags (SPEC §6.5): stale price date; suspended/delisted scrip
@@ -1016,24 +1137,28 @@ def _write_dividends(wb, F, data: PortfolioData):
 
 def _write_history(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("History")
-    _widths(ws, {"A": 13, "B": 14, "C": 14, "D": 15, "E": 12, "F": 12, "G": 15})
+    classes = _history_classes(data)
+    n = len(classes)
+    _widths(ws, {"A": 13, **{chr(ord("B") + i): 14 for i in range(n + 1)}})
     _sheet_head(ws, F, "NET WORTH HISTORY",
                 "One snapshot per day, written by the updater (the same run that "
                 "refreshes prices). The Dashboard trend chart reads this sheet. "
                 "Machine-managed - no need to edit it.")
-    ws.write_row("A3", ["Date", "Equity", "Mutual Funds", "Fixed Deposits",
-                        "PPF", "Bonds", "Total"], F["header"])
+    ws.write_row("A3", ["Date"] + [c.label for c in classes] + ["Total"],
+                 F["header"])
+    last_cls_col = chr(ord("B") + n - 1) if n else "B"
+    total_col = chr(ord("B") + n)
     by_row = {M.FIRST_DATA_ROW + i: s for i, s in enumerate(data.history)}
     for r in range(M.FIRST_DATA_ROW, M.HISTORY_LAST_ROW + 1):
         snap = by_row.get(r)
         if snap and snap.snap_date is not None:
             ws.write_datetime(f"A{r}", snap.snap_date, F["date_disp"])
-            ws.write_number(f"B{r}", snap.equity, F["c_money"])
-            ws.write_number(f"C{r}", snap.mutual_funds, F["c_money"])
-            ws.write_number(f"D{r}", snap.fixed_deposits, F["c_money"])
-            ws.write_number(f"E{r}", snap.ppf, F["c_money"])
-            ws.write_number(f"F{r}", snap.bonds, F["c_money"])
-            ws.write_formula(f"G{r}", f"=SUM(B{r}:F{r})", F["c_money"])
+            for i, cls in enumerate(classes):
+                ws.write_number(f"{chr(ord('B') + i)}{r}",
+                                getattr(snap, cls.key, 0.0), F["c_money"])
+            if n:
+                ws.write_formula(f"{total_col}{r}",
+                                 f"=SUM(B{r}:{last_cls_col}{r})", F["c_money"])
     ws.freeze_panes("A4")
     return ws
 
@@ -1137,8 +1262,9 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     # tab order = SPEC §3.1
     _write_dashboard(wb, F, data)
     _write_projection(wb, F)
+    _write_settings(wb, F, data)
     for person in data.persons:
-        _write_person(wb, F, person)
+        _write_person(wb, F, person, data)
     _write_equity(wb, F, data)
     _write_mutualfunds(wb, F, data)
     _write_mf_sip(wb, F, data)
@@ -1165,6 +1291,15 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_dividends(wb, F, data)
     _write_history(wb, F, data)
     _write_guide(wb, F)
+
+    # hide (never omit) the sheets of switched-off classes — data survives,
+    # formulas keep resolving, flipping Yes brings everything back (SPEC §3.14)
+    hidden = {sheet
+              for cls in ASSET_CLASSES if not effective_enabled(data, cls)
+              for sheet in cls.sheets}
+    for ws in wb.worksheets():
+        if ws.get_name() in hidden:
+            ws.hide()
 
     wb.close()
 

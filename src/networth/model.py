@@ -41,13 +41,16 @@ DASH_PERSON_LAST = 15
 DASH_TOTAL_ROW = 16
 PROJECTION_YEARS = 20          # Projection rows 4..24 (n = 0..20)
 
-# Person sheets: summary r5..r11, then per-class holding blocks (SPEC §3.5,
-# reverse-engineered from the legacy workbook): (title_row, first, last).
-PERSON_EQ_BLOCK = (14, 16, 55)
-PERSON_MF_BLOCK = (57, 59, 78)
-PERSON_FD_BLOCK = (80, 82, 96)
-PERSON_PPF_BLOCK = (98, 100, 109)
-PERSON_BOND_BLOCK = (111, 113, 127)
+# Person sheets: summary from r5, then per-class holding blocks (SPEC §3.5).
+# Since R10 the blocks stack dynamically over the ENABLED classes; each class
+# contributes a fixed number of data rows (AssetClass.person_rows below).
+PERSON_BLOCKS_START = 14
+
+# Settings sheet (SPEC §3.14): class rows 4..15, then tolerance/total cells.
+SETTINGS_FIRST_ROW = 4
+SETTINGS_LAST_ROW = 15
+SETTINGS_TOL_ROW = 17
+SETTINGS_SUM_ROW = 18
 
 TEMPLATE_FILENAME = "Family_Portfolio_Tracker.xlsx"
 
@@ -57,6 +60,75 @@ if getattr(_sys, "frozen", False):
     DATA_DIR = Path(getattr(_sys, "_MEIPASS", ".")) / "data"
 else:
     DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+# -------------------------------------------------------- asset classes ----
+
+@dataclass(frozen=True)
+class AssetClass:
+    """One asset class — the registry entry that drives every per-class
+    surface (Dashboard matrix column, allocation row, person block, History
+    column, Settings row, sheet visibility). Adding a class = adding a row
+    here plus its sheet writer/reader/computes (SPEC §2)."""
+    key: str                      # attribute name on ClassXirr/HistorySnapshot
+    label: str                    # header text everywhere
+    value_col: str                # SUMIFS value range, e.g. "Equity!$I:$I"
+    owner_col: str                # SUMIFS owner range, e.g. "Equity!$A:$A"
+    sheets: tuple[str, ...]       # sheets hidden together when the class is off
+    person_rows: int              # data rows in the person-sheet block
+    default_enabled: bool = True
+    has_xirr: bool = True
+
+
+ASSET_CLASSES: list[AssetClass] = [
+    AssetClass("equity", "Equity", "Equity!$I:$I", "Equity!$A:$A",
+               ("Equity", "By Scrip", "Corporate_Actions", "Dividends",
+                "Stock_Master"), person_rows=40),
+    AssetClass("mutual_funds", "Mutual Funds", "MutualFunds!$I:$I",
+               "MutualFunds!$A:$A", ("MutualFunds", "MF_SIP", "MF_Master"),
+               person_rows=20),
+    AssetClass("fixed_deposits", "Fixed Deposits", "FixedDeposits!$I:$I",
+               "FixedDeposits!$A:$A", ("FixedDeposits", "Bank_Master"),
+               person_rows=15),
+    AssetClass("ppf", "PPF", "PPF!$H:$H", "PPF!$A:$A",
+               ("PPF", "PPF_Ledger"), person_rows=10),
+    AssetClass("bonds", "Bonds", "Bonds!$K:$K", "Bonds!$A:$A",
+               ("Bonds",), person_rows=15),
+]
+
+
+@dataclass
+class ClassSetting:
+    """One Settings-sheet row (SPEC §3.14): the user's Yes/No plus the
+    R11 allocation target."""
+    enabled: bool = True
+    target_pct: float | None = None
+
+
+def default_class_settings() -> dict[str, "ClassSetting"]:
+    return {c.key: ClassSetting(enabled=c.default_enabled)
+            for c in ASSET_CLASSES}
+
+
+def class_has_data(data: "PortfolioData", key: str) -> bool:
+    """A class holding user rows is never hidden (SPEC §3.14)."""
+    return bool({
+        "equity": lambda: data.equity,
+        "mutual_funds": lambda: data.mutual_funds or data.sip,
+        "fixed_deposits": lambda: data.fixed_deposits,
+        "ppf": lambda: data.ppf or data.ppf_ledger,
+        "bonds": lambda: data.bonds,
+    }.get(key, lambda: True)())
+
+
+def effective_enabled(data: "PortfolioData", cls: AssetClass) -> bool:
+    setting = data.class_settings.get(cls.key)
+    enabled = setting.enabled if setting else cls.default_enabled
+    return enabled or class_has_data(data, cls.key)
+
+
+def enabled_classes(data: "PortfolioData") -> list[AssetClass]:
+    return [c for c in ASSET_CLASSES if effective_enabled(data, c)]
 
 
 # ------------------------------------------------------------------ rows ----
@@ -270,6 +342,10 @@ class PortfolioData:
     history: list["HistorySnapshot"] = field(default_factory=list)
     inflation_pct: float = 7
     expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)
+    # per-class Yes/No + allocation target, from the Settings sheet (SPEC §3.14)
+    class_settings: dict[str, "ClassSetting"] = field(
+        default_factory=default_class_settings)
+    drift_tolerance_pct: float = 5         # Settings B17 (R11 drift band)
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person
     xirr: ClassXirr = field(default_factory=ClassXirr)
     masters: Masters = field(default_factory=Masters)

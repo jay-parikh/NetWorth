@@ -47,6 +47,12 @@ GUIDE_ROWS: list[tuple] = [
     ("tip", "Selling a fund? Log it on MF_SIP as a purchase with a minus amount."),
     ("space",),
 
+    ("section", "🗂️", "Show only what you own"),
+    ("text", "On the Settings tab, set any asset class to No and its tabs disappear —"),
+    ("text", "a tidy file with only what your family actually owns. Flip it back to Yes anytime;"),
+    ("text", "nothing is ever deleted, and a class holding rows always stays visible."),
+    ("space",),
+
     ("section", "👥", "Add a family member"),
     ("text", 'When you run "Update Portfolio" it asks “Add a new person?” — type a name and'),
     ("text", "their tab is built for you. Then use that same name in the Owner column of any holding."),
