@@ -32,6 +32,10 @@ Ships as **v1.1.0** once all three land and verify.
 showing the cash their shares paid this financial year.*
 
 Planned 2026-07-16; design detail in [PLAN-v1.2.md](PLAN-v1.2.md).
+**Shipped as v1.2.0 (2026-07-16)** — R8 + R9 landed with tests
+(`test_r8_dual_source.py`, `test_r9_dividends.py`, 103 total) and a live
+end-to-end run (10/10 scrips BSE+NSE, 9 real dividend rows, CA-adjusted
+quantities verified against real splits).
 **Standing acceptance criteria for every R8–R14 row** (the design principles
 in PLAN-v1.2.md): the default template stays as clean as v1.1; every new
 sheet has a plain one-sentence hint; every amber cell has a comment saying

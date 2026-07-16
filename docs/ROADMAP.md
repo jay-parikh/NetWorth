@@ -18,10 +18,10 @@ into RELEASES.md with acceptance criteria.
   proper monthly-minimum-balance interest computation using the bundled
   quarterly `ppf_rates.csv` (refreshed via app releases; there is no official
   API). Replaced the flat Rate% estimate; enables true PPF XIRR.
-- 🚧 **Dividend ledger** *(R9, v1.2)* — a Dividends sheet logging every
-  dividend paid on held stocks per financial year, filled automatically from
-  both exchanges' announcements, with a Dashboard "Dividends this FY" total
-  and a dividends-by-month chart.
+- ✅ **Dividend ledger** *(shipped v1.2.0, R9)* — a Dividends sheet logging
+  every dividend paid on held stocks per financial year, filled automatically
+  from both exchanges' announcements, with a Dashboard "Dividends this FY"
+  total and a dividends-by-month chart.
 - ⬜ **Capital-gains tax report** — realised/unrealised STCG & LTCG per FY,
   with 31-01-2018 grandfathering applied properly (reuses the bundled FMV
   data), ₹1.25L LTCG exemption tracking, and a sell-planning helper.
@@ -34,9 +34,9 @@ into RELEASES.md with acceptance criteria.
 
 ## Data in
 
-- 🚧 **NSE as full peer source for prices** *(R8, v1.2)* — same-day BSE+NSE
-  union merge; today NSE bhavcopy is fallback only (corporate actions
-  already query both exchanges).
+- ✅ **NSE as full peer source for prices** *(shipped v1.2.0, R8)* — same-day
+  BSE+NSE union merge, NSE wins price conflicts, BSE keeps the scrip codes;
+  delisted/suspended escalation only on dual-source days.
 - 🚧 **Mergers / demergers / ISIN reassignments** *(R14, v1.4)* — the one
   corporate-action category with no reliable free feed for swap ratios;
   handled via a curated actions file shipped with releases plus the existing
