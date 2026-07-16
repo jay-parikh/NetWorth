@@ -467,6 +467,11 @@ _PERSON_BLOCK_SPECS = {
             "PPF", ["B", "H", "E"], "L",        # H = Balance today, L = Key
             ["c_text", "c_money", "c_text"],
             None),
+    "epf": ("EPF",
+            ["Establishment / UAN", "Balance today", "As-on"],
+            "EPF", ["B", "H", "E"], "J",
+            ["c_text", "c_money", "c_text"],
+            None),
     "bonds": ("BONDS",
               ["Issuer / Bond", "Qty", "Buy Price", "Cur Price", "Cur. val",
                "Net chg."],

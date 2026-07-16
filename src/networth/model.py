@@ -659,6 +659,8 @@ def load_masters(data_dir: Path = DATA_DIR,
     return Masters(
         mf_rows=rows("seed_mf_master.csv"),
         stock_rows=rows("seed_stock_master.csv"),
+        nps_rows=rows("seed_nps_master.csv"),
         mf_refreshed=mf_refreshed,
         stock_refreshed=stock_refreshed,
+        nps_refreshed=mf_refreshed,
     )

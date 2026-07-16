@@ -2,11 +2,12 @@
 
 # 💰 NetWorth
 
-### One Excel workbook for your family's entire net worth — refreshed with a double‑click.
+### Your family's entire wealth, in one Excel file — refreshed with a double‑click.
 
-Track **Equity · Mutual Funds · Fixed Deposits · PPF · Bonds** in a single file.
-Live prices, real returns (XIRR), automatic tax & corporate‑action handling —
-all on **your own computer**.
+Shares · Mutual Funds · FDs · PPF · EPF · NPS · Gold & Silver · Bonds ·
+Property · Cash · Insurance — **one workbook**, live prices, honest returns,
+automatic handling of the messy stuff (splits, bonuses, mergers, dividends).
+All on **your own computer**. Nothing ever uploaded.
 
 ![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)
@@ -15,18 +16,32 @@ all on **your own computer**.
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
-![Tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)
 
 </div>
 
 ---
 
+## The 10‑second pitch
+
+You probably track your money in five apps, two brokers' statements, an EPFO
+passbook and a guess. NetWorth is a single Excel file that already knows how
+to do this. You type **what you own**; a double‑click fills in **what it's
+worth** — today's prices, fund NAVs, gold rate, NPS NAV — and answers the
+questions that actually matter:
+
+> *What are we worth? Is it growing faster than inflation? Is the mix what we
+> planned? What did our shares pay us this year?*
+
+No account. No app. No cloud. A spreadsheet you fully own, forever.
+
+---
+
 ## Contents
 
-- [Why NetWorth](#-why-networth)
+- [Start in five minutes](#-start-in-five-minutes)
 - [What's in the workbook](#-whats-in-the-workbook)
-- [Quick start (for everyone)](#-quick-start-for-everyone)
-- [The smart bits](#-the-smart-bits-what-it-does-for-you)
+- [The smart bits](#-the-smart-bits-what-it-quietly-does-for-you)
 - [Your data stays yours](#-your-data-stays-yours)
 - [For developers](#-for-developers)
 - [Project documents](#-project-documents)
@@ -34,94 +49,90 @@ all on **your own computer**.
 
 ---
 
-## ✨ Why NetWorth
+## 🚀 Start in five minutes
 
-|  |  |
-|---|---|
-| 🔒 **100% local** | Your holdings never leave your computer. The only internet use is downloading *public* prices (AMFI, BSE, NSE). No cloud, no account, no sign‑up, no tracking. |
-| ![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white) ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white) **Works on both** | One thing to double‑click. No Python, no setup — just Excel (or the free LibreOffice) to open the file. |
-| 🧩 **Open & rebuildable** | The workbook is generated from code against a written [specification](docs/SPEC.md), so it can be re‑created — or re‑implemented in any language — from the spec alone. |
+You need Excel (or the free LibreOffice) and zero technical skills.
+
+1. **Download** the zip for your computer from the **Releases** page and
+   unzip it. Keep the files together.
+2. **Open** `Family_Portfolio_Tracker.xlsx` and just look around — **every
+   tab already has sample rows showing exactly how it works**: a share
+   portfolio, SIPs, an FD, a PPF ledger, an EPF balance, gold bangles, an
+   SGB, an NPS account, even a sample flat in Pune.
+3. **Make it yours, organically.** Replace the sample family (Amit / Priya /
+   Rahul) with your names. Overtype sample rows with your own holdings —
+   dropdowns find your funds and stocks, IDs fill themselves in. **Delete
+   the samples for things you don't own — those tabs tidy themselves away.**
+4. **Save, close, double‑click `Update Portfolio`.** It backs your file up,
+   fetches everything, recomputes every number, and prints a friendly
+   one‑screen summary. It'll even ask if you want to add a family member or
+   show/hide an asset class — just type a number.
+
+> 🪜 **You don't have to learn it. You get to notice it.** Start with two
+> stocks if you like. One day a stock splits and *Qty today* just… updates.
+> A dividend lands and the Dividends tab logged it before your bank SMS
+> arrived. HDFC merges into HDFC Bank and your old shares quietly become the
+> new ones — at the right ratio, with your costs intact. That's the product.
+
+*First run only:* Windows may show SmartScreen (**More info → Run anyway**),
+macOS a Gatekeeper prompt (**right‑click → Open**) — the apps aren't
+code‑signed yet. Nothing is installed; nothing leaves your machine.
+
+**Upgrading later:** your workbook is yours forever. Replace the updater app;
+the next run migrates your file to the newest layout with all data intact.
 
 ---
 
 ## 📊 What's in the workbook
 
-One file, a tab for everything. You only ever type into the **blue/yellow** cells;
-the **grey** ones calculate themselves.
+You only ever type into **blue/yellow** cells; **grey** ones calculate
+themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
+(a stale price, an estimate, a value you haven't refreshed in 90 days).
 
 | Tab | What it shows |
 |---|---|
-| **Dashboard** | Family net worth, a person × asset‑class grid, returns (XIRR), an inflation check, an FY‑end estimate, and charts — allocation, per‑person, and net worth over time |
-| **Projection** | Your money over the next 20 years: your return vs inflation |
+| **Dashboard** | Family net worth, person × asset‑class grid, XIRR returns, inflation check, FY‑end estimate, dividends this year — plus five charts: allocation pie, **actual‑vs‑target**, per‑person, net‑worth trend, and a stacked **net worth by class over time** |
+| **Projection** | Your corpus over 20 years: your return vs inflation |
+| **Settings** | One Yes/No per asset class (show only what you own) + your target allocation % per class |
 | **One tab per person** | Each family member's holdings and allocation |
-| **Equity** | Shares with live prices, day/total change, per‑stock return, and post‑split/bonus quantities |
-| **Mutual Funds** *(+ ledger)* | Fund summary, auto‑built from a one‑row‑per‑purchase SIP ledger |
-| **Fixed Deposits** | Value today and at maturity, from principal / rate / dates |
-| **PPF** *(+ ledger)* | Balance & interest — exact, by the official rules, if you log deposits |
-| **Bonds** | Value, maturity amount, and coupon‑aware returns |
-| **Corporate Actions** | A transparent record of every split/bonus applied to your stocks |
-| **History** | A dated net‑worth snapshot each time you update — feeds the trend chart |
-| **Guide** | A 2‑minute manual, right inside the file |
-
-> **Colours tell the story:** blue/yellow = *you type here*, grey = *calculated*.
-> **Green** = gain, **red** = loss, **amber** = *look closer* (a stale price, a
-> delisted stock, or an estimated cost).
-
----
-
-## 🚀 Quick start (for everyone)
-
-You need **5 minutes** and Excel (or LibreOffice). No technical skills.
-
-1. **Download** the zip for your computer from the **Releases** page and unzip it
-   somewhere. Keep the files together.
-2. **Open** `Family_Portfolio_Tracker.xlsx` and skim the **Guide** tab. Replace the
-   sample family (Amit / Priya / Rahul) with your own — pick funds and stocks from
-   the dropdowns and the ID (ISIN) fills itself in.
-3. **Save and close** the file, then **double‑click `Update Portfolio`**
-   (`.bat` / `.exe` on Windows; on macOS, right‑click `Update Portfolio.command`
-   → **Open** the first time).
-
-That's it. Each run:
-
-> 💾 backs up your file  →  🌐 fetches the latest prices, NAVs & corporate actions
-> →  🧮 recomputes every return, PPF interest and the FY‑end estimate  →  📸 saves a
-> net‑worth snapshot  →  ✅ rewrites the workbook and prints a one‑screen summary.
-
-It even **offers to add a new family member** — just type a name and their tab is
-built for you. If the internet or a data source is down, your old numbers stay put
-and it tells you.
-
-*First run only:* Windows may show a SmartScreen warning (**More info → Run anyway**)
-and macOS a Gatekeeper prompt (**right‑click → Open**) — the apps aren't
-code‑signed yet. Nothing is installed; nothing is uploaded.
-
-**Upgrading later** is painless: your workbook is yours forever — just replace the
-updater app, and the next run brings the file up to the newest layout with all your
-data intact.
+| **Equity** | Live prices, day/total change, per‑stock return, post‑split quantities, ▲/▼ day arrows |
+| **Mutual Funds** *(+ SIP ledger)* | Fund summary auto‑built from one‑row‑per‑purchase |
+| **Fixed Deposits / PPF / EPF** | Value today and at maturity; PPF interest by the official rules; EPF from your passbook balance at the declared rate |
+| **Gold & Silver** | SGBs priced like shares; jewellery/coins at the **daily bullion (IBJA) rate** × grams × purity — or your jeweller's rate if you type it |
+| **NPS** | Units × daily NAV from NPS Trust, scheme picked from a dropdown |
+| **Bonds** | Value, maturity amount, coupon‑aware returns |
+| **Manual Assets** | The house, savings accounts, insurance surrender value — you type the value, it joins the family total |
+| **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart |
+| **Corporate Actions** | The transparent record: every split, bonus, merger and demerger applied |
+| **History** | A dated net‑worth snapshot per update — feeds the trend charts |
+| **Guide** | The 2‑minute manual, right inside the file |
 
 ---
 
-## 🧠 The smart bits (what it does for you)
+## 🧠 The smart bits (what it quietly does for you)
 
-You don't have to know any of this works — it just does. But here's what's quietly
-handled for you:
-
-- **Splits & bonuses, automatically.** Corporate actions are fetched from **both
-  NSE and BSE**, de‑duplicated, and applied to your holdings — past *and* future
-  ex‑dates. Your typed quantities are never overwritten; a *Qty today* column shows
-  the post‑bonus count, matching your demat. If a stock can't be verified on either
-  exchange, the summary **says so by name** — nothing is skipped silently.
-- **PPF, done properly.** List your deposits and the balance, interest and return
-  are computed by the *official* rule (interest on the monthly‑minimum balance,
-  historical rates). Don't want to? Just type your current balance instead.
-- **Old shares with a forgotten cost.** Bought before Feb 2018 and don't know the
-  price? Leave it blank — the tax "grandfathering" value (31‑Jan‑2018 fair value)
-  fills in, clearly flagged.
-- **Delisted / suspended stocks** are detected and marked, keeping their last known
-  price instead of quietly going stale.
-- **Real returns everywhere** — portfolio, per asset class, per fund, per stock —
-  computed from actual dated cashflows, exactly like Excel's `XIRR`.
+- **Both exchanges, merged.** Prices come from **BSE and NSE together** —
+  the union of both bhavcopies, so NSE‑only and BSE‑only listings all price,
+  and the numbers match your broker's app.
+- **Splits & bonuses, automatically** — fetched from both exchanges,
+  de‑duplicated, applied from each row's purchase date. Your typed numbers
+  never change; *Qty today* matches your demat.
+- **Mergers & demergers, correctly.** Old shares price as the new company at
+  the right ratio (cost and purchase date carry in full — that's the tax
+  rule). A demerger *appends* the spun‑off shares as their own row with the
+  company‑notified cost split and the **inherited holding period**, and the
+  audit tab shows exactly what was done.
+- **Dividends, logged.** Every dividend declared on your holdings this FY
+  appears on its own tab with an estimated amount — income you can *see*.
+- **Am I balanced?** Give any class a target % and the Dashboard answers in
+  colour: green "On target", or red with a plain hint like *"Move ₹1,20,000
+  out"* — live, the moment you edit a holding.
+- **PPF done properly** (monthly‑minimum‑balance rule, historical rates),
+  **EPF from one passbook line**, **forgotten pre‑2018 costs** filled with
+  the tax grandfathering value, **delisted stocks** flagged instead of
+  silently going stale.
+- **Honest returns everywhere** — XIRR from real dated cashflows: portfolio,
+  per class, per fund, per stock.
 
 ---
 
@@ -131,14 +142,17 @@ Every fetch is a plain download of **public** data, started from your machine:
 
 | What | Source |
 |---|---|
-| Fund NAVs | AMFI (`amfiindia.com`) |
-| Share prices | BSE (primary), NSE (fallback) |
-| Corporate actions | NSE + BSE |
+| Share & SGB prices | BSE + NSE bhavcopies (merged) |
+| Fund NAVs | AMFI |
+| Corporate actions & dividends | NSE + BSE announcements |
+| NPS NAVs | NPS Trust |
+| Gold & silver rate | IBJA (with a market‑implied fallback) |
 
-Reference data (Indian banks, PPF rate history, the 2018 fair‑value table) is
-**bundled** — no fetch needed. There's also a once‑per‑run check of the GitHub
-Releases page to tell you if a new version exists (it sends nothing about you; turn
-it off with `--no-update-check`).
+Reference data (banks, PPF & EPF rate history, the 2018 fair‑value table,
+curated merger/demerger ratios) is **bundled** — refreshed by app releases,
+no fetch needed. A once‑per‑run version check against GitHub Releases tells
+you when a newer version exists (and says "you're on the latest" otherwise);
+turn it off with `--no-update-check`.
 
 **Nothing about your holdings is ever uploaded, anywhere.**
 
@@ -146,108 +160,63 @@ it off with `--no-update-check`).
 
 ## 🛠️ For developers
 
-The product is a **specification** ([docs/SPEC.md](docs/SPEC.md)); the Python here
-is its reference implementation. The workbook is a **build artifact** — code
-generates it; the updater reads your inputs, fetches data, recomputes, and
+The product is a **specification** ([docs/SPEC.md](docs/SPEC.md)); the Python
+here is its reference implementation. The workbook is a **build artifact** —
+code generates it; the updater reads your inputs, fetches, recomputes, and
 regenerates it. End users never need Python.
 
 ```
-┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: sheets, charts, formulas)
+┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: 26 sheets, 10 charts, formulas)
 │                            │
 │                     you edit inputs
 │                            ▼
 └── update.py  ◄── reader.py (openpyxl, read‑only)
-        │  fetch/  (amfi · bhavcopy BSE→NSE · corporate_actions)
+        │  fetch/  (amfi · bhavcopy BSE+NSE · corporate_actions+dividends · nps · bullion)
         │  compute/ (xirr · cashflows · ppf · projections · snapshot)
         └─►  regenerate the workbook (atomic, with a backup)
 ```
 
+Everything per‑asset‑class flows from **one registry** (`ASSET_CLASSES` in
+`model.py`): Dashboard columns, person blocks, History columns, Settings
+rows, sheet visibility. Adding a class = one registry row + its sheet
+writer/reader/computes.
+
 ### Set up once
 
-<table>
-<tr><th>Windows</th><th>macOS / Linux</th></tr>
-<tr><td>
-
-```bat
-py -3 -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev]"
-```
-
-</td><td>
-
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate   # Windows: py -3 -m venv .venv && .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-</td></tr>
-</table>
-
-Needs **Python 3.10+** and git. No compilers, no Excel, no admin rights. `-e` is an
-editable install (code changes take effect immediately).
+Needs **Python 3.10+**. No compilers, no Excel, no admin rights.
 
 ### Everyday commands
 
 ```bash
 python -m networth.generate            # build the workbook from code (sample data)
 python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
-pytest                                 # 88 tests — XIRR golden values, parsers,
-                                       #   corp‑action & PPF scenarios, round‑trip identity
+pytest                                 # 138 tests — golden values, parsers, scenario
+                                       #   suites per milestone, round-trip identity
 ```
 
-**Dev loop for template changes:** edit `generate.py` → `python -m networth.generate`
-→ open the xlsx and look → `pytest`. Never hand‑edit the generated file or save it
-through openpyxl (that drops the charts) — change the code and rebuild.
+**Dev loop for template changes:** edit `generate.py` → `python -m
+networth.generate` → open the xlsx and look → `pytest`. Never hand‑edit the
+generated file or save it through openpyxl (that drops the charts) — change
+the code and rebuild.
 
 ### Build the double‑click apps
 
 | Target | Command | Where to run |
 |---|---|---|
-| **macOS** | `packaging/build-release.sh 1.1.0` | a Mac |
-| **Windows** | `packaging/build-windows-nowine.sh 1.1.0` | **Linux/Mac/Windows** — no Wine, no compiler |
+| **macOS** | `packaging/build-release.sh <version>` | a Mac |
+| **Windows** | `packaging/build-windows-nowine.sh <version>` | **Linux/Mac/Windows** — no Wine, no compiler |
 
-Because NetWorth is **pure Python**, the Windows app is assembled by *downloading*
-prebuilt Windows pieces — the official embeddable CPython plus `win_amd64` dependency
-wheels (`pip download --platform win_amd64`) — and arranging them next to our code
-and data. Nothing is compiled or emulated. The launcher is `Update Portfolio.bat`
-(relocatable, correct‑by‑inspection); a single self‑contained `.exe` comes from
-`packaging\build-release.bat` on real Windows, or from CI.
-
-### Pre‑release checklist (build & verify on Ubuntu)
-
-With your dev venv active, before tagging a release:
-
-```bash
-# 0 · tests green
-pytest -q
-
-# 1 · build the Windows bundle (version must match the tag you'll cut)
-packaging/build-windows-nowine.sh 1.1.0
-
-# 2 · the zip carries genuine Windows binaries + our code + data
-python -m zipfile -l dist/NetWorth-1.1.0-windows.zip \
-  | grep -E "win_amd64|python\.exe|networth/update\.py|Lib/data/ppf_rates|Update Portfolio\.bat"
-
-# 3 · the bundled code imports and the entry point is wired
-PYTHONPATH="dist/NetWorth-1.1.0-windows/app/python/Lib/site-packages" \
-  python -c "import networth, networth._packaged as p; print('bundled', networth.__version__, '| entry:', callable(p.run))"
-
-# 4 · the shipped workbook opens with all its tabs
-python -c "from openpyxl import load_workbook; wb=load_workbook('dist/NetWorth-1.1.0-windows/Family_Portfolio_Tracker.xlsx'); print(len(wb.sheetnames), 'sheets')"
-```
-
-Expect step 2 to list all five markers, step 3 to print `entry: True`, and step 4 to
-report **19 sheets**. The only thing you *can't* verify on Linux is running the
-Windows binary itself — do that final smoke test on a real Windows PC (or in CI)
-before you publish.
-
-### Releasing
-
-Push a `v*` tag → [`.github/workflows/release.yml`](.github/workflows/release.yml)
-runs the tests on Linux/Windows/macOS, builds the per‑OS apps, and attaches them to
-the GitHub Release (a tag with a `-`, e.g. `v1.2.0-rc.1`, is marked pre‑release).
+NetWorth is pure Python, so the Windows app is assembled by *downloading*
+prebuilt pieces — the official embeddable CPython plus `win_amd64` wheels —
+and arranging them next to our code and data. Nothing is compiled or
+emulated. Releasing: push a `v*` tag →
+[`.github/workflows/release.yml`](.github/workflows/release.yml) tests on
+three OSes, builds the apps and attaches them to the GitHub Release.
 
 ---
 
@@ -256,15 +225,15 @@ the GitHub Release (a tag with a `-`, e.g. `v1.2.0-rc.1`, is marked pre‑releas
 | Document | What it's for |
 |---|---|
 | [docs/SPEC.md](docs/SPEC.md) | **The product** — every sheet, data contract and algorithm, platform‑agnostic |
-| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
-| [docs/PLAN.md](docs/PLAN.md) | The approved architecture & decisions |
+| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.4) |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Everything else, with ✅ / 🚧 / ⬜ status |
+| [docs/PLAN.md](docs/PLAN.md) · [docs/PLAN-v1.2.md](docs/PLAN-v1.2.md) | The approved architecture & design decisions |
 | [CLAUDE.md](CLAUDE.md) | Working notes & conventions for contributors |
 
-> **Maintainer's golden rule:** end users edit the workbook freely — that's the
-> product, and the updater preserves it. What must *not* happen is changing the
-> template's **structure** (sheets, columns, formulas, charts) by hand. Structural
-> changes live in `src/networth/generate.py`; rebuild to apply them.
+> **Maintainer's golden rule:** end users edit the workbook freely — that's
+> the product, and the updater preserves it. Structural changes (sheets,
+> columns, formulas, charts) live in `src/networth/generate.py`; rebuild to
+> apply them.
 
 ---
 
@@ -272,5 +241,5 @@ the GitHub Release (a tag with a `-`, e.g. `v1.2.0-rc.1`, is marked pre‑releas
 
 [MIT](LICENSE) — © 2026 Jay Parikh. Use it, fork it, make it yours.
 
-*(The original Windows‑only PowerShell template this grew from is preserved under
-[legacy/](legacy/) and still works.)*
+*(The original Windows‑only PowerShell template this grew from is preserved
+under [legacy/](legacy/) and still works.)*

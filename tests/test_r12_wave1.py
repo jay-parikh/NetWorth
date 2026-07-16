@@ -22,7 +22,8 @@ TODAY = date(2026, 7, 15)
 
 
 def _wave1_data():
-    data = sample_portfolio()
+    from conftest import classic
+    data = classic()
     data.class_settings["real_estate"] = ClassSetting(enabled=True)
     data.class_settings["cash"] = ClassSetting(enabled=True)
     data.class_settings["epf"] = ClassSetting(enabled=True)

@@ -31,8 +31,9 @@ GUIDE_ROWS: list[tuple] = [
 
     ("section", "🚀", "Do this first"),
     ("step", "1", "On the Dashboard, replace the sample names (Amit, Priya, Rahul) with your family."),
-    ("step", "2", "Delete the sample holdings and add your own — see 'Where each holding goes' below."),
-    ("step", "3", 'Save, close the file, and double-click "Update Portfolio".'),
+    ("step", "2", "Every tab has a few sample rows showing how it works. Replace them with your own,"),
+    ("step", "3", "and delete the samples for things you don't own — those tabs then tidy themselves away."),
+    ("step", "4", 'Save, close the file, and double-click "Update Portfolio".'),
     ("space",),
 
     ("section", "📒", "Where each holding goes"),
@@ -52,9 +53,10 @@ GUIDE_ROWS: list[tuple] = [
     ("space",),
 
     ("section", "🗂️", "Show only what you own"),
-    ("text", "On the Settings tab, set any asset class to No and its tabs disappear —"),
-    ("text", "a tidy file with only what your family actually owns. Flip it back to Yes anytime;"),
-    ("text", "nothing is ever deleted, and a class holding rows always stays visible."),
+    ("text", 'Easiest way: "Update Portfolio" asks you — pick a number to show or hide any asset class.'),
+    ("text", "(Or set Yes/No on the Settings tab; either way it takes effect on the next update run.)"),
+    ("text", "Nothing is ever deleted — and a tab that still holds rows stays visible until you clear them,"),
+    ("text", "so a hidden number can never lurk inside your totals."),
     ("space",),
 
     ("section", "🎯", "Keep your money balanced"),

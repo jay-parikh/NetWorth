@@ -71,6 +71,16 @@ from the live NPS Trust feed (262-scheme master), EPF rate auto-filled.
 *For the user: when companies they hold merge or split up, their holdings
 adjust themselves correctly — no manual maths, and a clear audit trail.*
 
+**Shipped as v1.4.0 (2026-07-17)** — R14 landed with scenario tests
+(`test_r14_restructures.py`; Invested conserved to the rupee) and a live
+check: a pre-merger HDFC Ltd lot priced via HDFC Bank at the real 42:25
+ratio **times HDFC Bank's real 2025 split** (chained factor 3.36 — 25 old
+shares → 84 new, matching a real demat). v1.4.0 also ships the onboarding
+polish: sample rows in every class sheet (delete what you don't own and the
+workbook slims itself), a console show/hide prompt for asset classes, a
+colourful live console with progress lines, an always-printed version line,
+and the refreshed README.
+
 | # | Milestone | Delivers | Acceptance criteria |
 |---|---|---|---|
 | R14 | Mergers / demergers / ISIN reassignments | Curated `data/restructures.csv` shipped with releases (MERGER / DEMERGER / ISIN_CHANGE; ratios + cost apportionment; Σ cost_pct = 100 validated); engine: price-routing via successor ISIN + ratio folded into the existing Adj factor for mergers/ISIN changes (Invested and Cost date carry — Sec. 47); demergers: new Equity "Cost factor" column + append-once child rows with inherited cost dates, `Applied` date on the Corporate_Actions row as the idempotency token; Corporate_Actions sheet gains New ISIN / Cost % / Applied + `Curated` source; Manual row with same key overrides Curated; Stock_Master `Merged`/`Renamed` status suppresses Suspended/Delisted escalation; unlisted children amber `awaiting listing` | Merger 1:2 → priced via new ISIN, Adj factor 0.5, Invested unchanged, audit row Curated+Applied, no false Suspended, second run idempotent; ISIN change → price follows new ISIN; demerger 60/40 → parent Cost factor 0.6, child appended once with inherited cost date, **parent Invested×T + child Invested = original Invested to the rupee**, deleting the child survives the next run, unquoted child shows amber and prices on first quote; Manual override replaces curated ratios; Σ cost_pct ≠ 100 fails loudly at load; raw user rows byte-identical (appended flagged rows aside); round-trip extended |

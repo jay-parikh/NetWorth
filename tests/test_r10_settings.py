@@ -17,25 +17,37 @@ TODAY = date(2026, 7, 15)
 
 
 def test_default_template_shows_everything(tmp_path):
+    # the shipped sample populates EVERY class (v1.4 onboarding: play with
+    # the samples, delete what you don't own) — so nothing ships hidden
     path = tmp_path / "wb.xlsx"
     build_workbook(sample_portfolio(), str(path))
     wb = load_workbook(path)
     assert "Settings" in wb.sheetnames
-    # classic five visible; the new default-off classes ship hidden
-    hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
-    assert hidden == {"EPF", "Manual_Assets", "Gold_Silver", "NPS", "NPS_Master"}
+    assert all(ws.sheet_state == "visible" for ws in wb.worksheets)
     st = wb["Settings"]
     n = len(ASSET_CLASSES)
     labels = [st.cell(r, 1).value for r in range(4, 4 + n)]
     assert labels == [c.label for c in ASSET_CLASSES]
-    for i, c in enumerate(ASSET_CLASSES):
-        assert st.cell(4 + i, 2).value == ("Yes" if c.default_enabled else "No")
-        assert st.cell(4 + i, 4).value == ("On" if c.default_enabled else "Off")
+    for i in range(n):
+        assert st.cell(4 + i, 2).value == "Yes"
+        assert st.cell(4 + i, 4).value == "On"
     assert st["B17"].value == 5                     # drift tolerance default
 
 
+def test_registry_defaults_hide_new_classes(tmp_path):
+    # without the sample rows/settings, the registry defaults still ship the
+    # classic five visible and everything newer hidden
+    from conftest import classic
+    path = tmp_path / "wb.xlsx"
+    build_workbook(classic(), str(path))
+    wb = load_workbook(path)
+    hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
+    assert hidden == {"EPF", "Manual_Assets", "Gold_Silver", "NPS", "NPS_Master"}
+
+
 def test_disabled_empty_class_hides_sheets_and_columns(tmp_path):
-    data = sample_portfolio()
+    from conftest import classic
+    data = classic()
     data.bonds = []                                  # no data → may hide
     data.class_settings["bonds"] = ClassSetting(enabled=False)
     path = tmp_path / "wb.xlsx"
@@ -101,7 +113,8 @@ def test_settings_round_trip_any_combination(tmp_path):
 
 
 def test_history_columns_are_label_keyed(tmp_path):
-    data = sample_portfolio()
+    from conftest import classic
+    data = classic()
     data.bonds = []
     data.class_settings["bonds"] = ClassSetting(enabled=False)
     # bonds disabled and empty NOW, but it has past history → column stays

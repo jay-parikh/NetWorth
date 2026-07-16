@@ -11,7 +11,8 @@ from __future__ import annotations
 from datetime import date
 
 from .model import (
-    BondRow, ClassXirr, DividendRow, EquityRow, FDRow, MFRow, PPFLedgerRow,
+    ASSET_CLASSES, BondRow, BullionRow, ClassSetting, ClassXirr, DividendRow,
+    EPFRow, EquityRow, FDRow, ManualAssetRow, MFRow, NPSRow, PPFLedgerRow,
     PPFRow, PortfolioData, SIPRow, ScripRef, load_masters,
 )
 
@@ -94,6 +95,49 @@ def sample_portfolio() -> PortfolioData:
             BondRow("Rahul", "8.5% NHAI Bond 2029", "INE906B07CB9", 50, 1000,
                     1000, 1015, 8.5, date(2029, 1, 15), date(2024, 1, 15)),
         ],
+        # every class ships a couple of rows that SHOW how it works — the
+        # onboarding step is deleting what you don't own (the sheet then
+        # hides itself; its Settings toggle is already No for new classes)
+        epf=[
+            EPFRow("Amit", "AcmeCorp / UAN 100200300400", "MH/BAN/12345/678",
+                   1500000, date(2026, 3, 31), 8.25,
+                   "From the EPFO passbook"),
+        ],
+        bullion=[
+            BullionRow("Amit", "SGB", "SGB Jun-2028 (2020-21 Ser III)",
+                       "IN0020200104", 20, None, 4889, date(2020, 6, 30),
+                       rate_auto=14093.7, maturity=date(2028, 6, 30)),
+            BullionRow("Priya", "Gold", "Bangles 22K", "", 60, 0.916, 4800,
+                       date(2021, 11, 4), rate_auto=14167.9),
+            BullionRow("Rahul", "Silver", "Coins 999", "", 500, None, 72,
+                       date(2022, 3, 10), rate_auto=217.43),
+        ],
+        nps=[
+            NPSRow("Amit", "110012345678",
+                   "SBI PENSION FUND SCHEME E - TIER I",
+                   units=1200, current_nav=56.7834, total_contributed=40000,
+                   first_contribution=date(2019, 6, 1), xirr=0.0776),
+        ],
+        manual_assets=[
+            ManualAssetRow("Amit", "Real Estate", "2BHK, Baner, Pune",
+                           "Sub-registrar doc 4521/2016", 4500000,
+                           date(2016, 7, 15), 9000000, date(2026, 7, 1)),
+            ManualAssetRow("Priya", "Cash", "Savings account", "HDFC Bank",
+                           None, None, 250000, date(2026, 7, 10)),
+            ManualAssetRow("Rahul", "Insurance", "LIC Jeevan Anand (surrender value)",
+                           "LIC", 380000, date(2015, 5, 1), 520000,
+                           date(2026, 6, 1)),
+        ],
+        bullion_rate_asof=date(2026, 7, 16),
+        # everything on, so the shipped file demonstrates itself; targets on a
+        # few classes light up the Dashboard drift view (they sum to 100)
+        class_settings={
+            c.key: ClassSetting(enabled=True, target_pct={
+                "equity": 40, "mutual_funds": 10, "fixed_deposits": 15,
+                "ppf": 10, "gold_silver": 10, "real_estate": 15,
+            }.get(c.key))
+            for c in ASSET_CLASSES
+        },
         by_scrip=[ScripRef(isin=i, name=name_by_isin.get(i, "")) for i in _BY_SCRIP_ISINS],
         dividends=[
             # a frozen prior-FY record + a current-FY row the updater refreshes
@@ -114,7 +158,12 @@ def sample_portfolio() -> PortfolioData:
             mutual_funds=0.0876706058,
             fixed_deposits=0.0721401469,
             ppf=0.071,
+            epf=0.0825,
             bonds=0.0059830784,
+            gold_silver=0.231,
+            nps=0.0776,
+            real_estate=0.0718,
+            insurance=0.0284,
         ),
         masters=masters,
     )

@@ -586,8 +586,14 @@ sheets show one summary row per subclass. XIRR per §6.2 (Cash excluded).
 The released template ships with fictional holdings for three people (Amit,
 Priya, Rahul) using **real ISINs** so the first updater run works end-to-end.
 MF samples must be real AMFI (Scheme Name, Fund House, ISIN) triples; equity
-samples real BSE scrips. Sample rows are ordinary input rows — deleting them
-is the onboarding step.
+samples real BSE scrips. **v1.4: EVERY asset class carries sample rows**
+(incl. a real SGB ISIN, gold jewellery with purity, an NPS scheme from the
+seeded master, an EPF passbook line, real estate / cash / insurance rows)
+and every class ships enabled, with targets on a few classes (summing to
+100) so the drift view demonstrates itself. Sample rows are ordinary input
+rows — **the onboarding step is deleting what you don't own**: a class whose
+rows are gone (its Settings toggle No) hides its sheets on the next run,
+and the workbook slims itself to the user's real life.
 
 ---
 
@@ -1113,8 +1119,11 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    sheet(s). Names entered here (or via repeatable --add-person NAME) are
    appended to the person list — regeneration then creates each new person's
    sheet, Dashboard row and By-Scrip column automatically (§2). Deduped
-   case-insensitively; capped at the Dashboard's 10 people. Prompting must
-   never hang or break a run — any error is swallowed.
+   case-insensitively; capped at the Dashboard's 10 people. v1.4: then offer
+   to SHOW/HIDE asset classes — a numbered list of the registry classes with
+   their current state; chosen numbers flip the Settings Yes/No (§3.14), the
+   easy alternative to editing the sheet. Prompting must never hang or break
+   a run — any error is swallowed.
 3. refuse politely if the file is locked/open (detect via exclusive-open probe)
 4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
 5. READ  — all input columns of all data sheets (hidden ones too) + persons
@@ -1135,9 +1144,15 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            non-effective classes hidden (§2.1); atomic replace
            (write temp file, then swap)
 9. REPORT — console summary (rows matched/unmatched per sheet, sources used,
-           XIRR figures, PPF/history/added-people, backup path); pause before
-           closing when launched by double-click; a non-blocking GitHub
-           release check may print an update hint; exit code 0/1
+           XIRR figures, PPF/history/added-people, backup path). v1.4: the
+           console is a product surface — banner with version, live
+           "Fetching …" lines during network stages, per-line icons, ANSI
+           colour when the terminal supports it (NO_COLOR respected; plain
+           text when redirected; emoji stripped when the console encoding
+           can't carry them), a highlighted net-worth footer, and an
+           always-printed version line ("update available" / "on the latest
+           release" / "couldn't check"). Pause before closing when launched
+           by double-click; exit code 0/1
 ```
 
 Round-trip invariant (the regression backbone): `generate → read → regenerate`

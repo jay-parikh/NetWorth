@@ -19,8 +19,10 @@ TODAY = date(2026, 7, 15)
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
+    # classic five-class layout — these tests assert the R5-era positions
+    from conftest import classic
     path = tmp_path_factory.mktemp("wb") / "template.xlsx"
-    build_workbook(sample_portfolio(), str(path))
+    build_workbook(classic(), str(path))
     return path
 
 
@@ -58,7 +60,8 @@ def test_fy_end_boundary():
 
 
 def test_fy_expected_values():
-    data = sample_portfolio()
+    from conftest import classic
+    data = classic()
     out = fy_expected_by_person(data, TODAY)
     assert set(out) == {"Amit", "Priya", "Rahul"}
     end = date(2027, 3, 31)

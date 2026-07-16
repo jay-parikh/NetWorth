@@ -35,6 +35,48 @@ from .reader import read_workbook
 KEEP_BACKUPS = 10
 
 
+# ------------------------------------------------------------- console UI --
+# The updater is many users' ONLY window into what happened — it should feel
+# alive, not like a log file. Colours degrade gracefully: plain text when the
+# terminal can't (old cmd.exe, redirected output), emoji stripped when the
+# console encoding can't carry them.
+
+def _supports_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return False
+    if os.name == "nt":
+        os.system("")          # enables ANSI escape processing on Windows 10+
+    return True
+
+
+_COLOR = _supports_color()
+
+
+def _c(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _COLOR else text
+
+
+def _say(text: str = "", **kw) -> None:
+    """print() that never crashes on a console that can't render emoji."""
+    try:
+        print(text, **kw)
+    except UnicodeEncodeError:
+        print(text.encode("ascii", "ignore").decode(), **kw)
+
+
+def _step(text: str) -> None:
+    _say(_c("36", f"  ⏳ {text}"))
+
+
+def _banner(title: str) -> None:
+    line = "─" * 62
+    _say(_c("36", line))
+    _say(_c("1;36", f"  💰 {title}"))
+    _say(_c("36", line))
+
+
 def _fail(msg: str) -> "SystemExit":
     print(f"ERROR: {msg}", file=sys.stderr)
     return SystemExit(1)
@@ -130,6 +172,7 @@ def _replace_mf_master(existing: list[tuple[str, str, str]],
 def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         div_data=None, bullion_rates=None, nps_data=None, restructures=None,
         add_persons: list[str] | None = None,
+        toggle_classes: list[str] | None = None,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
     summary: dict = {"warnings": []}
@@ -149,6 +192,23 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 have.add(name.casefold())
                 added.append(name)
         summary["persons_added"] = added
+
+    # show/hide asset classes chosen at the console (v1.4) — writes the same
+    # Settings the user could edit by hand, then regeneration applies it
+    if toggle_classes:
+        from .model import ClassSetting
+        key_by_label = {c.label.casefold(): c.key for c in ASSET_CLASSES}
+        label_by_key = {c.key: c.label for c in ASSET_CLASSES}
+        toggled = []
+        for name in toggle_classes:
+            key = key_by_label.get(name.strip().casefold())
+            if not key:
+                continue
+            s = data.class_settings.setdefault(key, ClassSetting())
+            s.enabled = not s.enabled
+            toggled.append(f"{label_by_key[key]} → "
+                           f"{'shown' if s.enabled else 'hidden'}")
+        summary["classes_toggled"] = toggled
 
     # a class switched off on Settings but still holding rows stays visible
     # (never lose data, never let a hidden value haunt the totals — SPEC §3.14)
@@ -254,13 +314,16 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 ev.applied = today
     summary["restructure_children"] = children_added
 
-    # ---- fetch (graceful per source) ----
+    # ---- fetch (graceful per source; the _step lines keep the console alive
+    # during the slow network minute) ----
     if price_data is None:
+        _step("Fetching share & bond prices (BSE + NSE)…")
         try:
             price_data = bhav_mod.fetch(today=today)
         except Exception as e:  # noqa: BLE001 — any fetch failure degrades
             summary["warnings"].append(f"price fetch failed, keeping old prices: {e}")
     if amfi_data is None:
+        _step("Fetching mutual-fund NAVs (AMFI)…")
         try:
             amfi_data = amfi_mod.fetch()
         except Exception as e:  # noqa: BLE001
@@ -378,6 +441,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         try:
             checked: set[str] = set()
             if symbols or bse_codes:
+                _step("Checking corporate actions & dividends (NSE + BSE)…")
                 fy_start = date(today.year if today.month >= 4 else today.year - 1,
                                 4, 1)
                 ca_data, checked, fetched_divs, div_skipped = ca_mod.fetch(
@@ -388,7 +452,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 ca_data = []
                 if div_data is None:
                     div_data = []
-            unchecked = held_isins - checked
+            # a restructured (merged/renamed) ISIN is expected to be absent
+            # from the CA feeds — the curated file IS its verification
+            consumed = {i for i in held_isins if _consumed_label(i)}
+            unchecked = held_isins - checked - consumed
             summary["ca_unverified"] = sorted(
                 name_by_isin.get(i, i) for i in unchecked)
             if unchecked:
@@ -497,6 +564,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         rates = bullion_rates
         rate_src = "injected"
         if rates is None:
+            _step("Fetching today's gold & silver rate (IBJA)…")
             rates = bullion_mod.fetch_ibja()
             rate_src = "IBJA"
             if not rates:
@@ -533,6 +601,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     # ---- NPS (SPEC §5.6): daily NAVs + scheme master, keyed by scheme code
     if data.nps and nps_data is None:
         from .fetch import nps as nps_mod
+        _step("Fetching NPS NAVs (NPS Trust)…")
         try:
             nps_data = nps_mod.fetch()
         except Exception as e:  # noqa: BLE001
@@ -610,51 +679,64 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     return summary
 
 
+def _row(icon: str, label: str, text: str) -> None:
+    _say(f"  {icon} {_c('36', f'{label:<11}')} {text}")
+
+
 def _print_summary(s: dict) -> None:
+    _say(_c("36", "  " + "─" * 60))
     if "price_source" in s:
         nse_only = f", {s['nse_only_matched']} NSE-only" if s.get("nse_only_matched") else ""
-        print(f"Prices     : {s['equity_matched']}/{s['equity_total']} scrips matched "
-              f"({s['price_source']}{nse_only}), {s['stocks_added']} new listings, "
-              f"{s['bonds_matched']} bond(s) priced")
+        _row("📈", "Prices", f"{s['equity_matched']}/{s['equity_total']} stocks matched "
+             f"({s['price_source']}{nse_only}) · {s['bonds_matched']} bond(s) priced")
     if "mf_matched" in s:
-        print(f"Fund NAVs  : {s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")
+        _row("📊", "Fund NAVs", f"{s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")
     if s.get("bullion"):
-        print(f"Gold/Silver: {s['bullion']}")
+        _row("🪙", "Gold/Silver", s["bullion"])
     if "nps_matched" in s:
-        print(f"NPS NAVs   : {s['nps_matched']}/{s['nps_total']} scheme(s) matched (NPS Trust)")
+        _row("🏛️", "NPS NAVs", f"{s['nps_matched']}/{s['nps_total']} scheme(s) matched (NPS Trust)")
     if s.get("ca_rows") is not None:
         coverage = ("all held stocks verified" if not s.get("ca_unverified")
-                    else f"{len(s['ca_unverified'])} stock(s) UNVERIFIED")
-        print(f"Corp acts  : {s['ca_rows']} action(s) on file (NSE+BSE), "
-              f"{s['ca_adjusted_rows']} holding(s) adjusted, {coverage}")
+                    else _c("33", f"{len(s['ca_unverified'])} stock(s) UNVERIFIED"))
+        _row("🔀", "Corp acts", f"{s['ca_rows']} action(s) on file · "
+             f"{s['ca_adjusted_rows']} holding(s) adjusted · {coverage}")
     if s.get("restructure_children"):
-        print(f"Restructure: {s['restructure_children']} new holding row(s) "
-              f"appended from a demerger (cost & dates inherited)")
+        _row("🧬", "Restructure", f"{s['restructure_children']} new holding row(s) "
+             f"appended from a demerger (cost & dates inherited)")
     if s.get("dividend_rows") is not None:
-        print(f"Dividends  : {s['dividend_rows']} row(s) refreshed for this FY, "
-              f"{s.get('dividends_fy_total', 0):,.0f} declared this financial year")
+        _row("💸", "Dividends", f"₹{s.get('dividends_fy_total', 0):,.0f} declared this "
+             f"financial year ({s['dividend_rows']} row(s) refreshed)")
     if s.get("fmv_filled"):
-        print(f"FMV filled : {s['fmv_filled']} row(s) got the 31-01-2018 grandfathering cost")
+        _row("🕰️", "FMV filled", f"{s['fmv_filled']} old row(s) got the "
+             f"31-01-2018 grandfathering cost")
     if s.get("suspended"):
-        print(f"Suspended  : {s['suspended']} held scrip(s) not traded for 21+ days (amber)")
+        _row("⚠️", "Suspended", _c("33", f"{s['suspended']} held scrip(s) not "
+                                         f"traded for 21+ days (amber)"))
     if s.get("ppf_ledgered"):
-        print(f"PPF        : {s['ppf_ledgered']} account(s) computed from the deposit "
-              f"ledger (exact interest)")
+        _row("🏦", "PPF", f"{s['ppf_ledgered']} account(s) computed from the "
+             f"deposit ledger (exact interest)")
     x = s.get("portfolio_xirr")
-    print(f"XIRR       : portfolio {x:.2%}" if x is not None else
-          "XIRR       : not enough dated cashflows yet")
+    if x is not None:
+        colour = "32" if x >= 0 else "31"
+        _row("🎯", "Return", f"portfolio XIRR {_c(colour, f'{x:.2%}')} a year")
+    else:
+        _row("🎯", "Return", "not enough dated cashflows yet")
     if s.get("fy_expected_total"):
-        print(f"FY-end est : {s['fy_expected_total']:,.0f} (family total)")
+        _row("🔮", "FY-end est", f"₹{s['fy_expected_total']:,.0f} (family total)")
     if s.get("persons_added"):
-        print(f"Added      : sheet(s) for {', '.join(s['persons_added'])}")
-    if s.get("net_worth") is not None:
-        print(f"Net worth  : {s['net_worth']:,.0f}  "
-              f"({s.get('history_points', 0)} day(s) of history)")
+        _row("👥", "Added", f"sheet(s) for {', '.join(s['persons_added'])}")
+    if s.get("classes_toggled"):
+        _row("🗂️", "Classes", "; ".join(s["classes_toggled"]))
     if s.get("backup"):
-        print(f"Backup     : {s['backup']}")
+        _row("💾", "Backup", s["backup"])
     for w in s["warnings"]:
-        print(f"WARNING    : {w}")
-    print(f"Updated    : {s['workbook']}")
+        _say(_c("33", f"  ⚠️  {w}"))
+    _say(_c("36", "  " + "─" * 60))
+    if s.get("net_worth") is not None:
+        _say("  " + _c("1;32", f"🏆 Family net worth: ₹{s['net_worth']:,.0f}")
+             + f"   ({s.get('history_points', 0)} day(s) of history — "
+               f"watch the Dashboard trend grow)")
+    _say(f"  ✅ Updated {s['workbook']}")
 
 
 RELEASES_API = "https://api.github.com/repos/jay-parikh/NetWorth/releases/latest"
@@ -675,12 +757,9 @@ def _parse_version(v: str) -> tuple | None:
     return (int(major), int(minor), int(patch), 0, int(pre))
 
 
-def check_for_update(current: str, session=None, timeout: int = 8) -> str | None:
-    """Return a one-line hint if a newer GitHub release exists, else None.
-    Never raises — a nicety that must never disturb the update."""
-    cur = _parse_version(current)
-    if cur is None:
-        return None
+def _latest_release(session=None, timeout: int = 8):
+    """→ (parsed_version, tag, url) of the latest GitHub release, or None
+    when unreachable / no releases. Never raises."""
     try:
         import requests
         sess = session or requests.Session()
@@ -690,13 +769,37 @@ def check_for_update(current: str, session=None, timeout: int = 8) -> str | None
             return None
         data = resp.json()
         tag = data.get("tag_name", "") or ""
-        url = data.get("html_url") or RELEASES_PAGE
+        parsed = _parse_version(tag)
+        if parsed is None:
+            return None
+        return parsed, tag, data.get("html_url") or RELEASES_PAGE
     except Exception:  # noqa: BLE001 — offline / rate-limited / private repo
         return None
-    latest = _parse_version(tag)
-    if latest and latest > cur:
-        return f"Update available: {tag} (you have v{current}) — {url}"
+
+
+def check_for_update(current: str, session=None, timeout: int = 8) -> str | None:
+    """Return a one-line hint if a newer GitHub release exists, else None.
+    Never raises — a nicety that must never disturb the update."""
+    cur = _parse_version(current)
+    if cur is None:
+        return None
+    latest = _latest_release(session, timeout)
+    if latest and latest[0] > cur:
+        return f"Update available: {latest[1]} (you have v{current}) — {latest[2]}"
     return None
+
+
+def version_line(current: str, session=None, timeout: int = 8) -> str:
+    """Always says SOMETHING about versions (v1.4): silence used to look
+    broken when the user was simply up to date."""
+    latest = _latest_release(session, timeout)
+    cur = _parse_version(current)
+    if latest and cur and latest[0] > cur:
+        return f"Update available: {latest[1]} (you have v{current}) — {latest[2]}"
+    if latest:
+        return f"Version    : v{current} — you're on the latest release"
+    return (f"Version    : v{current} (couldn't reach GitHub to check for a "
+            f"newer one)")
 
 
 def peek_persons(path: Path) -> list[str]:
@@ -710,6 +813,50 @@ def peek_persons(path: Path) -> list[str]:
                 if dash.cell(r, 1).value not in (None, "")]
     finally:
         wb.close()
+
+
+def peek_class_states(path: Path) -> list[tuple[str, bool]]:
+    """(label, shown?) per asset class from the Settings sheet, cheaply
+    (read-only). Missing sheet (pre-v1.3 workbook) → registry defaults."""
+    from openpyxl import load_workbook
+    states = {c.label: c.default_enabled for c in ASSET_CLASSES}
+    wb = load_workbook(path, read_only=True)
+    try:
+        if "Settings" in wb.sheetnames:
+            st = wb["Settings"]
+            for row in st.iter_rows(min_row=4, max_row=20, max_col=2):
+                label = str(row[0].value or "").strip()
+                if label in states and row[1].value is not None:
+                    states[label] = str(row[1].value).strip().casefold() != "no"
+    finally:
+        wb.close()
+    return [(c.label, states[c.label]) for c in ASSET_CLASSES]
+
+
+def prompt_class_toggle(path: Path) -> list[str]:
+    """Interactively show/hide asset classes — easier than editing the
+    Settings sheet by hand. Returns the labels to flip."""
+    states = peek_class_states(path)
+    print("\nYour asset classes — the workbook shows only what's on:")
+    for i, (label, shown) in enumerate(states, 1):
+        print(f"  {i:2}. {label:14} [{'shown' if shown else 'hidden'}]")
+    print("Show or hide something? Type its number(s), e.g. 7 or 7 9 — "
+          "or just press Enter to skip.")
+    try:
+        raw = input("  Toggle (blank to continue): ").strip()
+    except EOFError:
+        return []
+    toggles: list[str] = []
+    for tok in raw.replace(",", " ").split():
+        if tok.isdigit() and 1 <= int(tok) <= len(states):
+            label, shown = states[int(tok) - 1]
+            toggles.append(label)
+            if shown:
+                print(f"  ✓ {label} will be hidden (if it still holds rows, "
+                      f"it stays visible until you delete them)")
+            else:
+                print(f"  ✓ {label} will be shown")
+    return toggles
 
 
 def prompt_new_persons(existing: list[str]) -> list[str]:
@@ -769,18 +916,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     code = 0
+    _banner(f"NetWorth v{__version__} — updating your family portfolio")
     try:
         path = locate_workbook(args.workbook)
         new_persons = list(args.add_person)
         # interactive only when attached to a real console — never hangs a
         # headless/scheduled run
         interactive = sys.stdin.isatty() and not args.no_prompt
+        toggles: list[str] = []
         if interactive:
             try:
                 new_persons += prompt_new_persons(peek_persons(path))
+                toggles = prompt_class_toggle(path)
             except Exception:  # noqa: BLE001 — prompting must never break the run
                 pass
-        summary = run(path, add_persons=new_persons)
+        summary = run(path, add_persons=new_persons, toggle_classes=toggles)
         _print_summary(summary)
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
@@ -789,9 +939,9 @@ def main(argv: list[str] | None = None) -> int:
         code = 1
 
     if not (args.no_update_check or os.environ.get("NETWORTH_NO_UPDATE_CHECK")):
-        hint = check_for_update(__version__)
-        if hint:
-            print(hint)
+        line = version_line(__version__)
+        _say("  " + (_c("1;33", line) if "Update available" in line
+                     else _c("2", line)))
 
     if args.pause:
         input("\nPress Enter to close...")

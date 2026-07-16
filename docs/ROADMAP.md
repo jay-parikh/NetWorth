@@ -37,10 +37,11 @@ into RELEASES.md with acceptance criteria.
 - ✅ **NSE as full peer source for prices** *(shipped v1.2.0, R8)* — same-day
   BSE+NSE union merge, NSE wins price conflicts, BSE keeps the scrip codes;
   delisted/suspended escalation only on dual-source days.
-- 🚧 **Mergers / demergers / ISIN reassignments** *(R14, v1.4)* — the one
-  corporate-action category with no reliable free feed for swap ratios;
-  handled via a curated actions file shipped with releases plus the existing
-  Manual rows.
+- ✅ **Mergers / demergers / ISIN reassignments** *(shipped v1.4.0, R14)* —
+  curated `restructures.csv` + Manual rows: consumed ISINs price via their
+  successor at the right ratio (cost & holding period carried), demergers
+  append the spun-off shares with the notified cost split, all audited on
+  Corporate_Actions. Keeping the curated file current is a release duty.
 - ⬜ **CAS import** — parse CAMS/KFintech Consolidated Account Statement PDFs
   to auto-fill the MF_SIP ledger.
 - ⬜ **Broker import** — Zerodha (tradebook/holdings CSV) first; then generic

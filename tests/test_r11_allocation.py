@@ -11,8 +11,10 @@ from networth.sample_data import sample_portfolio
 
 
 def _built(tmp_path, data=None):
+    # classic layout: these tests assert the five-class column positions
+    from conftest import classic
     path = tmp_path / "wb.xlsx"
-    build_workbook(data or sample_portfolio(), str(path))
+    build_workbook(data or classic(), str(path))
     return path
 
 
@@ -35,7 +37,8 @@ def test_allocation_table_columns(tmp_path):
 def test_target_formula_uses_registry_settings_row(tmp_path):
     # disable Mutual Funds (emptied) — PPF shifts up a Dashboard row, but its
     # Target must still read the PPF row on Settings (registry row 7)
-    data = sample_portfolio()
+    from conftest import classic
+    data = classic()
     data.mutual_funds = []
     data.sip = []
     data.class_settings["mutual_funds"] = ClassSetting(enabled=False)

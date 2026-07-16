@@ -16,7 +16,8 @@ from networth.update import run
 
 
 def test_snapshot_matches_hand_computed_classes():
-    data = sample_portfolio()
+    from conftest import classic
+    data = classic()
     snap = net_worth_snapshot(data, date(2026, 7, 15))
     # equity = Σ qty × close (no CA factors set pre-update)
     eq = sum(r.qty * r.close for r in data.equity if r.qty and r.close)
@@ -45,8 +46,9 @@ def test_upsert_caps_to_keep():
 
 
 def test_two_runs_two_rows_and_roundtrip(tmp_path):
+    from conftest import classic
     path = tmp_path / "wb.xlsx"
-    build_workbook(sample_portfolio(), str(path))
+    build_workbook(classic(), str(path))
 
     def do_run(day):
         return run(path, price_data=PriceData(trade_date=day, source="T"),
