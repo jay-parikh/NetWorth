@@ -26,7 +26,46 @@ Post-v1.0 milestone, three independent features, each its own commit + tests.
 
 Ships as **v1.1.0** once all three land and verify.
 
-Post-v1: see [ROADMAP.md](ROADMAP.md).
+## v1.2 — "Both exchanges + dividend income"
+
+*For the user: prices that match their broker's app, and a Dividends tab
+showing the cash their shares paid this financial year.*
+
+Planned 2026-07-16; design detail in [PLAN-v1.2.md](PLAN-v1.2.md).
+**Standing acceptance criteria for every R8–R14 row** (the design principles
+in PLAN-v1.2.md): the default template stays as clean as v1.1; every new
+sheet has a plain one-sentence hint; every amber cell has a comment saying
+why; the Guide covers the feature in plain language; a non-developer can use
+it without reading these docs.
+
+| # | Milestone | Delivers | Acceptance criteria |
+|---|---|---|---|
+| R8 | NSE full peer prices | Same-day BSE+NSE bhavcopy union merge (NSE close/prev win on conflict; BSE scrip codes always retained when BSE responded); per-run source label; Suspended/Delisted escalation only on dual-source days | Fixture pair: BSE has ISIN X only, NSE has Y only, both have Z at different closes → merged result prices X, Y, Z@NSE; `codes_by_isin` keeps BSE codes for X and Z; NSE-down run completes BSE-only with no status transitions; both-down walks back then errors as before; round-trip identity passes |
+| R9 | Dividends sheet | Dividend parsing from the existing dual-exchange announcement fetch (Interim/Final/Special, ₹/share variants; %-of-face skipped, counted in summary); new **Dividends** sheet (FY, Owner, Scrip, ISIN, Type, Ex-Date, Rate, Qty@ex-date est., Est. amount, Source, Details); qty estimated from lots with cost date < ex-date, CA-adjusted to ex−1; current-FY Auto rows rebuilt each run, prior-FY rows frozen, Manual rows persist and override same key; Dashboard "Dividends this FY" cell + a "Dividends by month" column chart on the Dividends sheet. Dividends do **not** feed equity XIRR yet | Parser goldens incl. `"Interim Dividend - Rs. - 5.5000"`, `"Dividend - Rs 8 Per Share"`, `"Re. 1/- per share"`, `"Dividend 250%"` (skipped); a held stock with a fixture announcement yields one row per owner with CA-adjusted pre-ex-date qty; re-run idempotent; Manual row suppresses Auto with same key; a prior-FY row survives a new-FY run; Dashboard cell sums current FY only; round-trip test extended |
+
+## v1.3 — "Your whole balance sheet"
+
+*For the user: switch on only the assets they own from a simple Settings tab
+— gold, EPF, NPS, the house, savings, insurance — and see at a glance whether
+their money is balanced the way they planned.*
+
+| # | Milestone | Delivers | Acceptance criteria |
+|---|---|---|---|
+| R10 | Settings + class registry + selectable classes | `ASSET_CLASSES` registry in `model.py` (dict-backed ClassXirr/HistorySnapshot; registry-driven Dashboard matrix, allocation table, person blocks, History columns, charts, snapshot, XIRR dispatch); new **Settings** sheet (per-class Yes/No + Target % + Status, drift tolerance, targets-total sanity); disabled classes: sheet hidden (never omitted), Dashboard/person/History presence omitted; `effective_enabled = enabled OR has_data` — a class with data is never hidden (Status `On (has data)` + updater warning); classic five default Yes, new classes No; header-located Dashboard reads; Dashboard visual upgrade: stacked-area "Net worth by class over time" chart, data bars on allocation values, ▲/▼ arrows on day-change | Default template shows exactly the v1.1 tab set + Settings; stacked-area chart, data bars and ▲/▼ arrows render in Excel and LibreOffice; toggling a class Yes reveals its sheet/column/row/blocks, toggling No hides them with totals unchanged; a class with data set to No stays visible with warning; round-trip identity passes for any enable combination; a v1.1 workbook (no Settings) updates cleanly with defaults; openpyxl reads hidden sheets in the round-trip test |
+| R11 | Allocation targets | Dashboard allocation table gains Actual %, Target % (from Settings), Drift (absolute pp, red/green vs ±tolerance, default 5), Rebalance hint (`On target` / `Move ₹X out` / `Move ₹X in`, pre-tax, class-level); "Actual vs Target %" column chart; all live formulas — no updater run needed | With Equity 62% actual vs 55% target and tol 5: drift +7.0pp red, hint `Move ₹<0.07×total> out`; within-band → green `On target`; blank target → no drift/hint/CF; targets ≠ 100 flags amber on Settings; drift updates live on editing a holding; disabled classes absent from drift view and chart |
+| R12 | New classes wave 1 | **Manual_Assets** sheet (Class dropdown: Real Estate / Cash / Insurance / Other — each its own registry class via SUMIFS filter; Value-as-on amber when > 90 days stale); **EPF** sheet (passbook balance + as-on + rate pre-filled from bundled `data/epf_rates.csv`, flat accrual to today); XIRR: two-flow for RE/Insurance/Other, none for Cash, PPF-style for EPF; History columns become label-keyed (old workbooks migrate losslessly) | An RE row with cost+date+value yields a hand-checked two-flow XIRR; Cash shows no XIRR anywhere; EPF balance accrues at the bundled rate; stale value-as-on flags amber; each enabled subclass gets its own Dashboard column/allocation row/person block/History column; a v1.1 History reads losslessly (old totals unchanged, new classes 0); round-trip passes with all wave-1 classes populated |
+| R13 | New classes wave 2 | **Gold_Silver** sheet (SGB priced from the merged bhavcopy by ISIN incl. 2.5% semi-annual coupon XIRR; physical gold/silver = grams × purity × ₹/g rate); metal rate layered: IBJA daily benchmark primary → bhavcopy-implied median over bundled `data/bullion_proxies.csv` → carry-forward + amber (> 7 days) → manual Rate-override always wins; **NPS** sheet + **NPS_Master** (units × daily NAV from the public NSDL-CRA file, type-ahead scheme dropdown, add-only merge by scheme code, approximate two-flow XIRR) | An SGB row with a real ISIN prices from bhavcopy and its XIRR includes coupons (hand-checked golden); a physical-gold row values grams × purity × rate and a typed override wins; rate fallback chain exercised by fixtures (IBJA down → proxy median; both down → previous rate kept + warning); NPS units × NAV refresh from a fixture file, scheme type-ahead works over sorted NPS_Master; pie/targets/History include new classes only when enabled; round-trip extended |
+
+## v1.4 — "Restructures"
+
+*For the user: when companies they hold merge or split up, their holdings
+adjust themselves correctly — no manual maths, and a clear audit trail.*
+
+| # | Milestone | Delivers | Acceptance criteria |
+|---|---|---|---|
+| R14 | Mergers / demergers / ISIN reassignments | Curated `data/restructures.csv` shipped with releases (MERGER / DEMERGER / ISIN_CHANGE; ratios + cost apportionment; Σ cost_pct = 100 validated); engine: price-routing via successor ISIN + ratio folded into the existing Adj factor for mergers/ISIN changes (Invested and Cost date carry — Sec. 47); demergers: new Equity "Cost factor" column + append-once child rows with inherited cost dates, `Applied` date on the Corporate_Actions row as the idempotency token; Corporate_Actions sheet gains New ISIN / Cost % / Applied + `Curated` source; Manual row with same key overrides Curated; Stock_Master `Merged`/`Renamed` status suppresses Suspended/Delisted escalation; unlisted children amber `awaiting listing` | Merger 1:2 → priced via new ISIN, Adj factor 0.5, Invested unchanged, audit row Curated+Applied, no false Suspended, second run idempotent; ISIN change → price follows new ISIN; demerger 60/40 → parent Cost factor 0.6, child appended once with inherited cost date, **parent Invested×T + child Invested = original Invested to the rupee**, deleting the child survives the next run, unquoted child shows amber and prices on first quote; Manual override replaces curated ratios; Σ cost_pct ≠ 100 fails loudly at load; raw user rows byte-identical (appended flagged rows aside); round-trip extended |
+
+Post-v1.4: see [ROADMAP.md](ROADMAP.md).
 
 ## Release artifact layout (from R4)
 
