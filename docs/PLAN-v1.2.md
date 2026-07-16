@@ -605,8 +605,8 @@ chain), `update.py` (apply step ordered *before* price matching),
 |---|---|---|
 | Dual-source bhavcopy contract (replaces §5.2 + §5.3) | §5.2–5.3 merged | R8 |
 | §6.5 single-source escalation guard | §6.5 revision | R8 |
-| Settings sheet | §3.13 | R10 |
-| Dividends sheet | §3.14 | R9 |
+| Dividends sheet | §3.13 | R9 |
+| Settings sheet | §3.14 | R10 |
 | Gold_Silver sheet | §3.15 | R13 |
 | NPS + NPS_Master sheets | §3.16 | R13 |
 | EPF sheet | §3.17 | R12 |

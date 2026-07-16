@@ -195,6 +195,15 @@ def _write_dashboard(wb, F, data: PortfolioData):
         ws.write_formula(f"{col}{tr}", f"=SUM({col}6:{col}15)", F["total"])
     ws.write_formula(f"H{tr}", f"=IF(SUM(H6:H15)=0,\"\",SUM(H6:H15))", F["total"])
 
+    fy_now = _fy_label_today()
+    ws.write("A17", f"Dividends FY {fy_now}", F["label"])
+    ws.write_formula(
+        "B17", f'=SUMIFS(Dividends!$I:$I,Dividends!$A:$A,"{fy_now}")',
+        F["money_bold"])
+    ws.write_comment("B17", "Cash your shares declared this financial year - "
+                            "details and a month-by-month chart on the "
+                            "Dividends tab. Estimated from your current rows.")
+
     ws.write("A18", "Allocation by asset class", F["section"])
     ws.write_row("A19", ["Asset class", "Value", "XIRR"], F["header"])
     classes = [("Equity", "B16", data.xirr.equity),
@@ -917,6 +926,94 @@ def _write_corporate_actions(wb, F, data: PortfolioData):
     return ws
 
 
+def _fy_label_today() -> str:
+    from .model import fy_label
+    from datetime import date as _date
+    return fy_label(_date.today())
+
+
+_FY_MONTHS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3]
+_FY_MONTH_NAMES = ["Apr", "May", "Jun", "Jul", "Aug", "Sep",
+                   "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
+
+
+def _write_dividends(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("Dividends")
+    _widths(ws, {"A": 9, "B": 10, "C": 30, "D": 14, "E": 9, "F": 12, "G": 11,
+                 "H": 14, "I": 12, "J": 8, "K": 46, "L": 2, "M": 7, "N": 12})
+    fy_now = _fy_label_today()
+    _sheet_head(ws, F, "DIVIDENDS — YOUR SHARES' CASH INCOME",
+                "Filled in for you on every update: one row per dividend your "
+                "stocks declared this financial year. Older years stay as a "
+                "record. Qty and amount are estimates from your current rows "
+                "(amber) - add a Manual row for anything the feed missed.")
+    ws.write_row("A3", ["FY", "Owner", "Scrip", "ISIN", "Type", "Ex-Date",
+                        "Rate ₹/share", "Qty @ ex-date (est.)", "Est. amount",
+                        "Source", "Details"], F["header"])
+    ws.write_comment("H3", "Estimated shares held on the ex-date: your rows "
+                           "bought before that date, adjusted for splits/bonuses. "
+                           "If you sold in between, correct it here by hand.")
+    ws.write_comment("I3", "Rate x Qty - an estimate, marked amber. The exact "
+                           "credit is on your bank statement.")
+
+    by_row = {M.FIRST_DATA_ROW + i: d for i, d in enumerate(data.dividends)}
+    for r in range(M.FIRST_DATA_ROW, M.DIV_LAST_ROW + 1):
+        d = by_row.get(r)
+        if d:
+            auto = d.source == "Auto"
+            fmt = F["c_text"] if auto else F["in_text"]
+            ws.write(f"A{r}", d.fy, fmt)
+            ws.write(f"B{r}", d.owner, fmt)
+            ws.write(f"C{r}", d.scrip, fmt)
+            ws.write(f"D{r}", d.isin, fmt)
+            ws.write(f"E{r}", d.div_type, fmt)
+            if d.ex_date:
+                ws.write_datetime(f"F{r}", d.ex_date,
+                                  F["date_disp"] if auto else F["in_date"])
+            if d.rate is not None:
+                ws.write_number(f"G{r}", d.rate,
+                                F["u_price"] if auto else F["in_price"])
+            if d.qty is not None:
+                ws.write_number(f"H{r}", d.qty, F["amber_price"])
+            ws.write(f"J{r}", d.source, F["c_text"])
+            if d.details:
+                ws.write(f"K{r}", d.details, fmt)
+        ws.write_formula(f"I{r}",
+                         f'=IF(OR($G{r}="",$H{r}=""),"",$G{r}*$H{r})',
+                         F["amber_price"])
+    ws.data_validation(f"E4:E{M.DIV_LAST_ROW}", {
+        "validate": "list",
+        "source": ["Interim", "Final", "Special"],
+        "show_error": False,
+        "input_title": "Dividend type",
+        "input_message": "Interim / Final / Special",
+    })
+
+    # "Dividends by month" — income the user can SEE arriving
+    ws.write("M3", "", F["header"])
+    ws.write("N3", f"FY {fy_now} ₹", F["header"])
+    for i, (m, label) in enumerate(zip(_FY_MONTHS, _FY_MONTH_NAMES)):
+        r = 4 + i
+        ws.write(f"M{r}", label, F["c_text"])
+        ws.write_formula(
+            f"N{r}",
+            f'=SUMPRODUCT(($G$4:$G${M.DIV_LAST_ROW})*($H$4:$H${M.DIV_LAST_ROW})'
+            f'*(MONTH($F$4:$F${M.DIV_LAST_ROW})={m})'
+            f'*($A$4:$A${M.DIV_LAST_ROW}="{fy_now}"))',
+            F["c_money"])
+    chart = wb.add_chart({"type": "column"})
+    chart.add_series({
+        "name": f"Dividends by month — FY {fy_now}",
+        "categories": "=Dividends!$M$4:$M$15",
+        "values": "=Dividends!$N$4:$N$15",
+    })
+    chart.set_title({"name": f"Dividends by month — FY {fy_now}"})
+    chart.set_legend({"none": True})
+    ws.insert_chart("M18", chart, {"x_scale": 1.2, "y_scale": 1.1})
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_history(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("History")
     _widths(ws, {"A": 13, "B": 14, "C": 14, "D": 15, "E": 12, "F": 12, "G": 15})
@@ -1065,6 +1162,7 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_bonds(wb, F, data)
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)
+    _write_dividends(wb, F, data)
     _write_history(wb, F, data)
     _write_guide(wb, F)
 

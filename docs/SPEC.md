@@ -5,7 +5,7 @@
 > anyone could rebuild NetWorth from scratch, in any language, without seeing
 > the code.
 
-**Version:** covers v1.0 + v1.1 · **Status:** normative.
+**Version:** covers v1.0 – v1.2 (in progress) · **Status:** normative.
 Reverse‑engineered from the original template and extended with the approved
 features in [PLAN.md](PLAN.md).
 
@@ -98,10 +98,13 @@ By Scrip. The generator derives all three from `persons`.
 | v1 | Bank_Master | master | bundled Indian bank list (Bank Name, Type; sorted; §3.11) |
 | … | FixedDeposits | data entry | FDs |
 | … | PPF | data entry | PPF accounts |
+| v1.1 | PPF_Ledger | data entry | one row per PPF deposit (optional; §6.10) |
 | … | Bonds | data entry | corporate/other bonds |
 | … | By Scrip | computed | family-wide exposure per stock |
-| … | Guide | static text | 2-minute manual |
 | v1 | Corporate_Actions | audit (§6.7) | fetched + manual corporate actions and their effect |
+| v1.2 | Dividends | mixed (§3.13) | FY dividend ledger — auto + manual rows, by-month chart |
+| v1.1 | History | updater data | one net-worth snapshot per day (§6.11) |
+| … | Guide | static text | 2-minute manual |
 
 Defined names (workbook scope):
 
@@ -361,6 +364,43 @@ List validation with:
 - Applied ranges (legacy): Equity C4:C140, MutualFunds C4:C63, MF_SIP C4:C503;
   v1 adds FixedDeposits B4:B<n> over `Bank_NameList`.
 
+### 3.13 Dividends (v1.2, R9)
+
+FY dividend ledger: one row per dividend event × owner. Title r1, hint r2
+(plain-language: rows fill in automatically; amounts are estimates, amber),
+header r3, data r4..203.
+
+| Col | Header | Kind | Definition |
+|---|---|---|---|
+| A | FY | updater / input | Indian financial year of the ex-date, e.g. `2026-27`; the updater backfills a blank FY on Manual rows from F |
+| B | Owner | updater / input | one row per owner holding the stock at ex-date |
+| C | Scrip | updater / input | Stock_Master display name |
+| D | ISIN | updater / input | |
+| E | Type | dropdown | Interim / Final / Special (non-blocking validation) |
+| F | Ex-Date | date | |
+| G | Rate ₹/share | updater / input | parsed from the announcement (§5.4) |
+| H | Qty @ ex-date (est.) | updater | §6.12 estimate; **amber**; user-correctable on Manual rows |
+| I | Est. amount | computed | `=IF(OR(G="",H=""),"",G*H)` — **amber** (estimate; the exact credit is on the bank statement) |
+| J | Source | updater | Auto / Manual |
+| K | Details | updater / input | announcement free text |
+
+**Lifecycle (normative).** On every update run: Auto rows whose ex-date falls
+in the **current FY** are rebuilt from the feed + current holdings; all other
+rows persist unchanged (prior-FY Auto rows therefore freeze on the first run
+after Apr 1 — multi-year record for free). Manual rows always persist and
+suppress an Auto row with the same `(isin, type, ex_date)` key. Re-runs are
+idempotent. If the feed is unreachable, the sheet is left as-is.
+
+**By-month chart.** Columns M/N rows 4..15 hold the current FY's months
+(Apr..Mar) and `SUMPRODUCT(rate × qty × month × FY)` sums; a column chart
+("Dividends by month — FY <label>") renders them. The current-FY label is
+stamped at build time (the updater regenerates the workbook, keeping it
+fresh). The Dashboard shows one cell: `Dividends FY <label>` =
+`SUMIFS(Dividends!I:I, Dividends!A:A, "<label>")`.
+
+Dividends do **not** feed equity XIRR (roadmap; changing return semantics
+deserves its own release).
+
 ---
 
 ## 4. Sample data
@@ -451,9 +491,15 @@ BSE: https://api.bseindia.com/BseIndiaAPI/api/DefaultData/w?Fdate=&Purpose=&TDat
 
 The free text is classified identically for both: `Bonus A:B` / "Bonus issue
 A:B" → BONUS; "split"/"sub-division"/"Stock Split" with "From <face> To
-<face>" → SPLIT; "consolidation" → CONSOLIDATION; everything else (dividends,
-rights, AGMs, buybacks) is ignored. The normative contract is the record, not
-the URLs:
+<face>" → SPLIT; "consolidation" → CONSOLIDATION. **Dividends (v1.2, R9):**
+a subject containing "dividend" with a rupee amount ("Rs 8 Per Share",
+"Rs. - 5.5000", "Re. 1/-", "₹2.50") yields a dividend record — type from
+`interim|final|special` (default Final), rate in ₹/share; percent-of-face
+wordings ("Dividend 250%") are skipped and **counted**, and the updater
+reports the count so the user can add a Manual row. Dividend records dedupe
+on `(isin, type, ex_date)`, NSE wins — same rule as actions. Everything else
+(rights, AGMs, buybacks) is ignored. The normative contract is the record,
+not the URLs:
 
 ```
 { symbol, isin, ex_date, type ∈ {SPLIT, BONUS, CONSOLIDATION},
@@ -680,6 +726,26 @@ Dashboard carries a line chart over History Date × Total. History rows are
 **data** — the reader loads them and the generator writes them back, so they
 survive regeneration.
 
+### 6.12 Dividend quantity at ex-date (v1.2, R9)
+
+```
+qty_est(owner, isin, ex) =
+  Σ over Equity rows r where
+        resolved_isin(r) == isin AND r.owner == owner
+        AND (r.cost_date is blank OR r.cost_date < ex):
+    r.qty × adjustment_factor(isin, r.cost_date, ex − 1 day, actions)
+```
+
+The CA factor is evaluated **as of the day before the ex-date**, so a
+split/bonus between purchase and dividend ex-date adjusts the count, while
+later actions do not. Blank cost-date lots count as held (consistent with the
+FMV-era treatment, §6.6). **Known, documented limitation:** there is no sell
+ledger, so the estimate projects the *current* rows backwards — rows deleted
+or reduced after a sale make history wrong. Hence the amber "(est.)"
+formatting on Qty/Amount, the sheet-hint sentence, and the user's ability to
+correct the Qty on a Manual row. An event yields one row per owner with
+qty_est > 0; each row's Est. amount = rate × qty (a live formula).
+
 ---
 
 ## 7. Updater behaviour
@@ -702,10 +768,11 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            (openpyxl read-only; header row located by matching known header
            names within rows 1–5, so user row edits/sorts never break it)
 6. FETCH — AMFI, bhavcopy (BSE+NSE same-day union merge, §5.2), corporate
-           actions (NSE+BSE); per-source failure ⇒ keep previous values,
-           note in summary
+           actions + dividends (NSE+BSE, §5.4); per-source failure ⇒ keep
+           previous values, note in summary
 7. COMPUTE — masters merge (§6.4), prices/NAVs by ISIN, status flags (§6.5),
-           FMV fallbacks (§6.6), corp-action factors (§6.7), PPF ledger
+           FMV fallbacks (§6.6), corp-action factors (§6.7), dividend rows
+           (§6.12: rebuild current-FY Auto, freeze the rest), PPF ledger
            accrual (§6.10), XIRR (§6.1–6.3), FY-end estimates (§6.8),
            net-worth snapshot (§6.11)
 8. REGENERATE — build the complete workbook (xlsxwriter): structure from this

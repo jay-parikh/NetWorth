@@ -6,12 +6,13 @@ BSE: GET api.bseindia.com .../DefaultData/w?...&scripcode=<code> (Referer
 required); the free-text `Purpose` describes the action; scrip codes come from
 the daily BSE bhavcopy.
 
-Only splits, bonuses and consolidations are kept; dividends, rights, AGMs etc.
-are ignored. Records from both exchanges are deduplicated on
-(isin, type, ex_date) — the ex-date is exchange-synchronised. The fetcher also
-reports WHICH ISINs were successfully checked, so the updater can warn about
-any holding it could not verify instead of skipping it silently. Anything the
-feeds miss (mergers, demergers) is entered as a Manual row on the
+Splits, bonuses and consolidations feed the adjustment engine; dividend
+announcements feed the Dividends sheet (SPEC §3.13) — rights, AGMs, buybacks
+etc. are ignored. Records from both exchanges are deduplicated on
+(isin, type, ex_date) — the ex-date is exchange-synchronised — NSE wins. The
+fetcher also reports WHICH ISINs were successfully checked, so the updater can
+warn about any holding it could not verify instead of skipping it silently.
+Anything the feeds miss (mergers, demergers) is entered as a Manual row on the
 Corporate_Actions sheet.
 """
 
@@ -20,7 +21,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-from ..model import CorporateAction
+from ..model import CorporateAction, DividendRow
 
 API = ("https://www.nseindia.com/api/corporates-corporateActions"
        "?index=equities&symbol={symbol}")
@@ -54,6 +55,29 @@ def parse_subject(subject: str) -> tuple[str, float, float] | None:
             kind = "CONSOLIDATION" if (_CONSOL_HINT.search(subject) or to > frm) else "SPLIT"
             return kind, frm, to
     return None
+
+
+_DIV_HINT = re.compile(r"dividend", re.I)
+_DIV_TYPE = re.compile(r"\b(interim|final|special)\b", re.I)
+# "Rs 8 Per Share", "Rs. - 5.5000", "Re. 1/-", "₹2.50" — a rupee amount, never
+# a bare number (that would swallow "Dividend 250%" percent-of-face forms)
+_DIV_RATE = re.compile(
+    r"(?:rs\.?|re\.?|₹)\s*[-–]?\s*(\d+(?:\.\d+)?)\s*(?:/-)?", re.I)
+
+
+def parse_dividend(subject: str) -> tuple[str, float] | None:
+    """→ (Interim|Final|Special, ₹/share) or None.
+
+    Percent-of-face forms ("Dividend 250%") return None — rare since face
+    values shrank post-2010; a Manual row on the Dividends sheet covers them
+    (the updater counts and reports every skipped dividend subject)."""
+    if not _DIV_HINT.search(subject):
+        return None
+    m = _DIV_RATE.search(subject)
+    if not m:
+        return None
+    t = _DIV_TYPE.search(subject)
+    return (t.group(1).capitalize() if t else "Final"), float(m.group(1))
 
 
 def _parse_date(s: str) -> date | None:
@@ -113,19 +137,62 @@ def dedupe(*action_lists: list[CorporateAction]) -> list[CorporateAction]:
     return out
 
 
+def parse_dividend_records(records: list[dict], isin: str, symbol: str
+                           ) -> tuple[list[DividendRow], int]:
+    """Dividend announcements from either exchange's record shape.
+
+    Returns (feed rows — no owner/qty yet, the updater expands those —,
+    count of dividend-looking subjects that could not be parsed)."""
+    out: list[DividendRow] = []
+    skipped = 0
+    for rec in records:
+        subject = (rec.get("subject") or rec.get("purpose")
+                   or rec.get("Purpose") or "")
+        if not _DIV_HINT.search(subject):
+            continue
+        parsed = parse_dividend(subject)
+        ex = _parse_date(rec.get("exDate") or rec.get("exdate")
+                         or rec.get("Ex_date") or rec.get("ex_date") or "")
+        if not parsed or not ex:
+            skipped += 1
+            continue
+        div_type, rate = parsed
+        out.append(DividendRow(scrip=symbol, isin=isin, div_type=div_type,
+                               ex_date=ex, rate=rate, source="Auto",
+                               details=subject.strip()))
+    return out, skipped
+
+
+def dedupe_dividends(*div_lists: list[DividendRow]) -> list[DividendRow]:
+    """Merge sources on (isin, div_type, ex_date); earlier lists win."""
+    seen: set[tuple] = set()
+    out: list[DividendRow] = []
+    for divs in div_lists:
+        for d in divs:
+            key = (d.isin, d.div_type, d.ex_date)
+            if key not in seen:
+                seen.add(key)
+                out.append(d)
+    return out
+
+
 def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
           session=None, timeout: int = 30
-          ) -> tuple[list[CorporateAction], set[str]]:
+          ) -> tuple[list[CorporateAction], set[str], list[DividendRow], int]:
     """Query NSE (symbol → ISIN) and BSE (scrip code → ISIN) for the held
     stocks; return (deduplicated actions, ISINs successfully checked on at
-    least one exchange). Raises only if every query on both exchanges failed."""
+    least one exchange, deduplicated dividend announcements, count of
+    dividend subjects that could not be parsed). Raises only if every query
+    on both exchanges failed."""
     import requests
     sess = session or requests.Session()
     bse_codes = bse_codes or {}
     checked: set[str] = set()
     nse_actions: list[CorporateAction] = []
     bse_actions: list[CorporateAction] = []
-    attempts = failures = 0
+    nse_divs: list[DividendRow] = []
+    bse_divs: list[DividendRow] = []
+    attempts = failures = div_skipped = 0
 
     if nse_symbols:
         try:
@@ -142,6 +209,9 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
                 if isinstance(records, dict):
                     records = records.get("data", [])
                 nse_actions.extend(parse_records(records, isin, symbol))
+                divs, skipped = parse_dividend_records(records, isin, symbol)
+                nse_divs.extend(divs)
+                div_skipped += skipped
                 checked.add(isin)
             except Exception:  # noqa: BLE001 — one bad symbol must not kill the run
                 failures += 1
@@ -156,8 +226,11 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
             records = resp.json()
             if isinstance(records, dict):
                 records = records.get("Table", [])
-            bse_actions.extend(
-                parse_bse_records(records, isin, isin_to_symbol.get(isin, code)))
+            symbol = isin_to_symbol.get(isin, code)
+            bse_actions.extend(parse_bse_records(records, isin, symbol))
+            divs, skipped = parse_dividend_records(records, isin, symbol)
+            bse_divs.extend(divs)
+            div_skipped += skipped
             checked.add(isin)
         except Exception:  # noqa: BLE001
             failures += 1
@@ -165,4 +238,5 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
     if attempts and failures == attempts:
         raise RuntimeError(
             "corporate-actions feeds unreachable (NSE and BSE, every security)")
-    return dedupe(nse_actions, bse_actions), checked
+    return (dedupe(nse_actions, bse_actions), checked,
+            dedupe_dividends(nse_divs, bse_divs), div_skipped)

@@ -33,6 +33,7 @@ BOND_LAST_ROW = 53
 BOND_TOTAL_ROW = 55
 BYSCRIP_LAST_ROW = 29
 CA_LAST_ROW = 53                # Corporate_Actions data rows 4..53
+DIV_LAST_ROW = 203              # Dividends data rows 4..203 (SPEC §3.13)
 HISTORY_LAST_ROW = 400          # net-worth snapshots, one per day (rows 4..400)
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
@@ -190,6 +191,30 @@ def adjustment_factor(isin: str, cost_date: date | None, today: date,
     return f
 
 
+def fy_label(d: date) -> str:
+    """Indian financial year of a date, e.g. 2026-06-15 → '2026-27'."""
+    start = d.year if d.month >= 4 else d.year - 1
+    return f"{start}-{str(start + 1)[2:]}"
+
+
+@dataclass
+class DividendRow:
+    """One dividend event × owner (SPEC §3.13/§6.12). Auto rows whose ex-date
+    falls in the CURRENT financial year are rebuilt from the feed on every
+    update; prior-FY rows freeze automatically; Manual rows persist and
+    override an Auto row with the same (isin, div_type, ex_date) key."""
+    fy: str = ""                       # e.g. "2026-27", from the ex-date
+    owner: str = ""
+    scrip: str = ""
+    isin: str = ""
+    div_type: str = ""                 # Interim | Final | Special
+    ex_date: date | None = None
+    rate: float | None = None          # ₹ per share
+    qty: float | None = None           # estimated holding at ex-date (§6.12)
+    source: str = "Manual"             # Auto | Manual
+    details: str = ""
+
+
 @dataclass
 class HistorySnapshot:
     """One dated net-worth snapshot (SPEC §6.11). Updater-written data that
@@ -241,6 +266,7 @@ class PortfolioData:
     bonds: list[BondRow] = field(default_factory=list)
     by_scrip: list[ScripRef] = field(default_factory=list)
     corporate_actions: list["CorporateAction"] = field(default_factory=list)
+    dividends: list["DividendRow"] = field(default_factory=list)
     history: list["HistorySnapshot"] = field(default_factory=list)
     inflation_pct: float = 7
     expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)

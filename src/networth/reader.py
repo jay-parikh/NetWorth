@@ -17,8 +17,9 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    BondRow, ClassXirr, CorporateAction, EquityRow, FDRow, HistorySnapshot,
-    Masters, MFRow, PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
+    BondRow, ClassXirr, CorporateAction, DividendRow, EquityRow, FDRow,
+    HistorySnapshot, Masters, MFRow, PPFLedgerRow, PPFRow, PortfolioData,
+    ScripRef, SIPRow,
 )
 
 
@@ -235,6 +236,26 @@ def read_workbook(path: str) -> PortfolioData:
                 ratio_to=_as_float(ws.cell(r, 6).value),
                 source=_as_str(ws.cell(r, 8).value) or "Manual",
                 details=_as_str(ws.cell(r, 9).value),
+            ))
+
+    if "Dividends" in wb.sheetnames:
+        ws = wb["Dividends"]
+        h = _header_row(ws, "FY")
+        for r in _data_rows(ws, h):
+            scrip = _as_str(ws.cell(r, 3).value)
+            isin = _as_str(ws.cell(r, 4).value)
+            if not scrip and not isin:
+                continue                     # skips the by-month block too
+            data.dividends.append(DividendRow(
+                fy=_as_str(ws.cell(r, 1).value),
+                owner=_as_str(ws.cell(r, 2).value),
+                scrip=scrip, isin=isin,
+                div_type=_as_str(ws.cell(r, 5).value).capitalize(),
+                ex_date=_as_date(ws.cell(r, 6).value),
+                rate=_as_float(ws.cell(r, 7).value),
+                qty=_as_float(ws.cell(r, 8).value),
+                source=_as_str(ws.cell(r, 10).value) or "Manual",
+                details=_as_str(ws.cell(r, 11).value),
             ))
 
     def master_rows(sheet: str) -> list[tuple[str, str, str]]:

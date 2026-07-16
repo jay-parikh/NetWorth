@@ -11,8 +11,8 @@ from __future__ import annotations
 from datetime import date
 
 from .model import (
-    BondRow, ClassXirr, EquityRow, FDRow, MFRow, PPFLedgerRow, PPFRow,
-    PortfolioData, SIPRow, ScripRef, load_masters,
+    BondRow, ClassXirr, DividendRow, EquityRow, FDRow, MFRow, PPFLedgerRow,
+    PPFRow, PortfolioData, SIPRow, ScripRef, load_masters,
 )
 
 PERSONS = ["Amit", "Priya", "Rahul"]
@@ -95,6 +95,18 @@ def sample_portfolio() -> PortfolioData:
                     1000, 1015, 8.5, date(2029, 1, 15), date(2024, 1, 15)),
         ],
         by_scrip=[ScripRef(isin=i, name=name_by_isin.get(i, "")) for i in _BY_SCRIP_ISINS],
+        dividends=[
+            # a frozen prior-FY record + a current-FY row the updater refreshes
+            DividendRow(fy="2025-26", owner="Priya", scrip="ITC LTD.",
+                        isin="INE154A01025", div_type="Final",
+                        ex_date=date(2025, 6, 4), rate=7.85, qty=200,
+                        source="Auto", details="Final Dividend - Rs 7.85 Per Share"),
+            DividendRow(fy="2026-27", owner="Amit",
+                        scrip="TATA CONSULTANCY SERVICES LTD.",
+                        isin="INE467B01029", div_type="Interim",
+                        ex_date=date(2026, 7, 2), rate=10, qty=12,
+                        source="Auto", details="Interim Dividend - Rs 10 Per Share"),
+        ],
         inflation_pct=7,
         xirr=ClassXirr(
             portfolio=0.0676209694,

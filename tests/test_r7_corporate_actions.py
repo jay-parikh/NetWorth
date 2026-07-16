@@ -183,7 +183,7 @@ def test_coverage_warning_for_unverified_holdings(tmp_path, monkeypatch):
 
     # both exchanges answered for everyone except WIPRO
     monkeypatch.setattr(U.ca_mod, "fetch",
-                        lambda *a, **kw: ([], all_held - {wipro}))
+                        lambda *a, **kw: ([], all_held - {wipro}, [], 0))
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="TEST"),
                   amfi_data=AmfiData(), today=TODAY)
     assert summary["ca_unverified"] == ["WIPRO LTD."]
@@ -191,7 +191,7 @@ def test_coverage_warning_for_unverified_holdings(tmp_path, monkeypatch):
                for w in summary["warnings"])
 
     # full coverage → no warning
-    monkeypatch.setattr(U.ca_mod, "fetch", lambda *a, **kw: ([], all_held))
+    monkeypatch.setattr(U.ca_mod, "fetch", lambda *a, **kw: ([], all_held, [], 0))
     summary2 = run(path, price_data=PriceData(trade_date=TODAY, source="TEST"),
                    amfi_data=AmfiData(), today=TODAY)
     assert summary2["ca_unverified"] == []

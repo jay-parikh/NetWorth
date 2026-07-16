@@ -25,7 +25,7 @@ from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .fetch import corporate_actions as ca_mod
-from .model import adjustment_factor, load_fmv
+from .model import DividendRow, adjustment_factor, fy_label, load_fmv
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -78,6 +78,25 @@ def make_backup(path: Path) -> Path:
     return dest
 
 
+def _dividend_qty(owner: str, isin: str, ex: date, equity_rows,
+                  isin_by_name: dict[str, str], actions) -> float:
+    """Estimated shares held at the ex-date (SPEC §6.12): lots bought before
+    the ex-date, at the CA-adjusted count as of the day before. There is no
+    sell ledger — the estimate projects the CURRENT rows backwards, which the
+    sheet hint and Guide state plainly (hence the amber '(est.)' columns)."""
+    from datetime import timedelta
+    as_of = ex - timedelta(days=1)
+    total = 0.0
+    for row in equity_rows:
+        row_isin = row.isin_override or isin_by_name.get(row.scrip, "")
+        if row_isin != isin or row.owner != owner or not row.qty:
+            continue
+        if row.cost_date and row.cost_date >= ex:
+            continue
+        total += row.qty * adjustment_factor(isin, row.cost_date, as_of, actions)
+    return total
+
+
 def _merge_stock_master(existing: list[tuple[str, str, str]],
                         fetched: list[tuple[str, str, str]]) -> tuple[list, int]:
     """Add-only (SPEC §6.4): known ISINs keep their names so user rows survive."""
@@ -106,7 +125,7 @@ def _replace_mf_master(existing: list[tuple[str, str, str]],
 
 
 def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
-        add_persons: list[str] | None = None,
+        div_data=None, add_persons: list[str] | None = None,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
     summary: dict = {"warnings": []}
@@ -230,6 +249,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     held_isins = {row.isin_override or isin_by_name.get(row.scrip, "")
                   for row in data.equity}
     held_isins.discard("")
+    div_skipped = 0
     if ca_data is None:
         symbols = {symbol_by_isin[i]: i for i in held_isins if symbol_by_isin.get(i)}
         bse_codes = {code: isin
@@ -238,9 +258,14 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         try:
             checked: set[str] = set()
             if symbols or bse_codes:
-                ca_data, checked = ca_mod.fetch(symbols, bse_codes)
+                ca_data, checked, fetched_divs, div_skipped = ca_mod.fetch(
+                    symbols, bse_codes)
+                if div_data is None:
+                    div_data = fetched_divs
             else:
                 ca_data = []
+                if div_data is None:
+                    div_data = []
             unchecked = held_isins - checked
             summary["ca_unverified"] = sorted(
                 name_by_isin.get(i, i) for i in unchecked)
@@ -271,6 +296,46 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         row.ca_factor = f if abs(f - 1.0) > 1e-9 else None
         adjusted += row.ca_factor is not None
     summary["ca_adjusted_rows"] = adjusted
+
+    # ---- dividends (SPEC §6.12): rebuild current-FY Auto rows from the feed,
+    # freeze prior FYs, let Manual rows override the same (isin, type, ex-date)
+    fy_now = fy_label(today)
+    for d in data.dividends:                     # backfill FY typed-less rows
+        if not d.fy and d.ex_date:
+            d.fy = fy_label(d.ex_date)
+    if div_data is not None:
+        manual = [d for d in data.dividends if d.source != "Auto"]
+        manual_keys = {(d.isin, d.div_type, d.ex_date) for d in manual}
+        frozen_auto = [d for d in data.dividends
+                       if d.source == "Auto" and d.fy != fy_now]
+        fresh: list[DividendRow] = []
+        for ev in div_data:
+            if (not ev.ex_date or fy_label(ev.ex_date) != fy_now
+                    or (ev.isin, ev.div_type, ev.ex_date) in manual_keys):
+                continue
+            for owner in sorted({r.owner for r in data.equity if r.owner}):
+                qty = _dividend_qty(owner, ev.isin, ev.ex_date,
+                                    data.equity, isin_by_name,
+                                    data.corporate_actions)
+                if qty <= 0:
+                    continue
+                fresh.append(DividendRow(
+                    fy=fy_now, owner=owner,
+                    scrip=name_by_isin.get(ev.isin, ev.scrip or ev.isin),
+                    isin=ev.isin, div_type=ev.div_type, ex_date=ev.ex_date,
+                    rate=ev.rate, qty=round(qty, 3), source="Auto",
+                    details=ev.details))
+        fresh.sort(key=lambda d: (d.ex_date or today, d.scrip, d.owner))
+        data.dividends = frozen_auto + fresh + manual
+        summary["dividend_rows"] = len(fresh)
+    if div_skipped:
+        summary["warnings"].append(
+            f"{div_skipped} dividend announcement(s) could not be parsed "
+            "(e.g. percent-of-face-value wording) — add them as Manual rows "
+            "on the Dividends sheet if they are yours")
+    summary["dividends_fy_total"] = round(sum(
+        (d.rate or 0) * (d.qty or 0)
+        for d in data.dividends if d.fy == fy_now), 2)
 
     # ---- FMV 31-01-2018 fallback for unknown old costs (SPEC §6.6) ----
     fmv_filled = 0
@@ -351,6 +416,9 @@ def _print_summary(s: dict) -> None:
                     else f"{len(s['ca_unverified'])} stock(s) UNVERIFIED")
         print(f"Corp acts  : {s['ca_rows']} action(s) on file (NSE+BSE), "
               f"{s['ca_adjusted_rows']} holding(s) adjusted, {coverage}")
+    if s.get("dividend_rows") is not None:
+        print(f"Dividends  : {s['dividend_rows']} row(s) refreshed for this FY, "
+              f"{s.get('dividends_fy_total', 0):,.0f} declared this financial year")
     if s.get("fmv_filled"):
         print(f"FMV filled : {s['fmv_filled']} row(s) got the 31-01-2018 grandfathering cost")
     if s.get("suspended"):
