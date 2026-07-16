@@ -52,9 +52,10 @@ into RELEASES.md with acceptance criteria.
 
 ## More of the balance sheet
 
-- 🚧 **New asset classes** *(R12–R13, v1.3)* — Gold/SGB/Silver (live
-  bullion-market rate with manual override), NPS (daily NAV), EPF (rate
-  accrual), real estate, cash/savings, insurance surrender value — each
+- ✅ **New asset classes** *(shipped v1.3.0, R12–R13)* — Gold/SGB/Silver
+  (live IBJA bullion rate with market-implied fallback and manual override),
+  NPS (daily NAV from NPS Trust), EPF (rate accrual from the bundled EPFO
+  table), real estate, cash/savings, insurance surrender value — each
   user-selectable so only relevant sheets show (R10) and each with its own
   allocation target (R11).
 - ⬜ **ESOPs/RSUs** — deferred 2026-07-16 pending multi-currency:
@@ -73,8 +74,9 @@ into RELEASES.md with acceptance criteria.
 - ✅ **Net-worth history** *(shipped v1.1)* — the updater appends a dated
   snapshot row on each run; trend chart on the Dashboard (a by-class
   stacked-area companion arrives with R10).
-- 🚧 **Asset-allocation targets** *(R11, v1.3)* — target % per class, drift
-  red/green, plain-language rebalancing hints, actual-vs-target chart.
+- ✅ **Asset-allocation targets** *(shipped v1.3.0, R11)* — target % per
+  class on Settings, drift red/green, plain-language rebalancing hints,
+  actual-vs-target chart — all live formulas.
 - ⬜ **Goal planning** — goals with target date/amount mapped to holdings;
   on/off-track verdict using the projection engine.
 - ⬜ **Live native-XIRR formulas** — replace script-written XIRR values with

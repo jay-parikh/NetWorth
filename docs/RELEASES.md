@@ -53,6 +53,12 @@ it without reading these docs.
 — gold, EPF, NPS, the house, savings, insurance — and see at a glance whether
 their money is balanced the way they planned.*
 
+**Shipped as v1.3.0 (2026-07-16)** — R10–R13 landed with tests
+(`test_r10_settings.py` … `test_r13_wave2.py`, 126 total) and a live
+end-to-end run with all 12 classes on: SGB priced from the merged bhavcopy,
+gold/silver rated from live IBJA (₹14,167.9/g / ₹217.43/g), NPS NAV matched
+from the live NPS Trust feed (262-scheme master), EPF rate auto-filled.
+
 | # | Milestone | Delivers | Acceptance criteria |
 |---|---|---|---|
 | R10 | Settings + class registry + selectable classes | `ASSET_CLASSES` registry in `model.py` (dict-backed ClassXirr/HistorySnapshot; registry-driven Dashboard matrix, allocation table, person blocks, History columns, charts, snapshot, XIRR dispatch); new **Settings** sheet (per-class Yes/No + Target % + Status, drift tolerance, targets-total sanity); disabled classes: sheet hidden (never omitted), Dashboard/person/History presence omitted; `effective_enabled = enabled OR has_data` — a class with data is never hidden (Status `On (has data)` + updater warning); classic five default Yes, new classes No; header-located Dashboard reads; Dashboard visual upgrade: stacked-area "Net worth by class over time" chart, data bars on allocation values, ▲/▼ arrows on day-change | Default template shows exactly the v1.1 tab set + Settings; stacked-area chart, data bars and ▲/▼ arrows render in Excel and LibreOffice; toggling a class Yes reveals its sheet/column/row/blocks, toggling No hides them with totals unchanged; a class with data set to No stays visible with warning; round-trip identity passes for any enable combination; a v1.1 workbook (no Settings) updates cleanly with defaults; openpyxl reads hidden sheets in the round-trip test |
