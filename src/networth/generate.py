@@ -285,8 +285,17 @@ def _write_dashboard(wb, F, data: PortfolioData):
                                 "Dividends tab. Estimated from your current rows.")
 
     ws.write("A18", "Allocation by asset class", F["section"])
-    ws.write_row("A19", ["Asset class", "Value", "XIRR"], F["header"])
+    ws.write_row("A19", ["Asset class", "Value", "XIRR", "Actual %",
+                         "Target %", "Drift", "Rebalance hint"], F["header"])
+    ws.write_comment("E19", "Set targets on the Settings tab (Target % column). "
+                            "Blank = no target for that class.")
+    ws.write_comment("G19", "Indicative pre-tax amount to reach your target - "
+                            "not lot-level selling advice.")
     alloc_last = 19 + n
+    total_cell = f"${total_col}${M.DASH_TOTAL_ROW}"
+    tol_cell = f"Settings!$B${M.SETTINGS_TOL_ROW}"
+    settings_row = {c.key: M.SETTINGS_FIRST_ROW + i
+                    for i, c in enumerate(ASSET_CLASSES)}
     for i, cls in enumerate(enabled):
         r = 20 + i
         ws.write(f"A{r}", cls.label)
@@ -296,10 +305,45 @@ def _write_dashboard(wb, F, data: PortfolioData):
             ws.write_number(f"C{r}", x, F["u_pct"])
         else:
             ws.write_blank(f"C{r}", None, F["u_pct"])
+        sr = settings_row[cls.key]
+        ws.write_formula(f"D{r}",
+                         f'=IF({total_cell}=0,"",B{r}/{total_cell})', F["c_pct"])
+        ws.write_formula(f"E{r}",
+                         f'=IF(Settings!$C${sr}="","",Settings!$C${sr}/100)',
+                         F["c_pct"])
+        ws.write_formula(f"F{r}", f'=IF($E{r}="","",$D{r}-$E{r})', F["c_pct"])
+        ws.write_formula(
+            f"G{r}",
+            f'=IF($E{r}="","",IF(ABS($F{r})<={tol_cell}/100,"On target",'
+            f'"Move ₹"&TEXT(ABS($F{r})*{total_cell},"#,##0")'
+            f'&IF($F{r}>0," out"," in")))',
+            F["c_text"])
     if n:
         ws.conditional_format(f"B20:B{alloc_last}", {
             "type": "data_bar", "bar_color": "#9DB9E3",
             "bar_solid": True, "bar_no_border": True})
+        # drift band: green inside ±tolerance, red outside (blank = no target)
+        ws.conditional_format(f"F20:F{alloc_last}", {
+            "type": "formula",
+            "criteria": f'=AND($F20<>"",ABS($F20)<={tol_cell}/100)',
+            "format": F["cf_green"]})
+        ws.conditional_format(f"F20:F{alloc_last}", {
+            "type": "formula",
+            "criteria": f'=AND($F20<>"",ABS($F20)>{tol_cell}/100)',
+            "format": F["cf_red"]})
+        target_chart = wb.add_chart({"type": "column"})
+        target_chart.add_series({
+            "name": "Actual %",
+            "categories": f"=Dashboard!$A$20:$A${alloc_last}",
+            "values": f"=Dashboard!$D$20:$D${alloc_last}",
+        })
+        target_chart.add_series({
+            "name": "Target %",
+            "categories": f"=Dashboard!$A$20:$A${alloc_last}",
+            "values": f"=Dashboard!$E$20:$E${alloc_last}",
+        })
+        target_chart.set_title({"name": "Actual vs Target %"})
+        ws.insert_chart("Q4", target_chart, {"x_scale": 1.1, "y_scale": 1.1})
 
     if n:
         pie = wb.add_chart({"type": "pie"})

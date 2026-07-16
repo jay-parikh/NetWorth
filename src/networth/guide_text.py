@@ -53,6 +53,12 @@ GUIDE_ROWS: list[tuple] = [
     ("text", "nothing is ever deleted, and a class holding rows always stays visible."),
     ("space",),
 
+    ("section", "🎯", "Keep your money balanced"),
+    ("text", "Type a Target % beside each class on Settings (say Equity 55, Gold 10)."),
+    ("text", "The Dashboard then shows green “On target” or a red hint like “Move ₹1,20,000 out” —"),
+    ("text", "live, the moment you edit a holding. The tolerance (±5 points) is yours to change."),
+    ("space",),
+
     ("section", "👥", "Add a family member"),
     ("text", 'When you run "Update Portfolio" it asks “Add a new person?” — type a name and'),
     ("text", "their tab is built for you. Then use that same name in the Owner column of any holding."),

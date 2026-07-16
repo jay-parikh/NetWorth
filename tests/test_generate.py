@@ -41,10 +41,11 @@ def test_defined_names(wb):
 def test_charts_present(built):
     with zipfile.ZipFile(built) as z:
         charts = [n for n in z.namelist() if re.fullmatch(r"xl/charts/chart\d+\.xml", n)]
-        assert len(charts) == 9
+        assert len(charts) == 10
         types = "".join(z.read(c).decode() for c in charts)
     assert types.count("<c:pieChart>") == 4      # dashboard + 3 persons
-    assert types.count("<c:barChart>") == 2      # net worth by person + dividends by month
+    # net worth by person + dividends by month + actual-vs-target
+    assert types.count("<c:barChart>") == 3
     assert types.count("<c:lineChart>") == 2      # projection + net-worth trend
     assert types.count("<c:areaChart>") == 1      # net worth by class (stacked)
 

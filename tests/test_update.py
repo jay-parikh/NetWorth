@@ -76,7 +76,7 @@ def test_update_run(workbook):
     # workbook still structurally intact (charts survive the regenerate)
     import zipfile
     with zipfile.ZipFile(workbook) as z:
-        assert sum(1 for n in z.namelist() if n.startswith("xl/charts/chart")) == 9
+        assert sum(1 for n in z.namelist() if n.startswith("xl/charts/chart")) == 10
 
 
 def test_update_degrades_gracefully(workbook):

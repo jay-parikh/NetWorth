@@ -171,32 +171,45 @@ Bank_NameList  = (v1) same pattern over Bank_Master
 
 ### 3.3 Dashboard
 
-Layout (columns A–G):
+Layout. Since v1.3 (R10) the class columns are the **effective-enabled set
+in registry order** (§2.1); `<T>` below is the Total column (first after the
+classes, `G` with the classic five) and `<X>` the Expected-@-FY column after
+it. `<L>` is the last allocation-table row (`19 + #enabled`).
 
 | Cell(s) | Content | Kind |
 |---|---|---|
 | A1 | `FAMILY PORTFOLIO — NET WORTH TRACKER` | static |
 | A2 / B2 | `As on` / `=TODAY()` | computed |
-| A3 / B3 | `Family net worth` / `=G16` | computed |
+| A3 / B3 | `Family net worth` / `=<T>16` | computed |
 | E3 | inflation % p.a. input (default 7) | **input** |
 | B4 | Portfolio XIRR across all classes | **updater-written** |
 | E4 | real return `=IF(B4="","",(1+B4)/(1+E3/100)-1)` | computed |
 | F4 | verdict `=IF(B4="","",IF(B4>E3/100,"Beats inflation ✓","Below inflation ✗"))` | computed |
-| A5:G5 | headers `Person, Equity, Mutual Funds, Fixed Deposits, PPF, Bonds, Total` | static |
+| row 5 | headers `Person, <enabled class labels…>, Total, Expected @ 31-Mar-<FY>` | static |
 | A6:A15 | up to 10 person names | **input** (pre-filled from `persons`) |
-| B6:F15 | per class: `=IF($A6="","",SUMIFS(<class value col>, <class owner col>, $A6))` — Equity!I, MutualFunds!I, FixedDeposits!I, PPF!D, Bonds!K | computed |
-| G6:G15 | `=IF($A6="","",SUM(B6:F6))` | computed |
-| A16, B16:G16 | `TOTAL` + column sums | computed |
+| B6:…15 | per class: `=IF($A6="","",SUMIFS(<class value col>, <class owner col>, $A6))` | computed |
+| `<T>`6:15 | `=IF($A6="","",SUM(B6:<last class col>6))` | computed |
+| row 16 | `TOTAL` + column sums | computed |
+| A17 / B17 | `Dividends FY <label>` cell (§3.13; present when Equity is enabled) | computed |
 | A18 | `Allocation by asset class` | static |
-| A19:B19 | headers `Asset class, Value` | static |
-| A20:B24 | Equity `=B16`, Mutual Funds `=C16`, Fixed Deposits `=D16`, PPF `=E16`, Bonds `=F16` | computed |
-| C20:C24 | per-class XIRR | **updater-written** |
+| A19:G19 | headers `Asset class, Value, XIRR, Actual %, Target %, Drift, Rebalance hint` | static |
+| A20:B`<L>` | one row per enabled class; Value `=<class col>16` (data-bar CF) | computed |
+| C20:C`<L>` | per-class XIRR (blank when `has_xirr` is false) | **updater-written** |
+| D20:D`<L>` | Actual % `=IF(<T>16=0,"",B20/<T>16)` | computed (v1.3, R11) |
+| E20:E`<L>` | Target % `=IF(Settings!C<row>="","",Settings!C<row>/100)` — `<row>` is the class's **registry** Settings row, stable regardless of what is enabled | computed |
+| F20:F`<L>` | Drift `=IF(E="","",D-E)` — green within ±tolerance (Settings B17), red outside, untouched when no target | computed |
+| G20:G`<L>` | `=IF(E="","",IF(ABS(F)<=tol/100,"On target","Move ₹"&TEXT(ABS(F)*<T>16,"#,##0")&IF(F>0," out"," in")))` — indicative, pre-tax, class-level | computed |
 | v1: D2/E2 | `Expected return % p.a.` label + input (default 10) for the FY-end estimate | **input** |
-| v1: H5, H6:H15 | `Expected @ 31-Mar-<FY>` header + per-person values (§6.8) | **updater-written** |
-| v1: H16 | total `=IF(SUM(H6:H15)=0,"",SUM(H6:H15))` | computed |
+| `<X>`5, 6:15 | `Expected @ 31-Mar-<FY>` header + per-person values (§6.8) | **updater-written** |
+| `<X>`16 | total `=IF(SUM(...)=0,"",SUM(...))` | computed |
 
-Charts on Dashboard: **pie** “Allocation by asset class” (A20:B24) and
-**bar** “Net worth by person” (A6:A15 vs G6:G15).
+All of D–G are live formulas — drift updates the moment a holding is edited,
+no updater run needed (the glanceable property, §6.13).
+
+Charts on Dashboard: **pie** "Allocation by asset class", **column** "Actual
+vs Target %" (series D and E over the class labels; v1.3/R11), **bar** "Net
+worth by person", **line** "Net worth over time" and **stacked area** "Net
+worth by class over time" (both over History, §6.11).
 
 ### 3.4 Projection
 
@@ -809,6 +822,25 @@ or reduced after a sale make history wrong. Hence the amber "(est.)"
 formatting on Qty/Amount, the sheet-hint sentence, and the user's ability to
 correct the Qty on a Manual row. An event yields one row per owner with
 qty_est > 0; each row's Est. amount = rate × qty (a live formula).
+
+### 6.13 Allocation drift & rebalance hint (v1.3, R11)
+
+```
+for each effective-enabled class c with a non-blank Target %:
+  actual_c  = value_c / family_total            (live formula)
+  drift_c   = actual_c − target_c               (percentage points, absolute)
+  verdict_c = |drift_c| ≤ tolerance   → green, "On target"
+              otherwise               → red, "Move ₹|drift_c × total| out|in"
+classes with a blank target show nothing (no drift, no hint, no CF)
+sanity: Settings B18 = Σ targets, amber when non-zero and ≠ 100
+```
+
+Tolerance (Settings B17, default 5) is **absolute percentage points** —
+relative bands over-trigger on small sleeves (a 2% gold sleeve at 3% is 50%
+relative drift but irrelevant money). The hint is deliberately class-level,
+gross and pre-tax (the header comment says so); lot-level tax-aware selling
+belongs to the capital-gains roadmap item. Everything here is Excel formulas
+— correct the moment the user edits a holding, without running the updater.
 
 ---
 

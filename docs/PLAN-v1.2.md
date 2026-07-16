@@ -616,8 +616,8 @@ chain), `update.py` (apply step ordered *before* price matching),
 | Restructures curated-file contract | §5.8 | R14 |
 | `epf_rates.csv`, `bullion_proxies.csv`, `restructures.csv` | §5.5 additions | R12/R13/R14 |
 | Dividend qty-at-ex-date estimate | §6.12 | R9 |
-| Bullion rate derivation | §6.13 | R13 |
-| Allocation drift & rebalance hint | §6.14 | R11 |
+| Allocation drift & rebalance hint | §6.13 | R11 |
+| Bullion rate derivation | §6.14 | R13 |
 | Restructure engine | §6.15 | R14 |
 | Class registry as normative configuration | §2 | R10 |
 | History label-keyed columns | §6.11 revision | R12 |
