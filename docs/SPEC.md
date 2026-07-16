@@ -495,8 +495,10 @@ A:B" → BONUS; "split"/"sub-division"/"Stock Split" with "From <face> To
 a subject containing "dividend" with a rupee amount ("Rs 8 Per Share",
 "Rs. - 5.5000", "Re. 1/-", "₹2.50") yields a dividend record — type from
 `interim|final|special` (default Final), rate in ₹/share; percent-of-face
-wordings ("Dividend 250%") are skipped and **counted**, and the updater
-reports the count so the user can add a Manual row. Dividend records dedupe
+wordings ("Dividend 250%") are skipped and **counted only when the ex-date
+falls in the current FY** — the feeds carry decades of history, and warning
+about a 2004 record is noise — and the updater reports the count so the user
+can add a Manual row. Dividend records dedupe
 on `(isin, type, ex_date)`, NSE wins — same rule as actions. Everything else
 (rights, AGMs, buybacks) is ignored. The normative contract is the record,
 not the URLs:

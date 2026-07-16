@@ -137,12 +137,15 @@ def dedupe(*action_lists: list[CorporateAction]) -> list[CorporateAction]:
     return out
 
 
-def parse_dividend_records(records: list[dict], isin: str, symbol: str
+def parse_dividend_records(records: list[dict], isin: str, symbol: str,
+                           skip_since: date | None = None
                            ) -> tuple[list[DividendRow], int]:
     """Dividend announcements from either exchange's record shape.
 
     Returns (feed rows — no owner/qty yet, the updater expands those —,
-    count of dividend-looking subjects that could not be parsed)."""
+    count of subjects that could not be parsed). The count is gated to
+    ex-dates ≥ `skip_since` (the current FY start): the feeds carry decades
+    of history and warning about a 2004 percent-of-face dividend is noise."""
     out: list[DividendRow] = []
     skipped = 0
     for rec in records:
@@ -153,8 +156,11 @@ def parse_dividend_records(records: list[dict], isin: str, symbol: str
         parsed = parse_dividend(subject)
         ex = _parse_date(rec.get("exDate") or rec.get("exdate")
                          or rec.get("Ex_date") or rec.get("ex_date") or "")
-        if not parsed or not ex:
-            skipped += 1
+        if not parsed:
+            if ex and (skip_since is None or ex >= skip_since):
+                skipped += 1
+            continue
+        if not ex:
             continue
         div_type, rate = parsed
         out.append(DividendRow(scrip=symbol, isin=isin, div_type=div_type,
@@ -177,7 +183,7 @@ def dedupe_dividends(*div_lists: list[DividendRow]) -> list[DividendRow]:
 
 
 def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
-          session=None, timeout: int = 30
+          session=None, timeout: int = 30, div_skip_since: date | None = None
           ) -> tuple[list[CorporateAction], set[str], list[DividendRow], int]:
     """Query NSE (symbol → ISIN) and BSE (scrip code → ISIN) for the held
     stocks; return (deduplicated actions, ISINs successfully checked on at
@@ -209,7 +215,8 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
                 if isinstance(records, dict):
                     records = records.get("data", [])
                 nse_actions.extend(parse_records(records, isin, symbol))
-                divs, skipped = parse_dividend_records(records, isin, symbol)
+                divs, skipped = parse_dividend_records(records, isin, symbol,
+                                                       div_skip_since)
                 nse_divs.extend(divs)
                 div_skipped += skipped
                 checked.add(isin)
@@ -228,7 +235,8 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
                 records = records.get("Table", [])
             symbol = isin_to_symbol.get(isin, code)
             bse_actions.extend(parse_bse_records(records, isin, symbol))
-            divs, skipped = parse_dividend_records(records, isin, symbol)
+            divs, skipped = parse_dividend_records(records, isin, symbol,
+                                                   div_skip_since)
             bse_divs.extend(divs)
             div_skipped += skipped
             checked.add(isin)

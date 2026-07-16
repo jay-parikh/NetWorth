@@ -258,8 +258,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         try:
             checked: set[str] = set()
             if symbols or bse_codes:
+                fy_start = date(today.year if today.month >= 4 else today.year - 1,
+                                4, 1)
                 ca_data, checked, fetched_divs, div_skipped = ca_mod.fetch(
-                    symbols, bse_codes)
+                    symbols, bse_codes, div_skip_since=fy_start)
                 if div_data is None:
                     div_data = fetched_divs
             else:
