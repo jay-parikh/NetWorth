@@ -133,6 +133,7 @@ def read_workbook(path: str) -> PortfolioData:
         scrip = _manual(ws.cell(r, 3).value)
         if not owner and not scrip:
             continue
+        flag_text = _as_str(ws.cell(r, 18).value)                 # R = Flags
         data.equity.append(EquityRow(
             owner=owner, scrip=scrip,
             qty=_as_float(ws.cell(r, 4).value),
@@ -142,8 +143,10 @@ def read_workbook(path: str) -> PortfolioData:
             close_date=_as_date(ws.cell(r, 8).value),
             cost_date=_as_date(ws.cell(r, 13).value),
             isin_override=_manual(ws.cell(r, 2).value),
-            fmv_used=_as_str(ws.cell(r, 18).value) == "FMV",      # R = Flags
+            fmv_used=flag_text == "FMV",
+            flag=flag_text if flag_text != "FMV" else "",
             ca_factor=_as_float(ws.cell(r, 19).value),            # S = Adj factor
+            cost_factor=_as_float(ws.cell(r, 20).value),          # T = Cost factor
         ))
 
     ws = wb["MutualFunds"]
@@ -350,6 +353,9 @@ def read_workbook(path: str) -> PortfolioData:
                 ratio_to=_as_float(ws.cell(r, 6).value),
                 source=_as_str(ws.cell(r, 8).value) or "Manual",
                 details=_as_str(ws.cell(r, 9).value),
+                new_isin=_as_str(ws.cell(r, 10).value),
+                cost_pct=_as_float(ws.cell(r, 11).value),
+                applied=_as_date(ws.cell(r, 12).value),
             ))
 
     if "Dividends" in wb.sheetnames:

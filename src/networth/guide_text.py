@@ -75,6 +75,7 @@ GUIDE_ROWS: list[tuple] = [
 
     ("section", "✨", "What it quietly handles for you"),
     ("kv", "Splits & bonuses", "your share count updates in 'Qty today' — your typed numbers never change"),
+    ("kv", "Mergers & demergers", "old shares price as the new company, spun-off shares appear as their own row — cost and dates carried correctly"),
     ("kv", "Dividends", "each one your shares declare this year is logged on the Dividends tab, with a month-by-month chart"),
     ("kv", "PPF interest", "exact if you list deposits on PPF_Ledger, otherwise your typed balance is used"),
     ("kv", "A forgotten old cost", "bought before Feb 2018? leave 'Avg. cost' blank — it fills in the 2018 value"),

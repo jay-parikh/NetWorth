@@ -551,7 +551,7 @@ def _write_equity(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Equity")
     _widths(ws, {"A": 12, "B": 15, "C": 34, "D": 10, "E": 12, "F": 13, "G": 12,
                  "H": 16, "I": 14, "J": 14, "K": 13, "L": 12, "M": 13, "N": 9,
-                 "O": 11, "P": 15, "Q": 13, "R": 6, "S": 10})
+                 "O": 11, "P": 15, "Q": 13, "R": 14, "S": 10, "T": 11})
     _sheet_head(ws, F, "EQUITY HOLDINGS",
                 "Yellow-ish/blue cells are inputs. Pick the Scrip from the dropdown — "
                 "ISIN fills itself. Prices refresh via the updater.")
@@ -564,6 +564,12 @@ def _write_equity(wb, F, data: PortfolioData):
     ws.write("Q3", "Key", F["header"])
     ws.write("R3", "Flags", F["key"])
     ws.write("S3", "Adj factor", F["header"])
+    ws.write("T3", "Cost factor", F["header"])
+    ws.write_comment("T3", "Demerger cost apportionment (written by the "
+                           "updater): Invested = Quantity x Avg. cost x this. "
+                           "Blank = 1. Your typed Avg. cost never changes; "
+                           "the spun-off share of the cost moves to the new "
+                           "company's row.")
     ws.write_comment("D3", "As bought. After a split/bonus, 'Qty today' shows the "
                            "post-action share count - matching your demat.")
     ws.write_comment("E3", "As bought (per share). Leave blank for pre-Feb-2018 "
@@ -602,9 +608,11 @@ def _write_equity(wb, F, data: PortfolioData):
                                               "FMV (LTCG grandfathering value). "
                                               "Overtype with the real cost if you "
                                               "find it.")
-                    ws.write(f"R{r}", "FMV", F["key"])
                 else:
                     ws.write_number(f"E{r}", row.avg_cost, F["in_price"])
+            flag_text = row.flag or ("FMV" if row.fmv_used else "")
+            if flag_text:
+                ws.write(f"R{r}", flag_text, F["key"])
             if row.close is not None:
                 ws.write_number(f"F{r}", row.close, F["u_price"])
             if row.prev_close is not None:
@@ -615,10 +623,14 @@ def _write_equity(wb, F, data: PortfolioData):
                 ws.write_datetime(f"M{r}", row.cost_date, F["in_date"])
         if row and row.ca_factor is not None:
             ws.write_number(f"S{r}", row.ca_factor, F["c_units"])
+        if row and row.cost_factor is not None:
+            ws.write_number(f"T{r}", row.cost_factor, F["c_units"])
         ws.write_formula(f"I{r}",
                          f'=IF($D{r}="","",$D{r}*IF($S{r}="",1,$S{r})*$F{r})',
                          F["c_money"])
-        ws.write_formula(f"J{r}", f'=IF(OR($D{r}="",$E{r}=""),"",$D{r}*$E{r})', F["c_money"])
+        ws.write_formula(f"J{r}",
+                         f'=IF(OR($D{r}="",$E{r}=""),"",'
+                         f'$D{r}*$E{r}*IF($T{r}="",1,$T{r}))', F["c_money"])
         ws.write_formula(f"K{r}", f'=IF(OR($E{r}="",$D{r}=""),"",$I{r}-$J{r})', F["c_money"])
         ws.write_formula(f"L{r}",
                          f'=IF(OR($G{r}="",$D{r}=""),"",'
@@ -1309,29 +1321,42 @@ def _write_by_scrip(wb, F, data: PortfolioData):
 def _write_corporate_actions(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Corporate_Actions")
     _widths(ws, {"A": 14, "B": 16, "C": 16, "D": 12, "E": 11, "F": 11, "G": 9,
-                 "H": 9, "I": 60})
-    _sheet_head(ws, F, "CORPORATE ACTIONS (SPLITS / BONUSES)",
-                "Auto rows are fetched for your held stocks on every update. Add "
-                "Manual rows for anything the feed missed. Your Equity rows are "
-                "never rewritten - the Adj factor column applies these at "
-                "valuation time, from each row's Cost date.")
+                 "H": 9, "I": 46, "J": 16, "K": 9, "L": 12})
+    _sheet_head(ws, F, "CORPORATE ACTIONS (SPLITS / BONUSES / RESTRUCTURES)",
+                "Auto rows are fetched for your held stocks on every update; "
+                "Curated rows (mergers/demergers) ship with each release. Add "
+                "Manual rows for anything missed. Your Equity rows are never "
+                "rewritten - factors apply at valuation time.")
     ws.write_row("A3", ["Symbol", "ISIN", "Type", "Ex-Date", "Ratio From",
-                        "Ratio To", "Factor", "Source", "Details"], F["header"])
-    ws.write_comment("E3", "SPLIT/CONSOLIDATION: old face value. BONUS: A of A:B "
-                           "(A new shares per B held).")
-    ws.write_comment("F3", "SPLIT/CONSOLIDATION: new face value. BONUS: B of A:B.")
+                        "Ratio To", "Factor", "Source", "Details", "New ISIN",
+                        "Cost %", "Applied"], F["header"])
+    ws.write_comment("E3", "SPLIT/CONSOLIDATION: old face value. BONUS/MERGER/"
+                           "DEMERGER: A of A:B (A new shares per B held).")
+    ws.write_comment("F3", "SPLIT/CONSOLIDATION: new face value. BONUS/MERGER/"
+                           "DEMERGER: B of A:B.")
+    ws.write_comment("J3", "MERGER/ISIN_CHANGE: the surviving security's ISIN. "
+                           "DEMERGER: the resulting security of this row (one "
+                           "row per outcome; the parent-retention row repeats "
+                           "the old ISIN).")
+    ws.write_comment("K3", "Cost-basis share in percent. A demerger's rows "
+                           "must sum to 100 across the event.")
+    ws.write_comment("L3", "When the updater applied this event (wrote child "
+                           "rows / cost factors). Managed automatically - a "
+                           "demerger is applied ONCE, so deleting a spun-off "
+                           "row later is respected.")
 
     by_row = {M.FIRST_DATA_ROW + i: a for i, a in enumerate(data.corporate_actions)}
     for r in range(M.FIRST_DATA_ROW, M.CA_LAST_ROW + 1):
         a = by_row.get(r)
         if a:
-            fmt = F["c_text"] if a.source == "Auto" else F["in_text"]
+            fmt = F["c_text"] if a.source in ("Auto", "Curated") else F["in_text"]
+            dfmt = (F["date_disp"] if a.source in ("Auto", "Curated")
+                    else F["in_date"])
             ws.write(f"A{r}", a.symbol, fmt)
             ws.write(f"B{r}", a.isin, fmt)
             ws.write(f"C{r}", a.type, fmt)
             if a.ex_date:
-                ws.write_datetime(f"D{r}", a.ex_date,
-                                  F["date_disp"] if a.source == "Auto" else F["in_date"])
+                ws.write_datetime(f"D{r}", a.ex_date, dfmt)
             if a.ratio_from is not None:
                 ws.write_number(f"E{r}", a.ratio_from, fmt)
             if a.ratio_to is not None:
@@ -1339,16 +1364,26 @@ def _write_corporate_actions(wb, F, data: PortfolioData):
             ws.write(f"H{r}", a.source, F["c_text"])
             if a.details:
                 ws.write(f"I{r}", a.details, fmt)
+            if a.new_isin:
+                ws.write(f"J{r}", a.new_isin, fmt)
+            if a.cost_pct is not None:
+                ws.write_number(f"K{r}", a.cost_pct, fmt)
+            if a.applied:
+                ws.write_datetime(f"L{r}", a.applied, F["date_disp"])
         ws.write_formula(f"G{r}",
                          f'=IF(OR($C{r}="",$E{r}="",$F{r}=""),"",'
-                         f'IF($C{r}="BONUS",1+$E{r}/$F{r},$E{r}/$F{r}))',
+                         f'IF($C{r}="BONUS",1+$E{r}/$F{r},'
+                         f'IF(OR($C{r}="DEMERGER",$C{r}="ISIN_CHANGE"),1,'
+                         f'$E{r}/$F{r})))',
                          F["c_units"])
     ws.data_validation(f"C4:C{M.CA_LAST_ROW}", {
         "validate": "list",
-        "source": ["SPLIT", "BONUS", "CONSOLIDATION"],
+        "source": ["SPLIT", "BONUS", "CONSOLIDATION", "MERGER", "DEMERGER",
+                   "ISIN_CHANGE"],
         "show_error": False,
         "input_title": "Action type",
-        "input_message": "SPLIT / BONUS / CONSOLIDATION",
+        "input_message": "SPLIT / BONUS / CONSOLIDATION / MERGER / DEMERGER / "
+                         "ISIN_CHANGE",
     })
     ws.freeze_panes("A4")
     return ws

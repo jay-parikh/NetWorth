@@ -169,7 +169,9 @@ def test_factor_flows_into_valuation_formulas(tmp_path):
     assert "Equity!$O:$O" in bs["C4"].value
     ca = wb["Corporate_Actions"]
     assert ca["A3"].value == "Symbol"
-    assert 'IF($C4="BONUS",1+$E4/$F4,$E4/$F4)' in ca["G4"].value
+    assert ('IF($C4="BONUS",1+$E4/$F4,'
+            'IF(OR($C4="DEMERGER",$C4="ISIN_CHANGE"),1,$E4/$F4))'
+            in ca["G4"].value)
 
 
 def test_coverage_warning_for_unverified_holdings(tmp_path, monkeypatch):

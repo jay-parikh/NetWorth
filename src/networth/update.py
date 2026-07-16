@@ -25,8 +25,10 @@ from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .fetch import corporate_actions as ca_mod
-from .model import (ASSET_CLASSES, DividendRow, adjustment_factor,
-                    class_has_data, fy_label, load_fmv)
+from .model import (ASSET_CLASSES, RESTRUCTURE_TYPES, DividendRow, EquityRow,
+                    adjustment_factor, chained_adjustment_factor,
+                    class_has_data, cost_adjustment_factor, fy_label,
+                    load_fmv, load_restructures, resolve_isin)
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -126,7 +128,7 @@ def _replace_mf_master(existing: list[tuple[str, str, str]],
 
 
 def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
-        div_data=None, bullion_rates=None, nps_data=None,
+        div_data=None, bullion_rates=None, nps_data=None, restructures=None,
         add_persons: list[str] | None = None,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
@@ -160,6 +162,98 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     if do_backup:
         summary["backup"] = str(make_backup(path))
 
+    # ---- restructures (SPEC §6.15): curated file + Manual rows; the one
+    # corporate-action category with no free feed. Runs BEFORE pricing so
+    # consumed ISINs route to their successor and demerger children get
+    # priced in the same run. A malformed curated file fails loudly.
+    if restructures is None:
+        try:
+            restructures = load_restructures()
+        except OSError:
+            restructures = []
+    _isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
+    _held = {row.isin_override or _isin_by_name.get(row.scrip, "")
+             for row in data.equity}
+    _held.discard("")
+    manual_keys = {(a.isin, a.type, a.ex_date)
+                   for a in data.corporate_actions if a.source == "Manual"}
+    prev_applied = {(a.isin, a.type, a.ex_date): a.applied
+                    for a in data.corporate_actions if a.applied}
+    # only events touching a HELD security surface on the audit sheet — the
+    # curated file covers everyone, the workbook shows what matters here
+    curated = [c for c in restructures
+               if c.isin in _held
+               and (c.isin, c.type, c.ex_date) not in manual_keys]
+    for c in curated:                        # Applied survives the rewrite
+        c.applied = c.applied or prev_applied.get((c.isin, c.type, c.ex_date))
+    data.corporate_actions = ([a for a in data.corporate_actions
+                               if a.source != "Curated"] + curated)
+    restructure_events = [a for a in data.corporate_actions
+                          if a.type in RESTRUCTURE_TYPES and a.ex_date
+                          and a.ex_date <= today]
+
+    def _consumed_label(isin: str) -> str | None:
+        hops = [a for a in restructure_events
+                if a.isin == isin and a.type in ("MERGER", "ISIN_CHANGE")
+                and a.new_isin and a.new_isin != isin]
+        if not hops:
+            return None
+        return "Merged" if any(h.type == "MERGER" for h in hops) else "Renamed"
+
+    children_added = 0
+    if restructure_events:
+        # successor securities join the master immediately (add-only safe:
+        # they are new ISINs) so name lookups resolve before listing
+        known = {i for _s, _n, i in data.masters.stock_rows}
+        fresh = [(a.new_symbol or a.new_isin, a.new_name or a.new_isin,
+                  a.new_isin)
+                 for a in restructure_events
+                 if a.new_isin and a.new_isin != a.isin
+                 and a.new_isin not in known]
+        if fresh:
+            data.masters.stock_rows.extend(fresh)
+            data.masters.stock_rows.sort(key=lambda r: r[1].casefold())
+
+        # DEMERGER: append-once child rows per lot (SPEC §6.15). The
+        # persisted Applied date is the idempotency token — re-runs skip
+        # applied events, so a user deleting a child row is respected.
+        from datetime import timedelta
+        isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
+        for ev in restructure_events:
+            if (ev.type != "DEMERGER" or ev.applied
+                    or not ev.new_isin or ev.new_isin == ev.isin):
+                continue
+            for lot in list(data.equity):
+                lot_isin = lot.isin_override or isin_by_name.get(lot.scrip, "")
+                if lot_isin != ev.isin or not lot.qty:
+                    continue
+                if lot.cost_date and lot.cost_date >= ev.ex_date:
+                    continue
+                qty_adj = lot.qty * adjustment_factor(
+                    ev.isin, lot.cost_date, ev.ex_date - timedelta(days=1),
+                    data.corporate_actions)
+                ratio = (ev.ratio_from / ev.ratio_to
+                         if ev.ratio_from and ev.ratio_to else 1.0)
+                child_qty = round(qty_adj * ratio, 4)
+                if child_qty <= 0:
+                    continue
+                child_cost = None
+                if lot.avg_cost and ev.cost_pct is not None:
+                    child_cost = round(lot.qty * lot.avg_cost * ev.cost_pct
+                                       / 100 / child_qty, 4)
+                data.equity.append(EquityRow(
+                    owner=lot.owner, scrip=ev.new_name or ev.new_isin,
+                    isin_override=ev.new_isin, qty=child_qty,
+                    avg_cost=child_cost,
+                    # Indian CGT: demerged shares inherit the holding period
+                    cost_date=lot.cost_date,
+                    flag=f"DEMERGER:{ev.isin}@{ev.ex_date.isoformat()}"))
+                children_added += 1
+        for ev in restructure_events:            # stamp the audit trail
+            if not ev.applied:
+                ev.applied = today
+    summary["restructure_children"] = children_added
+
     # ---- fetch (graceful per source) ----
     if price_data is None:
         try:
@@ -185,21 +279,36 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         matched = 0
         nse_only_hits = 0
         suspended = 0
+        name_by_isin_px = {isin: name for _s, name, isin in data.masters.stock_rows}
         for row in data.equity:
             isin = row.isin_override or isin_by_name.get(row.scrip, "")
             if not isin:
                 continue
-            quote = price_data.prices.get(isin)
+            # a consumed ISIN routes to its survivor (SPEC §6.15): the row
+            # prices as the new security while the user's cells stay put
+            routed = (resolve_isin(isin, restructure_events, today)
+                      if restructure_events else isin)
+            quote = price_data.prices.get(routed)
+            if routed != isin:
+                label = _consumed_label(isin) or "Merged"
+                _st, last = data.masters.stock_status.get(isin, ("", None))
+                data.masters.stock_status[isin] = (label, last or row.close_date)
+                if not row.flag:
+                    row.flag = (f"MERGED→{name_by_isin_px.get(routed, routed)}"
+                                if label == "Merged" else
+                                f"ISIN→{routed}")
             if quote:
                 row.close = quote["close"]
                 if quote["prev"]:
                     row.prev_close = quote["prev"]
                 row.close_date = trade_date
-                data.masters.stock_status[isin] = ("Active", trade_date)
+                if routed == isin:
+                    data.masters.stock_status[isin] = ("Active", trade_date)
                 matched += 1
-                nse_only_hits += isin in nse_only
-            elif dual_source:
+                nse_only_hits += routed in nse_only
+            elif dual_source and routed == isin:
                 # absent from both exchanges: escalate by how long it has been
+                # (consumed ISINs are exempt — their absence is expected)
                 prev_status, last = data.masters.stock_status.get(isin, ("", None))
                 last = last or row.close_date
                 if prev_status == "Delisted":
@@ -305,9 +414,15 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     adjusted = 0
     for row in data.equity:
         isin = row.isin_override or isin_by_name.get(row.scrip, "")
-        f = adjustment_factor(isin, row.cost_date, today, data.corporate_actions)
+        # chained: merger ratios fold in, and later splits on the successor
+        # keep applying to the old-ISIN row (SPEC §6.15)
+        f = chained_adjustment_factor(isin, row.cost_date, today,
+                                      data.corporate_actions)
         row.ca_factor = f if abs(f - 1.0) > 1e-9 else None
         adjusted += row.ca_factor is not None
+        cf = cost_adjustment_factor(isin, row.cost_date, today,
+                                    data.corporate_actions)
+        row.cost_factor = cf if abs(cf - 1.0) > 1e-9 else None
     summary["ca_adjusted_rows"] = adjusted
 
     # ---- dividends (SPEC §6.12): rebuild current-FY Auto rows from the feed,
@@ -512,6 +627,9 @@ def _print_summary(s: dict) -> None:
                     else f"{len(s['ca_unverified'])} stock(s) UNVERIFIED")
         print(f"Corp acts  : {s['ca_rows']} action(s) on file (NSE+BSE), "
               f"{s['ca_adjusted_rows']} holding(s) adjusted, {coverage}")
+    if s.get("restructure_children"):
+        print(f"Restructure: {s['restructure_children']} new holding row(s) "
+              f"appended from a demerger (cost & dates inherited)")
     if s.get("dividend_rows") is not None:
         print(f"Dividends  : {s['dividend_rows']} row(s) refreshed for this FY, "
               f"{s.get('dividends_fy_total', 0):,.0f} declared this financial year")

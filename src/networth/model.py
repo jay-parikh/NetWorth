@@ -185,6 +185,11 @@ class EquityRow:
     isin_override: str = ""            # user typed an ISIN over the lookup
     fmv_used: bool = False             # avg_cost filled from the 31-01-2018 FMV (§6.6)
     ca_factor: float | None = None     # updater-written split/bonus multiplier (§6.7)
+    # updater-written (§6.15): demerger cost apportionment (Invested × this);
+    # blank = 1. The user's Avg. cost cell is never rewritten.
+    cost_factor: float | None = None
+    # updater-written informational flag ("MERGED→<name>", "DEMERGER:<isin>@<date>")
+    flag: str = ""
 
 
 @dataclass
@@ -330,26 +335,40 @@ class ScripRef:
     name: str = ""
 
 
+RESTRUCTURE_TYPES = ("MERGER", "DEMERGER", "ISIN_CHANGE")
+
+
 @dataclass
 class CorporateAction:
-    """One split/bonus/consolidation (SPEC §5.4/§6.7). Auto rows are rewritten
-    from the feed on every update; Manual rows are the user's and persist."""
+    """One corporate action (SPEC §5.4/§6.7/§6.15). Auto rows are rewritten
+    from the feed and Curated rows from data/restructures.csv on every update
+    (Curated keeps its Applied date); Manual rows are the user's, persist,
+    and override either with the same (isin, type, ex_date) key."""
     symbol: str = ""
-    isin: str = ""
-    type: str = ""                     # SPLIT | BONUS | CONSOLIDATION
+    isin: str = ""                     # restructures: the OLD isin
+    type: str = ""                     # SPLIT | BONUS | CONSOLIDATION | §6.15 types
     ex_date: date | None = None
-    ratio_from: float | None = None    # SPLIT/CONSOLIDATION: old face; BONUS: A
-    ratio_to: float | None = None      # SPLIT/CONSOLIDATION: new face; BONUS: B
-    source: str = "Manual"             # Auto | Manual
+    ratio_from: float | None = None    # SPLIT/CONSOL: old face; BONUS/MERGER/DEMERGER: A of A:B
+    ratio_to: float | None = None      # SPLIT/CONSOL: new face; BONUS/MERGER/DEMERGER: B of A:B
+    source: str = "Manual"             # Auto | Curated | Manual
     details: str = ""
+    # §6.15 restructure fields
+    new_isin: str = ""                 # successor security (DEMERGER: per row)
+    new_name: str = ""
+    new_symbol: str = ""
+    cost_pct: float | None = None      # cost-basis apportionment (Σ=100 per event)
+    applied: date | None = None        # demerger append-once idempotency token
 
     def factor(self) -> float:
-        """Quantity multiplier (SPEC §6.7)."""
+        """Quantity multiplier (SPEC §6.7/§6.15)."""
+        if self.type in ("DEMERGER", "ISIN_CHANGE"):
+            return 1.0                 # parent qty unchanged / pure rename
         if not (self.ratio_from and self.ratio_to):
             return 1.0
         if self.type == "BONUS":
             return 1.0 + self.ratio_from / self.ratio_to
-        return self.ratio_from / self.ratio_to   # SPLIT >1, CONSOLIDATION <1
+        # SPLIT >1, CONSOLIDATION <1, MERGER = A new shares per B old
+        return self.ratio_from / self.ratio_to
 
 
 def adjustment_factor(isin: str, cost_date: date | None, today: date,
@@ -363,6 +382,111 @@ def adjustment_factor(isin: str, cost_date: date | None, today: date,
             continue
         f *= a.factor()
     return f
+
+
+def _next_hop(isin: str, since: date | None, today: date,
+              actions: list[CorporateAction]) -> "CorporateAction | None":
+    hops = [a for a in actions
+            if a.isin == isin and a.type in ("MERGER", "ISIN_CHANGE")
+            and a.new_isin and a.new_isin != isin
+            and a.ex_date and a.ex_date <= today
+            and (not since or a.ex_date > since)]
+    return min(hops, key=lambda a: a.ex_date) if hops else None
+
+
+def resolve_isin(isin: str, actions: list[CorporateAction],
+                 today: date) -> str:
+    """Follow the MERGER/ISIN_CHANGE chain old→new→newer (SPEC §6.15),
+    cycle-capped. Prices/status for a consumed ISIN route to the survivor."""
+    cur: str = isin
+    since: date | None = None
+    for _ in range(10):
+        hop = _next_hop(cur, since, today, actions)
+        if hop is None:
+            return cur
+        cur, since = hop.new_isin, hop.ex_date
+    return cur
+
+
+def chained_adjustment_factor(isin: str, cost_date: date | None, today: date,
+                              actions: list[CorporateAction]) -> float:
+    """adjustment_factor that follows restructure chains: the merger ratio
+    folds in (via factor()), and later splits/bonuses on the SUCCESSOR ISIN
+    keep applying to the old-ISIN row."""
+    f = 1.0
+    cur, since = isin, cost_date
+    for _ in range(10):
+        f *= adjustment_factor(cur, since, today, actions)
+        hop = _next_hop(cur, since, today, actions)
+        if hop is None:
+            return f
+        cur, since = hop.new_isin, hop.ex_date
+    return f
+
+
+def cost_adjustment_factor(isin: str, cost_date: date | None, today: date,
+                           actions: list[CorporateAction]) -> float:
+    """Demerger cost-basis retention (SPEC §6.15): the product of the
+    parent-retention cost_pct of every DEMERGER whose ex-date falls in
+    (cost_date, today], following restructure chains like the qty factor.
+    Merger/ISIN-change cost carries in full (Sec. 47) — factor 1."""
+    f = 1.0
+    cur, since = isin, cost_date
+    for _ in range(10):
+        for a in actions:
+            if (a.type != "DEMERGER" or a.isin != cur or not a.ex_date
+                    or a.ex_date > today or a.cost_pct is None):
+                continue
+            if a.new_isin and a.new_isin != cur:
+                continue               # a child row of the event, not retention
+            if since and a.ex_date <= since:
+                continue
+            f *= a.cost_pct / 100
+        hop = _next_hop(cur, since, today, actions)
+        if hop is None:
+            return f
+        cur, since = hop.new_isin, hop.ex_date
+    return f
+
+
+def load_restructures(data_dir: Path = DATA_DIR) -> list[CorporateAction]:
+    """Curated mergers/demergers/ISIN changes (SPEC §5.8) — release-refreshed
+    like ppf_rates/fmv; no free feed publishes swap ratios. Validates that
+    every DEMERGER event's cost_pct sums to 100 and FAILS LOUDLY otherwise:
+    silently wrong cost basis would corrupt capital-gains numbers."""
+    import csv
+    from collections import defaultdict
+    from datetime import datetime as _dt
+
+    out: list[CorporateAction] = []
+    with open(data_dir / "restructures.csv", newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if not (r.get("old_isin") or "").strip():
+                continue
+            out.append(CorporateAction(
+                symbol=(r.get("old_symbol") or "").strip(),
+                isin=r["old_isin"].strip(),
+                type=r["type"].strip().upper(),
+                ex_date=_dt.strptime(r["ex_date"].strip(), "%Y-%m-%d").date(),
+                ratio_from=float(r["ratio_from"]) if r.get("ratio_from") else None,
+                ratio_to=float(r["ratio_to"]) if r.get("ratio_to") else None,
+                source="Curated",
+                details=(r.get("details") or "").strip(),
+                new_isin=(r.get("new_isin") or "").strip(),
+                new_name=(r.get("new_name") or "").strip(),
+                new_symbol=(r.get("new_symbol") or "").strip(),
+                cost_pct=float(r["cost_pct"]) if r.get("cost_pct") else None,
+            ))
+    sums: dict[tuple, float] = defaultdict(float)
+    for a in out:
+        if a.type == "DEMERGER":
+            sums[(a.isin, a.ex_date)] += a.cost_pct or 0.0
+    for (isin, ex), total in sums.items():
+        if abs(total - 100.0) > 1e-6:
+            raise ValueError(
+                f"restructures.csv: DEMERGER {isin} @ {ex} cost_pct sums to "
+                f"{total}, not 100 — refusing to corrupt cost bases")
+    return out
 
 
 def fy_label(d: date) -> str:

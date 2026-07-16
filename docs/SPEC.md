@@ -5,7 +5,7 @@
 > anyone could rebuild NetWorth from scratch, in any language, without seeing
 > the code.
 
-**Version:** covers v1.0 – v1.2 (in progress) · **Status:** normative.
+**Version:** covers v1.0 – v1.4 · **Status:** normative.
 Reverse‑engineered from the original template and extended with the approved
 features in [PLAN.md](PLAN.md).
 
@@ -266,7 +266,7 @@ Header row 3, data rows 4…140. Columns:
 | G | Prev. close | updater | previous close |
 | H | Closing Price Date | updater | bhavcopy date used (a real date cell — the stale-price amber conditional format keys on `TODAY()-$H4>7`) |
 | I | Cur. val | computed | `=IF($D4="","",$D4*$F4)` (v1: uses adjusted qty, §6.7) |
-| J | Invested | computed | `=IF(OR($D4="",$E4=""),"",$D4*$E4)` |
+| J | Invested | computed | `=IF(OR($D4="",$E4=""),"",$D4*$E4*IF($T4="",1,$T4))` — × the v1.4 demerger Cost factor, blank = 1 |
 | K | Net chg. | computed | `=I−J` guarded |
 | L | Day chg. | computed | `=IF(OR($G4="",$D4=""),"",$D4*($F4-$G4))` |
 | M | Cost date | input | drives per-row return annualisation & XIRR cashflows |
@@ -274,8 +274,9 @@ Header row 3, data rows 4…140. Columns:
 | v1: O | Qty today | computed | `=IF($D4="","",$D4*IF($S4="",1,$S4))` — post-split/bonus share count, the **demat view**; feeds By Scrip and the person sheets |
 | v1: P | Avg cost today | computed | `=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))` — cost per share in today's share terms |
 | Q | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
-| v1: R | Flags | updater helper | `FMV` marks an avg-cost filled by the §6.6 fallback so the flag round-trips regeneration |
-| v1: S | Adj factor | **updater-written** | split/bonus multiplier since Cost date (§6.7); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price`; `Invested` stays raw |
+| v1: R | Flags | updater helper | `FMV` (§6.6 fallback), `MERGED→<name>` / `ISIN→<isin>` (row priced via a successor, §6.15), `DEMERGER:<old_isin>@<ex_date>` (an appended child row) — flags round-trip regeneration |
+| v1: S | Adj factor | **updater-written** | split/bonus **and merger-ratio** multiplier since Cost date (§6.7/§6.15, chain-aware); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price` |
+| v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
 
 Below the data block, one **updater-written** cell holds the equity-class
 XIRR (legacy: N142). v1 additions: status/staleness amber flags (§6.5),
@@ -749,6 +750,35 @@ The flakiest data in the product, so it must never block a run:
 4. The sheet's Rate-override column always wins over the auto rate.
 ```
 
+### 5.8 Curated restructures — `data/restructures.csv` (v1.4, R14)
+
+No reliable free feed publishes merger/demerger swap ratios, so the product
+ships a **curated, release-refreshed** file (the ppf_rates/fmv precedent —
+keeping it current is an ongoing release duty; anything missed is covered by
+a Manual row on Corporate_Actions, which overrides a Curated row with the
+same `(old_isin, type, ex_date)` key):
+
+```
+ex_date, type ∈ {MERGER, DEMERGER, ISIN_CHANGE}, old_isin, old_name,
+old_symbol, new_isin, new_name, new_symbol, ratio_from, ratio_to,
+cost_pct, details
+```
+
+- **MERGER** (old security absorbed): `ratio_from:ratio_to` = A new shares
+  per B old; `cost_pct = 100` — cost basis and holding period carry in full
+  (Sec. 47 tax-neutral).
+- **DEMERGER**: one row per resulting security, grouped by
+  `(old_isin, ex_date)` — a parent-retention row (`new_isin = old_isin`,
+  1:1) plus one row per spun-off child (child shares per parent share, the
+  company-notified income-tax cost apportionment). **The loader validates
+  Σ cost_pct = 100 per event and fails loudly** — a silently wrong split
+  would corrupt capital-gains numbers.
+- **ISIN_CHANGE**: 1:1, `cost_pct = 100`.
+
+Scope: index-grade events likely to touch retail portfolios (shipped v1.4.0:
+the HDFC Ltd → HDFC Bank merger). Rows load as `source = Curated`, rewritten
+from the file each run **except the Applied date, which persists** (§6.15).
+
 ---
 
 ## 6. Algorithms (normative pseudocode)
@@ -826,7 +856,9 @@ for each held ISIN, at update time:
 Suspended/Delisted rows keep their last price and Closing Price Date; the
 updater never overwrites an unquoted row's price, so a manual price typed
 into F simply persists. Skipping escalation on single-source days loses
-nothing — the thresholds are in days, not runs.
+nothing — the thresholds are in days, not runs. v1.4: ISINs consumed by a
+restructure carry status Merged/Renamed instead and are EXEMPT from this
+escalation (§6.15) — their absence is expected, not distress.
 ```
 
 Status + Last Traded live in Stock_Master columns D/E (written only for held
@@ -1015,6 +1047,57 @@ valuation (sheet formula, live): Cur. val = Qty × (Purity or 1)
 
 The Rate-override precedence is a sheet formula, not updater logic — a user
 typing their jeweller's rate sees the value change instantly.
+
+### 6.15 Restructure engine — mergers / demergers / ISIN changes (v1.4, R14)
+
+Events come from §5.8 (Curated) and Manual rows; a Manual row overrides a
+Curated one with the same `(old_isin, type, ex_date)` key. The engine runs
+**before pricing** and NEVER edits a user cell.
+
+**MERGER / ISIN_CHANGE — no new rows.**
+
+```
+resolve(isin): follow old→new hops (ex_date ≤ today), cycle-capped at 10
+pricing     : the row's close/prev/date come from resolve(isin)'s quote
+qty factor  : the merger ratio (A new per B old = A/B) folds into the
+              existing Adj factor S via the chain-aware factor — later
+              splits/bonuses on the SUCCESSOR keep applying to the row
+cost basis  : untouched — Invested and Cost date carry in full (Sec. 47);
+              Flags column shows "MERGED→<name>" / "ISIN→<isin>"
+status      : the consumed ISIN's Stock_Master status becomes Merged /
+              Renamed, which EXEMPTS it from the §6.5 Suspended/Delisted
+              escalation (its bhavcopy absence is expected, not distress)
+```
+
+**DEMERGER — the one case needing two mechanisms.** For each event (parent
+row `new_isin = old_isin` with the retention `cost_pct`; child rows with
+their own `new_isin`, ratio and `cost_pct`):
+
+```
+1. Cost factor (column T, recomputed each run like S):
+   per equity row with cost_date < ex ≤ today:
+     T = Π retention cost_pct/100 over such events (chain-aware)
+   Invested = Quantity × Avg. cost × T          (the user's cells stay put)
+2. Append-once child rows (per owner-lot × child), on the FIRST run where
+   ex ≤ today and the event's Applied is blank:
+     qty       = lot qty × adjustment_factor(old, cost_date, ex−1) × A/B
+     avg cost  = lot raw invested × child cost_pct/100 ÷ qty   (per share)
+     cost date = the PARENT lot's cost date        (Indian CGT: demerged
+                 shares inherit the holding period)
+     flag      = "DEMERGER:<old_isin>@<ex_date>"
+   The event's Applied date (persisted on its Corporate_Actions row) is the
+   single idempotency token: re-runs skip applied events, so a user deleting
+   a child row (e.g. after selling it) is respected.
+invariant: parent Invested×T + Σ child Invested = original Invested
+           (to the rupee; conservation is a test)
+```
+
+The successor's `(symbol, name, isin)` joins Stock_Master immediately
+(add-only compatible — a new ISIN), so appended rows resolve before listing;
+an unlisted child simply has a blank price (excluded from day-change, no
+escalation) and prices automatically on first bhavcopy appearance. Known
+accepted wart: By-Scrip / person-sheet blocks group a merged row under its
+old name until the user re-keys it — values are unaffected.
 
 ---
 
