@@ -81,6 +81,16 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
                 coupon_dates(r.maturity, today, end))
         add(r.owner, value)
 
+    # market-linked new classes grow at the Expected-return input, like Equity
+    from .cashflows import bullion_value
+    for r in data.bullion:
+        v = bullion_value(r)
+        if v:
+            add(r.owner, v * growth)
+    for r in data.nps:
+        if r.units and r.current_nav:
+            add(r.owner, r.units * r.current_nav * growth)
+
     for r in data.epf:                    # accrues at its own rate to FY end
         if not r.balance:
             continue

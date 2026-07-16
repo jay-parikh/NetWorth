@@ -126,7 +126,8 @@ def _replace_mf_master(existing: list[tuple[str, str, str]],
 
 
 def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
-        div_data=None, add_persons: list[str] | None = None,
+        div_data=None, bullion_rates=None, nps_data=None,
+        add_persons: list[str] | None = None,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
     summary: dict = {"warnings": []}
@@ -374,6 +375,74 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 fmv_filled += 1
     summary["fmv_filled"] = fmv_filled
 
+    # ---- gold & silver (SPEC §5.7): SGBs from the bhavcopy; physical metal
+    # from IBJA, falling back to the bhavcopy-implied median, else kept as-is
+    if data.bullion:
+        from .fetch import bullion as bullion_mod
+        rates = bullion_rates
+        rate_src = "injected"
+        if rates is None:
+            rates = bullion_mod.fetch_ibja()
+            rate_src = "IBJA"
+            if not rates:
+                try:
+                    rates = bullion_mod.derive_from_bhavcopy(price_data)
+                    rate_src = "market-implied (SGB/ETF closes)"
+                except OSError:
+                    rates = {}
+        sgb_priced = metal_rated = metal_rows = 0
+        for r in data.bullion:
+            if r.metal_type == "SGB":
+                if r.isin and price_data:
+                    quote = price_data.prices.get(r.isin)
+                    if quote:
+                        r.rate_auto = quote["close"]
+                        sgb_priced += 1
+            elif r.metal_type in ("Gold", "Silver"):
+                metal_rows += 1
+                rate = rates.get(r.metal_type.lower())
+                if rate:
+                    r.rate_auto = rate
+                    metal_rated += 1
+        if metal_rated or sgb_priced:
+            data.bullion_rate_asof = today
+        if metal_rows and not metal_rated:
+            summary["warnings"].append(
+                "gold/silver rate unavailable (IBJA and market-implied both "
+                "failed) — kept the previous rates; the Rate override column "
+                "always wins")
+        summary["bullion"] = (f"{sgb_priced} SGB(s) priced, "
+                              f"{metal_rated}/{metal_rows} metal row(s) rated"
+                              + (f" ({rate_src})" if metal_rated else ""))
+
+    # ---- NPS (SPEC §5.6): daily NAVs + scheme master, keyed by scheme code
+    if data.nps and nps_data is None:
+        from .fetch import nps as nps_mod
+        try:
+            nps_data = nps_mod.fetch()
+        except Exception as e:  # noqa: BLE001
+            summary["warnings"].append(
+                f"NPS NAV fetch failed, keeping old NAVs: {e}")
+    if nps_data:
+        known = {code for code, _n, _p in data.masters.nps_rows}
+        merged = list(data.masters.nps_rows)
+        merged.extend(row for row in nps_data.master_rows
+                      if row[0] not in known)
+        merged.sort(key=lambda r: r[1].casefold())      # dropdown sort rule
+        data.masters.nps_rows = merged
+        data.masters.nps_refreshed = stamp
+        code_by_scheme = {name: code
+                          for code, name, _p in data.masters.nps_rows}
+        matched = 0
+        for r in data.nps:
+            code = r.scheme_code_override or code_by_scheme.get(r.scheme, "")
+            nav = nps_data.nav_by_code.get(code)
+            if nav:
+                r.current_nav = nav
+                matched += 1
+        summary["nps_matched"] = matched
+        summary["nps_total"] = len(data.nps)
+
     # ---- EPF: auto-fill blank rates from the bundled EPFO table (SPEC §3.17)
     if data.epf:
         try:
@@ -434,6 +503,10 @@ def _print_summary(s: dict) -> None:
               f"{s['bonds_matched']} bond(s) priced")
     if "mf_matched" in s:
         print(f"Fund NAVs  : {s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")
+    if s.get("bullion"):
+        print(f"Gold/Silver: {s['bullion']}")
+    if "nps_matched" in s:
+        print(f"NPS NAVs   : {s['nps_matched']}/{s['nps_total']} scheme(s) matched (NPS Trust)")
     if s.get("ca_rows") is not None:
         coverage = ("all held stocks verified" if not s.get("ca_unverified")
                     else f"{len(s['ca_unverified'])} stock(s) UNVERIFIED")

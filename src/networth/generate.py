@@ -473,6 +473,16 @@ _PERSON_BLOCK_SPECS = {
               "Bonds", ["B", "D", "F", "G", "K", "L"], "N",
               ["c_text", "c_text", "c_price", "c_price", "c_money", "c_money"],
               "F:F"),
+    "gold_silver": ("GOLD & SILVER",
+                    ["Type", "Description", "Qty (g)", "Cur. val", "Net chg."],
+                    "Gold_Silver", ["B", "C", "E", "K", "M"], "O",
+                    ["c_text", "c_text", "c_text", "c_money", "c_money"],
+                    "E:E"),
+    "nps": ("NPS",
+            ["Scheme", "Units", "Cur NAV", "Cur. val"],
+            "NPS", ["C", "E", "F", "G"], "K",
+            ["c_text", "c_units", "c_price", "c_money"],
+            None),
 }
 
 
@@ -1020,6 +1030,139 @@ def _write_bonds(wb, F, data: PortfolioData):
     return ws
 
 
+def _write_gold_silver(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("Gold_Silver")
+    _widths(ws, {"A": 12, "B": 8, "C": 26, "D": 14, "E": 12, "F": 8, "G": 13,
+                 "H": 12, "I": 14, "J": 13, "K": 14, "L": 13, "M": 13,
+                 "N": 12, "O": 12})
+    _sheet_head(ws, F, "GOLD & SILVER",
+                "Type grams (and purity for jewellery, e.g. 0.916 for 22K) - "
+                "today's value appears at the daily bullion rate. Prefer your "
+                "jeweller's rate? Type it in Rate override - it wins. SGBs: "
+                "just fill the ISIN, they price like shares.")
+    ws.write_row("A3", ["Owner", "Type", "Description / Series", "ISIN",
+                        "Qty (g / units)", "Purity", "Buy Price ₹/unit",
+                        "Buy Date", "Rate today (auto)", "Rate override",
+                        "Cur. val", "Invested", "Net chg.", "Maturity"],
+                 F["header"])
+    ws.write("O3", "Key", F["key"])
+    ws.write("H2", "Rates as on", F["label"])
+    if data.bullion_rate_asof:
+        ws.write_datetime("I2", data.bullion_rate_asof, F["date_disp"])
+    ws.write_comment("I3", "Filled by the updater: SGBs get their exchange "
+                           "close; gold/silver get the daily benchmark ₹/gram "
+                           "(IBJA; market-implied fallback). Amber when the "
+                           "rate is over a week old.")
+    ws.write_comment("J3", "Your own ₹/gram (e.g. the jeweller's board rate). "
+                           "When set, it always wins over the auto rate.")
+    ws.write_comment("F3", "Fine-metal fraction: 24K/SGB = blank or 1, "
+                           "22K = 0.916, 18K = 0.75.")
+    by_row = {M.FIRST_DATA_ROW + i: b for i, b in enumerate(data.bullion)}
+    for r in range(M.FIRST_DATA_ROW, M.GS_LAST_ROW + 1):
+        b = by_row.get(r)
+        if b:
+            ws.write(f"A{r}", b.owner, F["in_text"])
+            ws.write(f"B{r}", b.metal_type, F["in_text"])
+            ws.write(f"C{r}", b.description, F["in_text"])
+            ws.write(f"D{r}", b.isin, F["in_text"])
+            if b.qty is not None:
+                ws.write_number(f"E{r}", b.qty, F["in_num"])
+            if b.purity is not None:
+                ws.write_number(f"F{r}", b.purity, F["in_num"])
+            if b.buy_price is not None:
+                ws.write_number(f"G{r}", b.buy_price, F["in_price"])
+            if b.buy_date:
+                ws.write_datetime(f"H{r}", b.buy_date, F["in_date"])
+            if b.rate_auto is not None:
+                ws.write_number(f"I{r}", b.rate_auto, F["u_price"])
+            if b.rate_override is not None:
+                ws.write_number(f"J{r}", b.rate_override, F["in_price"])
+            if b.maturity:
+                ws.write_datetime(f"N{r}", b.maturity, F["in_date"])
+        ws.write_formula(
+            f"K{r}",
+            f'=IF(OR($E{r}="",AND($I{r}="",$J{r}="")),"",'
+            f'$E{r}*IF($F{r}="",1,$F{r})*IF($J{r}="",$I{r},$J{r}))',
+            F["c_money"])
+        ws.write_formula(f"L{r}",
+                         f'=IF(OR($E{r}="",$G{r}=""),"",$E{r}*$G{r})',
+                         F["c_money"])
+        ws.write_formula(f"M{r}",
+                         f'=IF(OR($K{r}="",$L{r}=""),"",$K{r}-$L{r})',
+                         F["c_money"])
+        ws.write_formula(f"O{r}", _key_formula(r), F["key"])
+    tr = M.GS_LAST_ROW + 2
+    ws.write(f"C{tr}", "TOTAL", F["total_label"])
+    for col in "KL":
+        ws.write_formula(f"{col}{tr}", f"=SUM({col}4:{col}{M.GS_LAST_ROW})",
+                         F["total"])
+    ws.data_validation(f"B4:B{M.GS_LAST_ROW}", {
+        "validate": "list", "source": ["SGB", "Gold", "Silver"],
+        "show_error": False, "input_title": "Type",
+        "input_message": "SGB (fill the ISIN too) / Gold / Silver"})
+    _redgreen(ws, F, f"M4:M{M.GS_LAST_ROW}")
+    ws.conditional_format(f"I4:I{M.GS_LAST_ROW}", {
+        "type": "formula",
+        "criteria": '=AND($I4<>"",$I$2<>"",TODAY()-$I$2>7)',
+        "format": F["cf_amber"]})
+    ws.freeze_panes("A4")
+    return ws
+
+
+def _write_nps(wb, F, data: PortfolioData):
+    ws = wb.add_worksheet("NPS")
+    _widths(ws, {"A": 12, "B": 15, "C": 44, "D": 12, "E": 12, "F": 12,
+                 "G": 14, "H": 16, "I": 15, "J": 10, "K": 12})
+    _sheet_head(ws, F, "NPS — NATIONAL PENSION SYSTEM",
+                "Pick the scheme from the dropdown and type your units (both "
+                "are on your CRA statement) - the NAV and value fill in on "
+                "update. Add what you've contributed so far for a return "
+                "figure.")
+    ws.write_row("A3", ["Owner", "PRAN", "Scheme", "Scheme Code", "Units",
+                        "Current NAV", "Cur. val", "Total contributed",
+                        "First contribution", "XIRR"], F["header"])
+    ws.write("K3", "Key", F["key"])
+    ws.write_comment("J3", "Approximate: one flow in (Total contributed at "
+                           "First contribution) vs today's value. A dated "
+                           "contribution ledger is on the roadmap.")
+    by_row = {M.FIRST_DATA_ROW + i: n for i, n in enumerate(data.nps)}
+    for r in range(M.FIRST_DATA_ROW, M.NPS_LAST_ROW + 1):
+        n = by_row.get(r)
+        if n:
+            ws.write(f"A{r}", n.owner, F["in_text"])
+            ws.write(f"B{r}", n.pran, F["in_text"])
+            ws.write(f"C{r}", n.scheme, F["in_text"])
+            if n.scheme_code_override:
+                ws.write(f"D{r}", n.scheme_code_override, F["in_text"])
+            if n.units is not None:
+                ws.write_number(f"E{r}", n.units, F["in_num"])
+            if n.current_nav is not None:
+                ws.write_number(f"F{r}", n.current_nav, F["u_price"])
+            if n.total_contributed is not None:
+                ws.write_number(f"H{r}", n.total_contributed, F["in_money"])
+            if n.first_contribution:
+                ws.write_datetime(f"I{r}", n.first_contribution, F["in_date"])
+            if n.xirr is not None:
+                ws.write_number(f"J{r}", n.xirr, F["u_pct"])
+        if not (n and n.scheme_code_override):
+            ws.write_formula(
+                f"D{r}",
+                f'=IF($C{r}="","",IFERROR(INDEX(NPS_Master!$A:$A,'
+                f'MATCH($C{r},NPS_Master!$B:$B,0)),""))', F["c_text"])
+        ws.write_formula(f"G{r}",
+                         f'=IF(OR($E{r}="",$F{r}=""),"",$E{r}*$F{r})',
+                         F["c_money"])
+        ws.write_formula(f"K{r}", _key_formula(r), F["key"])
+    tr = M.NPS_LAST_ROW + 2
+    ws.write(f"C{tr}", "TOTAL", F["total_label"])
+    ws.write_formula(f"G{tr}", f"=SUM(G4:G{M.NPS_LAST_ROW})", F["total"])
+    _add_dropdown(ws, f"C4:C{M.NPS_LAST_ROW}",
+                  _typeahead("NPS_Master", "NPS_SchemeList"), "NPS scheme")
+    _redgreen(ws, F, f"J4:J{M.NPS_LAST_ROW}")
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_epf(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("EPF")
     _widths(ws, {"A": 12, "B": 24, "C": 16, "D": 15, "E": 12, "F": 10,
@@ -1422,6 +1565,9 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     wb.define_name(
         "Bank_NameList",
         "=Bank_Master!$A$4:INDEX(Bank_Master!$A:$A,COUNTA(Bank_Master!$A:$A)+2)")
+    wb.define_name(
+        "NPS_SchemeList",
+        "=NPS_Master!$B$4:INDEX(NPS_Master!$B:$B,COUNTA(NPS_Master!$B:$B)+2)")
 
     # tab order = SPEC §3.1
     _write_dashboard(wb, F, data)
@@ -1451,6 +1597,14 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     _write_ppf_ledger(wb, F, data)
     _write_epf(wb, F, data)
     _write_bonds(wb, F, data)
+    _write_gold_silver(wb, F, data)
+    _write_nps(wb, F, data)
+    _write_master(wb, F, "NPS_Master", "NPS SCHEME MASTER (NPS Trust)",
+                  "Every NPS scheme with a daily NAV — feeds the Scheme "
+                  "dropdown on the NPS sheet. Kept sorted by scheme name. "
+                  "Do not edit by hand: the updater refreshes it.",
+                  ["Scheme Code", "Scheme Name", "PFM"],
+                  data.masters.nps_rows, data.masters.nps_refreshed)
     _write_manual_assets(wb, F, data)
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)

@@ -36,6 +36,8 @@ CA_LAST_ROW = 53                # Corporate_Actions data rows 4..53
 DIV_LAST_ROW = 203              # Dividends data rows 4..203 (SPEC §3.13)
 MA_LAST_ROW = 63                # Manual_Assets data rows 4..63 (SPEC §3.18)
 EPF_LAST_ROW = 43               # EPF data rows 4..43 (SPEC §3.17)
+GS_LAST_ROW = 53                # Gold_Silver data rows 4..53 (SPEC §3.15)
+NPS_LAST_ROW = 43               # NPS data rows 4..43 (SPEC §3.16)
 HISTORY_LAST_ROW = 400          # net-worth snapshots, one per day (rows 4..400)
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
@@ -108,6 +110,11 @@ ASSET_CLASSES: list[AssetClass] = [
                ("EPF",), person_rows=10, default_enabled=False),
     AssetClass("bonds", "Bonds", "Bonds!$K:$K", "Bonds!$A:$A",
                ("Bonds",), person_rows=15),
+    AssetClass("gold_silver", "Gold & Silver", "Gold_Silver!$K:$K",
+               "Gold_Silver!$A:$A", ("Gold_Silver",), person_rows=10,
+               default_enabled=False),
+    AssetClass("nps", "NPS", "NPS!$G:$G", "NPS!$A:$A",
+               ("NPS", "NPS_Master"), person_rows=10, default_enabled=False),
     _manual("real_estate", "Real Estate"),
     _manual("cash", "Cash"),
     _manual("insurance", "Insurance"),
@@ -144,6 +151,8 @@ def class_has_data(data: "PortfolioData", key: str) -> bool:
         "ppf": lambda: data.ppf or data.ppf_ledger,
         "epf": lambda: data.epf,
         "bonds": lambda: data.bonds,
+        "gold_silver": lambda: data.bullion,
+        "nps": lambda: data.nps,
         "real_estate": lambda: _manual_rows(data, "Real Estate"),
         "cash": lambda: _manual_rows(data, "Cash"),
         "insurance": lambda: _manual_rows(data, "Insurance"),
@@ -235,6 +244,39 @@ class PPFLedgerRow:
     account_no: str = ""
     txn_date: date | None = None
     amount: float | None = None
+
+
+@dataclass
+class BullionRow:
+    """One gold/silver holding (SPEC §3.15). SGBs price from the bhavcopy by
+    ISIN like bonds; physical metal values grams × purity × the daily ₹/g
+    reference rate (§5.7) — a typed Rate override always wins."""
+    owner: str = ""
+    metal_type: str = ""               # SGB | Gold | Silver
+    description: str = ""              # "SGB 2023-24 Ser II", "Bangles 22K"
+    isin: str = ""                     # SGB only
+    qty: float | None = None           # SGB: units (1 unit = 1 g); metal: grams
+    purity: float | None = None        # blank = 1 (SGB always 1); 22K = 0.916
+    buy_price: float | None = None     # ₹ per gram/unit
+    buy_date: date | None = None
+    rate_auto: float | None = None     # updater-written ₹/unit
+    rate_override: float | None = None # user-typed ₹/unit — wins over auto
+    maturity: date | None = None       # SGB (8 years); blank for metal
+
+
+@dataclass
+class NPSRow:
+    """One NPS account × scheme (SPEC §3.16): units × daily NAV. The XIRR is
+    an approximate two-flow until a contribution ledger lands (roadmap)."""
+    owner: str = ""
+    pran: str = ""
+    scheme: str = ""                   # dropdown pick from NPS_Master
+    units: float | None = None         # from the CRA statement
+    current_nav: float | None = None   # updater-written
+    total_contributed: float | None = None   # optional → approx XIRR
+    first_contribution: date | None = None   # optional → approx XIRR
+    xirr: float | None = None          # updater-written (approximate)
+    scheme_code_override: str = ""     # user typed a code over the lookup
 
 
 @dataclass
@@ -359,6 +401,8 @@ class HistorySnapshot:
     ppf: float = 0.0
     epf: float = 0.0
     bonds: float = 0.0
+    gold_silver: float = 0.0
+    nps: float = 0.0
     real_estate: float = 0.0
     cash: float = 0.0
     insurance: float = 0.0
@@ -380,6 +424,8 @@ class ClassXirr:
     ppf: float | None = None
     epf: float | None = None
     bonds: float | None = None
+    gold_silver: float | None = None
+    nps: float | None = None
     real_estate: float | None = None
     cash: float | None = None
     insurance: float | None = None
@@ -390,8 +436,10 @@ class ClassXirr:
 class Masters:
     mf_rows: list[tuple[str, str, str]] = field(default_factory=list)      # fund, scheme, isin
     stock_rows: list[tuple[str, str, str]] = field(default_factory=list)   # symbol, name, isin
+    nps_rows: list[tuple[str, str, str]] = field(default_factory=list)     # code, scheme, pfm
     mf_refreshed: str = ""
     stock_refreshed: str = ""
+    nps_refreshed: str = ""
     # held-ISIN trading status (SPEC §6.5): isin -> (Active|Suspended|Delisted, last traded)
     stock_status: dict[str, tuple[str, date | None]] = field(default_factory=dict)
 
@@ -408,7 +456,10 @@ class PortfolioData:
     ppf_ledger: list[PPFLedgerRow] = field(default_factory=list)
     epf: list["EPFRow"] = field(default_factory=list)
     bonds: list[BondRow] = field(default_factory=list)
+    bullion: list["BullionRow"] = field(default_factory=list)
+    nps: list["NPSRow"] = field(default_factory=list)
     manual_assets: list["ManualAssetRow"] = field(default_factory=list)
+    bullion_rate_asof: date | None = None      # updater-written (§5.7)
     by_scrip: list[ScripRef] = field(default_factory=list)
     corporate_actions: list["CorporateAction"] = field(default_factory=list)
     dividends: list["DividendRow"] = field(default_factory=list)

@@ -58,6 +58,12 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
 
     bonds = sum(r.qty * r.cur_price for r in data.bonds if r.qty and r.cur_price)
 
+    from .cashflows import bullion_value
+    gold_silver = sum(v for r in data.bullion if (v := bullion_value(r)))
+
+    nps = sum(r.units * r.current_nav for r in data.nps
+              if r.units and r.current_nav)
+
     def manual(label: str) -> float:
         return sum(r.value for r in data.manual_assets
                    if r.asset_class == label and r.value)
@@ -67,6 +73,8 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
                            fixed_deposits=round(fixed_deposits, 2),
                            ppf=round(ppf, 2), epf=round(epf, 2),
                            bonds=round(bonds, 2),
+                           gold_silver=round(gold_silver, 2),
+                           nps=round(nps, 2),
                            real_estate=round(manual("Real Estate"), 2),
                            cash=round(manual("Cash"), 2),
                            insurance=round(manual("Insurance"), 2),

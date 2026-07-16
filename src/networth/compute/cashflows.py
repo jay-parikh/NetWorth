@@ -139,6 +139,52 @@ def manual_asset_flows(data: PortfolioData, today: date,
     return flows
 
 
+def bullion_value(r) -> float | None:
+    """Cur. val of one Gold_Silver row — mirrors the sheet's K column:
+    qty × purity × (override wins over auto)."""
+    rate = r.rate_override if r.rate_override is not None else r.rate_auto
+    if not (r.qty and rate):
+        return None
+    return r.qty * (r.purity or 1.0) * rate
+
+
+def bullion_flows(data: PortfolioData, today: date) -> list[Flow]:
+    """Gold/Silver class cashflows (SPEC §6.2, v1.3): −qty·BuyPrice at Buy
+    Date, +Cur. val today; SGB rows additionally earn the statutory 2.5% p.a.
+    semi-annual coupon on the row's Buy Price (documented approximation —
+    the statutory base is issue price)."""
+    flows: list[Flow] = []
+    for r in data.bullion:
+        value = bullion_value(r)
+        if not (r.qty and r.buy_price and r.buy_date and value):
+            continue
+        if r.buy_date >= today:
+            continue
+        flows.append((r.buy_date, -r.qty * r.buy_price))
+        if r.metal_type == "SGB" and r.maturity:
+            amount = r.qty * r.buy_price * 0.0125       # 2.5%/2 per half-year
+            flows.extend((c, amount) for c in
+                         coupon_dates(r.maturity, r.buy_date, today, freq=2))
+        flows.append((today, value))
+    return flows
+
+
+def nps_flows(data: PortfolioData, today: date) -> list[Flow]:
+    """NPS class cashflows (SPEC §6.2, v1.3) — approximate two-flow per row:
+    −Total contributed at First contribution, +units·NAV today. Rows missing
+    either optional input are skipped (their value still counts elsewhere)."""
+    flows: list[Flow] = []
+    for r in data.nps:
+        if not (r.total_contributed and r.first_contribution
+                and r.units and r.current_nav):
+            continue
+        if r.first_contribution >= today:
+            continue
+        flows.append((r.first_contribution, -r.total_contributed))
+        flows.append((today, r.units * r.current_nav))
+    return flows
+
+
 def coupon_dates(maturity: date, after: date, before: date,
                  freq: int = 1) -> list[date]:
     """Coupon dates in (after, before], stepping back 12/freq months from
@@ -203,19 +249,32 @@ def compute_all_xirr(data: PortfolioData, today: date | None = None) -> ClassXir
     ppf = ppf_flows(data, today)
     epf = epf_flows(data, today)
     bonds = bond_flows(data, today)
+    gs = bullion_flows(data, today)
+    nps = nps_flows(data, today)
     re_ = manual_asset_flows(data, today, "Real Estate")
     ins = manual_asset_flows(data, today, "Insurance")
     oth = manual_asset_flows(data, today, "Other")
     # Cash is excluded from XIRR entirely (has_xirr = false, SPEC §2.1)
 
+    for r in data.nps:                      # per-row approximate XIRR
+        if (r.total_contributed and r.first_contribution
+                and r.units and r.current_nav and r.first_contribution < today):
+            r.xirr = xirr([(r.first_contribution, -r.total_contributed),
+                           (today, r.units * r.current_nav)])
+        else:
+            r.xirr = None
+
     return ClassXirr(
-        portfolio=xirr(eq + mf + fd + ppf + epf + bonds + re_ + ins + oth),
+        portfolio=xirr(eq + mf + fd + ppf + epf + bonds + gs + nps
+                       + re_ + ins + oth),
         equity=xirr(eq),
         mutual_funds=xirr(mf),
         fixed_deposits=xirr(fd),
         ppf=xirr(ppf),
         epf=xirr(epf),
         bonds=xirr(bonds),
+        gold_silver=xirr(gs),
+        nps=xirr(nps),
         real_estate=xirr(re_),
         insurance=xirr(ins),
         other_assets=xirr(oth),

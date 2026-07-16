@@ -23,7 +23,7 @@ def test_default_template_shows_everything(tmp_path):
     assert "Settings" in wb.sheetnames
     # classic five visible; the new default-off classes ship hidden
     hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
-    assert hidden == {"EPF", "Manual_Assets"}
+    assert hidden == {"EPF", "Manual_Assets", "Gold_Silver", "NPS", "NPS_Master"}
     st = wb["Settings"]
     n = len(ASSET_CLASSES)
     labels = [st.cell(r, 1).value for r in range(4, 4 + n)]

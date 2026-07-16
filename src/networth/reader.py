@@ -17,9 +17,10 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    ASSET_CLASSES, BondRow, ClassSetting, ClassXirr, CorporateAction,
-    DividendRow, EPFRow, EquityRow, FDRow, HistorySnapshot, ManualAssetRow,
-    Masters, MFRow, PPFLedgerRow, PPFRow, PortfolioData, ScripRef, SIPRow,
+    ASSET_CLASSES, BondRow, BullionRow, ClassSetting, ClassXirr,
+    CorporateAction, DividendRow, EPFRow, EquityRow, FDRow, HistorySnapshot,
+    ManualAssetRow, Masters, MFRow, NPSRow, PPFLedgerRow, PPFRow,
+    PortfolioData, ScripRef, SIPRow,
 )
 
 
@@ -245,6 +246,48 @@ def read_workbook(path: str) -> PortfolioData:
                 notes=_as_str(ws.cell(r, 7).value),
             ))
 
+    if "Gold_Silver" in wb.sheetnames:
+        ws = wb["Gold_Silver"]
+        h = _header_row(ws, "Owner")
+        data.bullion_rate_asof = _as_date(ws["I2"].value)
+        for r in _data_rows(ws, h):
+            owner = _as_str(ws.cell(r, 1).value)
+            if not owner:
+                continue
+            data.bullion.append(BullionRow(
+                owner=owner,
+                metal_type=_as_str(ws.cell(r, 2).value),
+                description=_as_str(ws.cell(r, 3).value),
+                isin=_as_str(ws.cell(r, 4).value),
+                qty=_as_float(ws.cell(r, 5).value),
+                purity=_as_float(ws.cell(r, 6).value),
+                buy_price=_as_float(ws.cell(r, 7).value),
+                buy_date=_as_date(ws.cell(r, 8).value),
+                rate_auto=_as_float(ws.cell(r, 9).value),
+                rate_override=_as_float(ws.cell(r, 10).value),
+                maturity=_as_date(ws.cell(r, 14).value),
+            ))
+
+    if "NPS" in wb.sheetnames:
+        ws = wb["NPS"]
+        h = _header_row(ws, "Owner")
+        for r in _data_rows(ws, h):
+            owner = _as_str(ws.cell(r, 1).value)
+            scheme = _manual(ws.cell(r, 3).value)
+            if not owner and not scheme:
+                continue
+            data.nps.append(NPSRow(
+                owner=owner,
+                pran=_as_str(ws.cell(r, 2).value),
+                scheme=scheme,
+                units=_as_float(ws.cell(r, 5).value),
+                current_nav=_as_float(ws.cell(r, 6).value),
+                total_contributed=_as_float(ws.cell(r, 8).value),
+                first_contribution=_as_date(ws.cell(r, 9).value),
+                xirr=_as_float(ws.cell(r, 10).value),
+                scheme_code_override=_manual(ws.cell(r, 4).value),
+            ))
+
     if "Manual_Assets" in wb.sheetnames:
         ws = wb["Manual_Assets"]
         h = _header_row(ws, "Owner")
@@ -369,8 +412,12 @@ def read_workbook(path: str) -> PortfolioData:
     data.masters = Masters(
         mf_rows=master_rows("MF_Master"),
         stock_rows=master_rows("Stock_Master"),
+        nps_rows=(master_rows("NPS_Master")
+                  if "NPS_Master" in wb.sheetnames else []),
         mf_refreshed=_as_str(wb["MF_Master"]["E2"].value),
         stock_refreshed=_as_str(wb["Stock_Master"]["E2"].value),
+        nps_refreshed=(_as_str(wb["NPS_Master"]["E2"].value)
+                       if "NPS_Master" in wb.sheetnames else ""),
         stock_status=stock_status,
     )
     wb.close()

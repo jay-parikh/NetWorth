@@ -95,10 +95,15 @@ never editing the Dashboard/person/History logic:
 | `default_enabled` | new-workbook default (classic five = Yes; later classes = No) |
 | `has_xirr` | blank the allocation-table XIRR cell when false (e.g. Cash) |
 
-v1.3 registry order: Equity (sheets: Equity, By Scrip, Corporate_Actions,
-Dividends, Stock_Master; 40 person rows) → Mutual Funds (MutualFunds, MF_SIP,
-MF_Master; 20) → Fixed Deposits (FixedDeposits, Bank_Master; 15) → PPF (PPF,
-PPF_Ledger; 10) → Bonds (Bonds; 15).
+v1.3 registry order (12 classes — Settings rows 4–15 exactly): Equity
+(sheets: Equity, By Scrip, Corporate_Actions, Dividends, Stock_Master; 40
+person rows) → Mutual Funds (MutualFunds, MF_SIP, MF_Master; 20) → Fixed
+Deposits (FixedDeposits, Bank_Master; 15) → PPF (PPF, PPF_Ledger; 10) →
+EPF (EPF; 10; default off) → Bonds (Bonds; 15) → Gold & Silver
+(Gold_Silver; 10; default off) → NPS (NPS, NPS_Master; 10; default off) →
+Real Estate / Cash / Insurance / Other (all on the shared Manual_Assets
+sheet via `class_filter`; no person block; default off; Cash has
+`has_xirr = false`).
 
 **Effective enablement (normative):** `effective = enabled OR has_data`. A
 class holding user rows is never hidden — the generator shows it with Status
@@ -135,6 +140,9 @@ brings everything back.
 | v1.1 | PPF_Ledger | data entry | one row per PPF deposit (optional; §6.10) |
 | v1.3 | EPF | data entry (§3.17) | EPF accounts — passbook balance + rate accrual (default off) |
 | … | Bonds | data entry | corporate/other bonds |
+| v1.3 | Gold_Silver | data entry (§3.15) | SGBs + physical gold/silver at the daily rate (default off) |
+| v1.3 | NPS | data entry (§3.16) | NPS accounts — units × daily NAV (default off) |
+| v1.3 | NPS_Master | master | NPS scheme list (§3.16); hides with NPS |
 | v1.3 | Manual_Assets | data entry (§3.18) | hand-valued assets: Real Estate / Cash / Insurance / Other (default off) |
 | … | By Scrip | computed | family-wide exposure per stock |
 | v1 | Corporate_Actions | audit (§6.7) | fetched + manual corporate actions and their effect |
@@ -472,6 +480,58 @@ has-data class round-trips unchanged (it is their setting — only the
 deliberately not used (xlsxwriter cannot write them; LibreOffice renders
 them poorly) — the Yes/No validation dropdown is the normative control.
 
+### 3.15 Gold_Silver (v1.3, R13; default off)
+
+SGBs price from the merged bhavcopy by ISIN (they trade on the cash market
+at ~₹/gram); physical metal values grams × purity × the daily reference rate
+(§5.7). Title r1, hint r2 (+ H2/I2 `Rates as on` stamp, amber trigger),
+header r3, data r4..53, TOTAL r55.
+
+| Col | Header | Kind | Definition |
+|---|---|---|---|
+| A | Owner | input | |
+| B | Type | input | dropdown: SGB / Gold / Silver |
+| C | Description / Series | input | "SGB 2023-24 Ser II", "Bangles 22K" |
+| D | ISIN | input | SGB only — drives bhavcopy pricing |
+| E | Qty (g / units) | input | SGB: units (1 unit = 1 g); metal: grams |
+| F | Purity | input | blank = 1 (SGB always 1); 22K = 0.916, 18K = 0.75 |
+| G | Buy Price ₹/unit | input | per gram/unit; XIRR outflow |
+| H | Buy Date | input | XIRR anchor |
+| I | Rate today (auto) | **updater** | SGB: exchange close; metal: §5.7 ₹/g rate. **Amber** when the I2 rates-as-on stamp is > 7 days old |
+| J | Rate override | input | user's ₹/unit (e.g. the jeweller's board rate) — **always wins over I** |
+| K | Cur. val | computed | `=E × (F or 1) × (J else I)`, guarded; the class value column |
+| L | Invested | computed | `=E × G`, guarded |
+| M | Net chg. | computed | `K − L`, red/green |
+| N | Maturity | input | SGB (8 years); blank for metal |
+| O | Key | helper | |
+
+SGB XIRR includes the statutory 2.5 % p.a. semi-annual coupon computed on
+the row's **Buy Price** — a documented approximation (the statutory base is
+issue price; an extra column is not worth the width).
+
+### 3.16 NPS + NPS_Master (v1.3, R13; default off)
+
+Units × daily NAV, exactly the mutual-fund mental model. NPS sheet: title
+r1, hint r2, header r3, data r4..43, TOTAL r45.
+
+| Col | Header | Kind | Definition |
+|---|---|---|---|
+| A | Owner | input | |
+| B | PRAN | input | free text |
+| C | Scheme | input | type-ahead dropdown over `NPS_SchemeList` (§3.12) |
+| D | Scheme Code | computed | INDEX/MATCH on NPS_Master; manual override allowed (plain text beats the formula) |
+| E | Units | input | from the CRA statement |
+| F | Current NAV | **updater** | daily NAV by scheme code (§5.6) |
+| G | Cur. val | computed | `=E × F`, guarded; the class value column |
+| H | Total contributed | input (optional) | enables the approximate XIRR |
+| I | First contribution | input (optional, date) | |
+| J | XIRR | **updater** | approximate two-flow (−H @ I, +G today); header comment states the approximation — a dated-contribution ledger is roadmap |
+| K | Key | helper | |
+
+**NPS_Master**: `Scheme Code, Scheme Name, PFM` + refreshed stamp (E2),
+sorted by scheme name (the dropdown sort rule, §3.12), **add-only merge
+keyed by scheme code** (§6.4 pattern). Hidden together with the NPS sheet.
+
 ### 3.17 EPF (v1.3, R12; default off)
 
 Deliberately congruent with PPF's flat path: passbook balance in, accrual
@@ -650,6 +710,44 @@ Mergers/demergers/ISIN reassignments remain out of scope for auto-adjustment
 | `banks_in.csv` | `bank_name, type` | RBI scheduled commercial banks list + major SFB/payment/co-op banks |
 | `ppf_rates.csv` *(roadmap — ships with the PPF contribution ledger)* | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
 | `epf_rates.csv` *(v1.3, R12)* | `fy_start, rate_pct` | EPFO annual declared rates, historical to present (no official API — refreshed via releases); the updater fills a blank EPF Rate % with the latest row |
+| `bullion_proxies.csv` *(v1.3, R13)* | `metal, match ∈ {symbol_prefix, isin}, key, grams_per_unit, note` | exchange-traded ₹/gram proxies for the §5.7 fallback (SGB prefix, GoldBeES, SilverBeES); grams-per-unit drifts with expense ratios, hence release-refreshed |
+
+### 5.6 NPS daily NAVs + scheme master (v1.3, R13)
+
+```
+PRIMARY : https://npstrust.org.in/nav-report-excel
+          (despite the name: TAB-separated text, verified 2026-07-16 —
+           ID, DATE OF NAV, PFM NAME, SCHEME ID, SCHEME NAME, NAV VALUE;
+           one row per scheme, latest published day)
+FALLBACK: https://npscra.nsdl.co.in/download/NAVReport.csv (same record)
+```
+
+Columns located by header name, tolerantly; delimiter sniffed (tab vs
+comma); keyed by **SCHEME ID** (e.g. `SM001003`); rows without a positive
+NAV are skipped. Feeds the NPS_Master add-only merge and per-row NAV refresh
+(code resolved from the row's Scheme Code column — lookup or override). No
+API key; failure keeps old NAVs with a summary warning.
+
+### 5.7 Bullion reference rate (v1.3, R13) — layered by design
+
+The flakiest data in the product, so it must never block a run:
+
+```
+1. PRIMARY : IBJA daily benchmark — https://www.ibjarates.com/
+             stable span ids: lblGold999_PM (₹/10 g), lblSilver999_PM
+             (₹/kg); _AM variants earlier in the day. Normalise to ₹/gram.
+             The rate the bullion trade quotes from; RBI uses IBJA 999 for
+             SGB redemption. No committed API — parse defensively, return
+             nothing on any doubt.
+2. FALLBACK: market-implied ₹/g = median(close / grams_per_unit) over the
+             quoted proxies of data/bullion_proxies.csv (SGB tranches ≈
+             ₹/g fine gold; GoldBeES ≈ 0.01 g; SilverBeES ≈ 1 g) from the
+             bhavcopy already fetched — zero extra HTTP. Typically 2–4 %
+             below the IBJA retail benchmark (Guide says so).
+3. DEGRADE : both fail ⇒ keep each row's previous Rate today + the
+             rates-as-on stamp (amber past 7 days) + a summary warning.
+4. The sheet's Rate-override column always wins over the auto rate.
+```
 
 ---
 
@@ -680,6 +778,8 @@ Per asset class (skip rows with missing required inputs):
 | PPF | −(Balance discounted at Rate% back to as-on date)… in practice: −Balance @ as-on | +Balance·(1+Rate%)^(days/365) @ today |
 | Bonds | −Qty·BuyPrice @ Buy Date (skip if no Buy Date) | +Qty·CurrentPrice @ today; **v1:** plus each coupon `+Qty·Face·(Coupon%/f)` on its historical coupon date |
 | EPF *(v1.3)* | −Balance @ as-on (PPF flat path verbatim) | +Balance·(1+Rate%)^(days/365) @ today |
+| Gold & Silver *(v1.3)* | −Qty·BuyPrice @ Buy Date | +Cur. val @ today; SGB rows add each historical semi-annual coupon `+Qty·BuyPrice·1.25%` (§3.15 approximation note) |
+| NPS *(v1.3)* | −Total contributed @ First contribution (row skipped when either optional input is blank) | +Units·NAV @ today |
 | Real Estate / Insurance / Other *(v1.3)* | −Invested @ Cost date (row skipped when Invested, Cost date or Value is blank) | +Current value @ today |
 | Cash *(v1.3)* | **excluded from XIRR entirely** (`has_xirr` false, §2.1) — a balance has no meaningful money-weighted return | |
 
@@ -797,6 +897,7 @@ EPF   : Balance·(1+Rate%)^(YEARFRAC(as-on, FYend))            (v1.3)
 Bonds : Qty·CurrentPrice + coupons falling in (today, FYend]   (redemption if Maturity ≤ FYend: Qty·Face instead)
 Equity/MF: CurVal·(1+ExpectedReturn%)^(YEARFRAC(today, FYend)) — estimate,
            driven by the Dashboard "Expected return %" input
+Gold & Silver / NPS: market-linked — same ExpectedReturn% growth   (v1.3)
 Manual (RE/Cash/Insurance/Other): held FLAT at Current value    (v1.3 —
            estimating property or surrender-value appreciation would be
            false precision; the header comment says so)
@@ -898,6 +999,22 @@ relative drift but irrelevant money). The hint is deliberately class-level,
 gross and pre-tax (the header comment says so); lot-level tax-aware selling
 belongs to the capital-gains roadmap item. Everything here is Excel formulas
 — correct the moment the user edits a holding, without running the updater.
+
+### 6.14 Bullion rate application (v1.3, R13)
+
+```
+per Gold_Silver row, at update time:
+  Type = SGB           → Rate today = merged-bhavcopy close for the ISIN
+  Type = Gold | Silver → Rate today = §5.7 layered ₹/g rate for the metal
+any rate written this run → I2 "Rates as on" stamp = run date
+no rate obtainable       → row keeps its previous Rate today; the stamp
+                           keeps its old date; amber CF fires past 7 days
+valuation (sheet formula, live): Cur. val = Qty × (Purity or 1)
+                                 × (Rate override if set, else Rate today)
+```
+
+The Rate-override precedence is a sheet formula, not updater logic — a user
+typing their jeweller's rate sees the value change instantly.
 
 ---
 

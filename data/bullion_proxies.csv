@@ -1,0 +1,4 @@
+metal,match,key,grams_per_unit,note
+gold,symbol_prefix,SGB,1.0,sovereign gold bonds trade on the cash market at ~₹/gram of 999 gold
+gold,symbol_prefix,GOLDBEES,0.01,Nippon India Gold BeES — ~1/100 gram per unit (drifts with expense ratio; release-refreshed)
+silver,symbol_prefix,SILVERBEES,1.0,Nippon India Silver BeES — ~1 gram per unit (drifts with expense ratio; release-refreshed)

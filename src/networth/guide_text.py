@@ -43,6 +43,8 @@ GUIDE_ROWS: list[tuple] = [
     ("kv", "EPF", "the EPF tab — copy the balance and date from your EPFO passbook, done"),
     ("kv", "Bonds", "the Bonds tab"),
     ("kv", "House, savings, insurance", "the Manual_Assets tab — type today's value, pick the Class"),
+    ("kv", "Gold & silver", "the Gold_Silver tab — type grams, today's bullion rate fills in (your jeweller's rate wins if you type it)"),
+    ("kv", "NPS", "the NPS tab — pick the scheme, type units from your CRA statement"),
     ("space",),
     ("tip", "Pick funds, shares and banks from the dropdown — the ID fills in for you."),
     ("tip", "Searching a long list? Type a few letters, press Enter, then open the dropdown."),
