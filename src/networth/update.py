@@ -148,7 +148,12 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     if price_data:
         isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
         trade_date = price_data.trade_date or today
+        # absence only means anything when BOTH exchanges answered (SPEC §6.5);
+        # on a single-source day, unquoted rows carry their status forward
+        dual_source = len(getattr(price_data, "sources", ())) >= 2
+        nse_only = getattr(price_data, "nse_only", set())
         matched = 0
+        nse_only_hits = 0
         suspended = 0
         for row in data.equity:
             isin = row.isin_override or isin_by_name.get(row.scrip, "")
@@ -162,8 +167,9 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 row.close_date = trade_date
                 data.masters.stock_status[isin] = ("Active", trade_date)
                 matched += 1
-            else:
-                # not traded today: escalate by how long it has been absent
+                nse_only_hits += isin in nse_only
+            elif dual_source:
+                # absent from both exchanges: escalate by how long it has been
                 prev_status, last = data.masters.stock_status.get(isin, ("", None))
                 last = last or row.close_date
                 if prev_status == "Delisted":
@@ -176,6 +182,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 elif last:
                     data.masters.stock_status[isin] = (prev_status or "Active", last)
         summary["suspended"] = suspended
+        summary["nse_only_matched"] = nse_only_hits
         data.masters.stock_rows, added = _merge_stock_master(
             data.masters.stock_rows, price_data.master_rows)
         data.masters.stock_refreshed = stamp
@@ -333,8 +340,9 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
 
 def _print_summary(s: dict) -> None:
     if "price_source" in s:
+        nse_only = f", {s['nse_only_matched']} NSE-only" if s.get("nse_only_matched") else ""
         print(f"Prices     : {s['equity_matched']}/{s['equity_total']} scrips matched "
-              f"({s['price_source']}), {s['stocks_added']} new listings, "
+              f"({s['price_source']}{nse_only}), {s['stocks_added']} new listings, "
               f"{s['bonds_matched']} bond(s) priced")
     if "mf_matched" in s:
         print(f"Fund NAVs  : {s['mf_matched']}/{s['mf_total']} funds matched (AMFI)")

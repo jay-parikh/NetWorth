@@ -392,23 +392,47 @@ the current **Fund House**; skip blanks/headers; a scheme yields up to two
 (ISIN → NAV) entries (both ISIN columns); NAV `N.A.` → skip. Date format
 `dd-MMM-yyyy`.
 
-### 5.2 BSE bhavcopy (primary price source)
+### 5.2 BSE bhavcopy (dual source with NSE, since v1.2 / R8)
 
 `https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_<yyyymmdd>_F_0000.CSV`
 
 Common-format CSV. Columns are located **by header name**, tolerantly:
 ISIN ∈ {ISIN, ISIN_CODE, …}; Close ∈ {ClsPric, Close, LAST, …} (never a
 column containing “prev”); Prev ∈ {PrvsClsgPric, PrevClose, …}; also read
-TckrSymb/FinInstrmNm for the master, and **HghPric** when building FMV data.
-Not published on holidays: try today, then walk back up to 7 calendar days;
-record the date actually used (→ Closing Price Date column).
+TckrSymb/FinInstrmNm for the master, FinInstrmId (BSE scrip code) for the
+corporate-actions lookup, and **HghPric** when building FMV data.
 
-### 5.3 NSE bhavcopy (fallback)
+**Merge rule (normative).** Both exchanges are fetched for the **same trade
+date** and merged — dates are never mixed across exchanges. Not published on
+holidays: try today, then walk back up to 7 calendar days, stopping on the
+first day where **at least one** exchange answers; record the date actually
+used (→ Closing Price Date column). The merged result is:
+
+```
+prices        = union of ISINs; on a dual-listed conflict NSE close/prev win
+                (deeper cash-market liquidity — matches broker apps)
+codes_by_isin = from the BSE parse ONLY, retained whenever BSE responded
+                (NSE's FinInstrmId is not a BSE scrip code)
+master rows   = deduped by ISIN; NSE symbol preferred for NEW ISINs (it is
+                what the NSE corporate-actions API needs); the add-only
+                merge (§6.4) protects existing rows regardless
+source label  = per RUN, not per cell: "BSE+NSE <date>" (or the single
+                exchange that answered), plus an NSE-only count in the
+                console summary
+```
+
+If only one exchange published for the chosen day, the run proceeds
+single-source: quoted rows update normally, but the §6.5 status escalation
+is skipped (absence from one exchange is not evidence of anything). Both
+failing for all 7 days is the only hard failure (updater then degrades
+gracefully, keeping old prices).
+
+### 5.3 NSE bhavcopy (peer source)
 
 `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_<yyyymmdd>_F_0000.csv.zip`
-— zip containing one CSV, same common format. NSE requires a browser-like
-`User-Agent` and a cookie warm-up GET on `https://www.nseindia.com/` first.
-Used when BSE is unreachable or an ISIN is NSE-only.
+— zip containing one CSV, same common format, parsed and merged per §5.2.
+NSE requires a browser-like `User-Agent` and a cookie warm-up GET on
+`https://www.nseindia.com/` first.
 
 ### 5.4 Corporate actions (v1, R7; dual-source since v1.0.0-rc)
 
@@ -518,15 +542,21 @@ AMFI drops it (append with its last-known names).
 
 ```
 for each held ISIN, at update time:
-  quoted in the bhavcopy          → Status=Active, LastTraded=bhavcopy date
-  absent ≤ 21 calendar days       → keep last price/status; the live amber
+  quoted in the merged bhavcopy   → Status=Active, LastTraded=bhavcopy date
+  absent — SINGLE-SOURCE run      → carry the previous status forward
+                                    untouched (absence from one exchange is
+                                    not evidence; prevents a false Suspended
+                                    during a one-exchange outage)
+  absent from BOTH exchanges:
+    ≤ 21 calendar days            → keep last price/status; the live amber
                                     "stale" conditional format fires anyway
                                     once Closing Price Date is > 7 days old
-  absent > 21 calendar days       → Status=Suspended (amber via status CF)
-  absent > 180 calendar days      → Status=Delisted (amber via status CF)
+    > 21 calendar days            → Status=Suspended (amber via status CF)
+    > 180 calendar days           → Status=Delisted (amber via status CF)
 Suspended/Delisted rows keep their last price and Closing Price Date; the
 updater never overwrites an unquoted row's price, so a manual price typed
-into F simply persists.
+into F simply persists. Skipping escalation on single-source days loses
+nothing — the thresholds are in days, not runs.
 ```
 
 Status + Last Traded live in Stock_Master columns D/E (written only for held
@@ -671,8 +701,9 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
 5. READ  — all input columns of all data sheets + persons + settings cells
            (openpyxl read-only; header row located by matching known header
            names within rows 1–5, so user row edits/sorts never break it)
-6. FETCH — AMFI, bhavcopy (BSE→NSE fallback), corporate actions (NSE+BSE);
-           per-source failure ⇒ keep previous values, note in summary
+6. FETCH — AMFI, bhavcopy (BSE+NSE same-day union merge, §5.2), corporate
+           actions (NSE+BSE); per-source failure ⇒ keep previous values,
+           note in summary
 7. COMPUTE — masters merge (§6.4), prices/NAVs by ISIN, status flags (§6.5),
            FMV fallbacks (§6.6), corp-action factors (§6.7), PPF ledger
            accrual (§6.10), XIRR (§6.1–6.3), FY-end estimates (§6.8),

@@ -60,8 +60,11 @@ Repo: https://github.com/jay-parikh/NetWorth (owner decides when to push).
 - **XIRR cells are plain values** written at update time, not formulas.
   Excel's native XIRR is a roadmap item — don't half-migrate.
 - NSE endpoints need browser-ish headers and a cookie warm-up
-  (`www.nseindia.com` first); BSE bhavcopy is the primary source, NSE the
-  fallback. See `legacy/UpdatePrices.ps1` `Get-Bhavcopy` for a working recipe.
+  (`www.nseindia.com` first). Since v1.2 (R8) BSE and NSE bhavcopies are
+  **full peers**: same-day union merge, NSE wins price conflicts, BSE alone
+  supplies scrip codes, and delisted/suspended escalation only runs on
+  dual-source days. See `legacy/UpdatePrices.ps1` `Get-Bhavcopy` for a
+  working recipe of the headers.
 
 ## Conventions
 

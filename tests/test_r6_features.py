@@ -18,7 +18,9 @@ TODAY = date(2026, 7, 15)
 
 
 def _empty_sources():
-    return PriceData(trade_date=TODAY, source="TEST"), AmfiData()
+    # dual-source: R8's status escalation only trusts absence from BOTH exchanges
+    return (PriceData(trade_date=TODAY, source="TEST", sources=["BSE", "NSE"]),
+            AmfiData())
 
 
 def test_fmv_dataset_loads():

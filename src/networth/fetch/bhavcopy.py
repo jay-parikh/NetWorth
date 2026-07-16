@@ -1,4 +1,10 @@
-"""Equity bhavcopy fetcher/parser — BSE primary, NSE fallback (SPEC §5.2/5.3).
+"""Equity bhavcopy fetcher/parser — BSE + NSE as full peers (SPEC §5.2/5.3).
+
+Both exchanges are fetched for the SAME trade date and merged: union of
+ISINs, NSE close/prev win on dual-listed conflicts (deeper liquidity — what
+broker apps show), while BSE alone contributes `codes_by_isin` (scrip codes
+feeding the BSE corporate-actions API). If only one exchange published for a
+day the run proceeds single-source; dates are never mixed across exchanges.
 
 Columns are located by header name, tolerantly (the exchanges' common format
 today: ISIN / ClsPric / PrvsClsgPric / TckrSymb / FinInstrmNm). Bhavcopies
@@ -41,6 +47,11 @@ class PriceData:
     codes_by_isin: dict[str, str] = field(default_factory=dict)
     trade_date: date | None = None
     source: str = ""
+    # exchanges that actually contributed to this day's data ("BSE"/"NSE");
+    # the §6.5 status escalation only runs when BOTH did
+    sources: list[str] = field(default_factory=list)
+    # ISINs quoted on NSE but not BSE that day (console summary only)
+    nse_only: set[str] = field(default_factory=set)
 
 
 def _find_col(headers: list[str], wanted: tuple[str, ...], *, close: bool = False) -> str | None:
@@ -119,27 +130,58 @@ def _get_nse(sess, d: date, timeout: int) -> str | None:
     return None
 
 
+def merge(bse: PriceData | None, nse: PriceData | None) -> PriceData:
+    """Union of both exchanges' bhavcopies for one trade date (SPEC §5.2).
+
+    NSE close/prev win on dual-listed conflicts; scrip codes come only from
+    BSE (NSE's FinInstrmId is not a BSE scrip code); for ISINs new to the
+    master, the NSE symbol is preferred (it is what the NSE corporate-actions
+    API needs — the add-only merge protects existing rows regardless).
+    """
+    out = PriceData()
+    if bse:
+        out.prices.update(bse.prices)
+        out.codes_by_isin = dict(bse.codes_by_isin)
+        out.sources.append("BSE")
+    if nse:
+        if bse:
+            out.nse_only = set(nse.prices) - set(bse.prices)
+        out.prices.update(nse.prices)
+        out.sources.append("NSE")
+    seen: set[str] = set()
+    for src in (nse, bse):
+        if src is None:
+            continue
+        for sym, name, isin in src.master_rows:
+            if isin not in seen:
+                seen.add(isin)
+                out.master_rows.append((sym, name, isin))
+    out.source = "+".join(out.sources)
+    return out
+
+
 def fetch(session=None, today: date | None = None, timeout: int = 60) -> PriceData:
     import requests
     sess = session or requests.Session()
     today = today or date.today()
     for back in range(MAX_BACK + 1):
         d = today - timedelta(days=back)
+        parsed: dict[str, PriceData] = {}
         for getter, source in ((_get_bse, "BSE"), (_get_nse, "NSE")):
             try:
                 text = getter(sess, d, timeout)
             except requests.RequestException:
                 text = None
-            if text:
-                try:
-                    out = parse(text)
-                except ValueError:
-                    continue
-                if out.prices:
-                    out.trade_date = d
-                    out.source = source
-                    if source != "BSE":
-                        # NSE's FinInstrmId is not a BSE scrip code
-                        out.codes_by_isin = {}
-                    return out
+            if not text:
+                continue
+            try:
+                p = parse(text)
+            except ValueError:
+                continue
+            if p.prices:
+                parsed[source] = p
+        if parsed:
+            out = merge(parsed.get("BSE"), parsed.get("NSE"))
+            out.trade_date = d
+            return out
     raise RuntimeError(f"No bhavcopy available in the last {MAX_BACK} days (BSE and NSE)")
