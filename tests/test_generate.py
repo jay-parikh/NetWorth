@@ -86,7 +86,7 @@ def test_equity_sheet(wb):
     e = wb["Equity"]
     assert e["I4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4)*$F4)'
     assert e["O4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4))'
-    assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))'
+    assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4*IF($T4="",1,$T4)/IF($S4="",1,$S4))'
     assert e["O3"].value == "Qty today" and e["P3"].value == "Avg cost today"
     assert "MATCH($C4,Stock_Master!$B:$B,0)" in e["B4"].value
     assert e["N142"].value == pytest.approx(0.0664365522)

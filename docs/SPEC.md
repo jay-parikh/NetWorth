@@ -272,7 +272,7 @@ Header row 3, data rows 4…140. Columns:
 | M | Cost date | input | drives per-row return annualisation & XIRR cashflows |
 | N | XIRR (per row) | computed | `=IF(OR($M4="",N($J4)=0,$I4="",TODAY()<=$M4),"",($I4/$J4)^(365/(TODAY()-$M4))-1)` — simple two-flow annualisation |
 | v1: O | Qty today | computed | `=IF($D4="","",$D4*IF($S4="",1,$S4))` — post-split/bonus share count, the **demat view**; feeds By Scrip and the person sheets |
-| v1: P | Avg cost today | computed | `=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))` — cost per share in today's share terms |
+| v1: P | Avg cost today | computed | `=IF(OR($D4="",$E4=""),"",$E4*IF($T4="",1,$T4)/IF($S4="",1,$S4))` — cost per share in today's share terms; × the v1.4 demerger Cost factor so a post-demerger row matches the docked basis a broker app shows |
 | Q | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
 | v1: R | Flags | updater helper | `FMV` (§6.6 fallback), `MERGED→<name>` / `ISIN→<isin>` (row priced via a successor, §6.15), `DEMERGER:<old_isin>@<ex_date>` (an appended child row) — flags round-trip regeneration. When a row carries both a restructure flag and `FMV` they are joined with `" | "`; neither may evict the other (the reader splits on the separator) |
 | v1: S | Adj factor | **updater-written** | split/bonus **and merger-ratio** multiplier since Cost date (§6.7/§6.15, chain-aware); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price` |
@@ -505,7 +505,7 @@ header r3, data r4..53, TOTAL r55.
 | F | Purity | input | blank = 1 (SGB always 1); 22K = 0.916, 18K = 0.75 |
 | G | Buy Price ₹/unit | input | per gram/unit; XIRR outflow |
 | H | Buy Date | input | XIRR anchor |
-| I | Rate today (auto) | **updater** | SGB: exchange close; metal: §5.7 ₹/g rate. **Amber** when the I2 rates-as-on stamp is > 7 days old |
+| I | Rate today (auto) | **updater** | SGB: exchange close; metal: §5.7 ₹/g rate. **Amber** on METAL rows when the I2 rates-as-on stamp is > 7 days old (SGB rows are exempt — their closes carry their own dates and the share-price staleness rules apply). I2 itself is stamped only when a metal rate actually arrived — an SGB-only pricing day must not refresh it and hide a stale benchmark |
 | J | Rate override | input | user's ₹/unit (e.g. the jeweller's board rate) — **always wins over I** |
 | K | Cur. val | computed | `=E × (F or 1) × (J else I)`, guarded; the class value column |
 | L | Invested | computed | `=E × G`, guarded |
@@ -538,7 +538,10 @@ r1, hint r2, header r3, data r4..43, TOTAL r45.
 
 **NPS_Master**: `Scheme Code, Scheme Name, PFM` + refreshed stamp (E2),
 sorted by scheme name (the dropdown sort rule, §3.12), **add-only merge
-keyed by scheme code** (§6.4 pattern). Hidden together with the NPS sheet.
+keyed by scheme code** (§6.4 pattern). The reader keeps a row when its
+**Scheme Code** is non-empty — PFM is descriptive, and a blank PFM must
+never drop a scheme from the master (the MF/Stock masters key on their
+ISIN column instead). Hidden together with the NPS sheet.
 
 ### 3.17 EPF (v1.3, R12; default off)
 
@@ -743,7 +746,7 @@ the Curated + Manual paths cover them.
 | `banks_in.csv` | `bank_name, type` | RBI scheduled commercial banks list + major SFB/payment/co-op banks |
 | `ppf_rates.csv` *(roadmap — ships with the PPF contribution ledger)* | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
 | `epf_rates.csv` *(v1.3, R12)* | `fy_start, rate_pct` | EPFO annual declared rates, historical to present (no official API — refreshed via releases); the updater fills a blank EPF Rate % with the latest row |
-| `bullion_proxies.csv` *(v1.3, R13)* | `metal, match ∈ {symbol_prefix, isin}, key, grams_per_unit, note` | exchange-traded ₹/gram proxies for the §5.7 fallback (SGB prefix, GoldBeES, SilverBeES); grams-per-unit drifts with expense ratios, hence release-refreshed |
+| `bullion_proxies.csv` *(v1.3, R13)* | `metal, match ∈ {symbol_prefix, isin}, key, grams_per_unit, note` | exchange-traded ₹/gram proxies for the §5.7 fallback (SGB prefix for gold, SilverBeES for silver; GoldBeES was dropped 2026-07-17 — its live grams-per-unit had drifted ~17 % from the nominal 0.01 g, exactly the expense-ratio decay this column warns about); release-refreshed |
 
 ### 5.6 NPS daily NAVs + scheme master (v1.3, R13)
 
@@ -774,11 +777,15 @@ The flakiest data in the product, so it must never block a run:
              nothing on any doubt.
 2. FALLBACK: market-implied ₹/g = median(close / grams_per_unit) over the
              quoted proxies of data/bullion_proxies.csv (SGB tranches ≈
-             ₹/g fine gold; GoldBeES ≈ 0.01 g; SilverBeES ≈ 1 g) from the
-             bhavcopy already fetched — zero extra HTTP. Typically 2–4 %
-             below the IBJA retail benchmark (Guide says so).
-3. DEGRADE : both fail ⇒ keep each row's previous Rate today + the
+             ₹/g fine gold; SilverBeES ≈ 1 g) from the bhavcopy already
+             fetched — zero extra HTTP. Typically 2–4 % below the IBJA
+             retail benchmark (Guide says so). Only proxies whose implied
+             rate verifiably tracks the metal stay in the file (§5.5 —
+             GoldBeES was dropped for unit drift).
+3. DEGRADE : both fail ⇒ keep each row's previous Rate today AND the old
              rates-as-on stamp (amber past 7 days) + a summary warning.
+             The stamp advances only when a metal rate actually arrived —
+             SGB pricing alone never refreshes it (§3.15).
 4. The sheet's Rate-override column always wins over the auto rate.
 ```
 
@@ -940,9 +947,10 @@ ex-date arrives.
 
 **Demat view — zero user action:** columns **O (Qty today)** and **P (Avg
 cost today)** re-express the holding in post-action terms (`D×factor`,
-`E÷factor`) so the sheet matches the user's demat/broker app after every
-split/bonus, purely from the Corporate_Actions sheet content. By Scrip
-quantities and the person-sheet Equity blocks read O/P (not raw D/E).
+`E×cost_factor÷factor` — the §6.15 demerger retention applies to the basis
+too) so the sheet matches the user's demat/broker app after every
+split/bonus/demerger, purely from the Corporate_Actions sheet content. By
+Scrip quantities and the person-sheet Equity blocks read O/P (not raw D/E).
 
 The **Corporate_Actions sheet** is the audit trail: columns
 `Symbol, ISIN, Type (dropdown), Ex-Date, Ratio From, Ratio To, Factor
@@ -1179,7 +1187,11 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    case-insensitively; capped at the Dashboard's 10 people. v1.4: then offer
    to SHOW/HIDE asset classes — a numbered list of the registry classes with
    their current state; chosen numbers flip the Settings Yes/No (§3.14), the
-   easy alternative to editing the sheet. Toggling OFF a class that still
+   easy alternative to editing the sheet. The listed state is the
+   EFFECTIVE visibility (a No class holding rows reads
+   "shown — holds rows; delete them to hide", never "hidden" — a prompt
+   contradicting a tab in plain sight looks broken), and the per-toggle
+   confirmation spells out what will actually happen. Toggling OFF a class that still
    holds rows warns (in the summary too) that it stays visible until its
    rows go; steady-state No-with-data stays quiet — it is the shipped
    delete-to-hide state (§4), and the Settings Status column already
@@ -1216,7 +1228,9 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            can't carry them), a highlighted net-worth footer, and an
            always-printed version line ("update available" / "on the latest
            release" / "couldn't check"). Pause before closing when launched
-           by double-click; exit code 0/1
+           by double-click — but a pause with no stdin (scheduled/headless
+           run of the packaged entry, which always passes --pause) proceeds
+           silently instead of crashing; exit code 0/1
 ```
 
 Round-trip invariant (the regression backbone): `generate → read → regenerate`

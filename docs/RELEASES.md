@@ -124,6 +124,32 @@ already done.*
   away" promise now actually works; the still-holds-rows warning fires at
   toggle time instead of nagging every run.
 
+## v1.4.2 — "The rest of the review"
+
+*For the user: small honesty fixes — the sheet, the console and the docs
+now say exactly what the numbers are doing.*
+
+**Shipped as v1.4.2 (2026-07-17)** — the review's lower-severity findings,
+each with a regression test (`tests/test_v142_polish.py`; suite at 163):
+
+- "Avg cost today" applies the demerger cost factor, matching the docked
+  basis a broker app shows.
+- The Gold_Silver rates-as-on stamp advances only when a METAL rate
+  actually arrived (an SGB-only day no longer hides a stale benchmark),
+  and the stale-rate amber excludes SGB rows.
+- The Dividends Qty comment now routes corrections through a Manual row
+  (hand-edits to current-year Auto rows were silently undone).
+- The console show/hide prompt reports EFFECTIVE visibility ("shown —
+  holds rows; delete them to hide"), ending the "prompt says hidden but
+  the tab is right there" confusion.
+- `--pause` survives a closed stdin (the packaged entry always passes it;
+  scheduled runs used to end in an EOFError traceback).
+- NPS_Master rows are kept by Scheme Code — a blank PFM no longer drops a
+  scheme on round-trip.
+- `run()` no longer mutates caller-supplied restructure events; nameless
+  restructure rows display their symbol instead of a raw ISIN; SPEC no
+  longer describes the dropped GoldBeES proxy.
+
 ## Release artifact layout (from R4)
 
 ```

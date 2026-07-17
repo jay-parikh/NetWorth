@@ -246,6 +246,11 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             restructures = load_restructures()
         except OSError:
             restructures = []
+    else:
+        # never mutate the caller's event objects (the Applied stamping
+        # below writes into them) — the loaded-from-CSV path is fresh anyway
+        from dataclasses import replace as _replace
+        restructures = [_replace(c) for c in restructures]
     _isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
     _held = {row.isin_override or _isin_by_name.get(row.scrip, "")
              for row in data.equity}
@@ -285,7 +290,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         # successor securities join the master immediately (add-only safe:
         # they are new ISINs) so name lookups resolve before listing
         known = {i for _s, _n, i in data.masters.stock_rows}
-        fresh = [(a.new_symbol or a.new_isin, a.new_name or a.new_isin,
+        fresh = [(a.new_symbol or a.new_isin,
+                  # display-name fallback: a symbol reads far better than a
+                  # raw ISIN when a Manual row omits the name
+                  a.new_name or a.new_symbol or a.new_isin,
                   a.new_isin)
                  for a in restructure_events
                  if a.new_isin and a.new_isin != a.isin
@@ -508,7 +516,8 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 # unverified (possibly empty) actions table — defer
                 unstamped.add(id(ev))
                 summary["warnings"].append(
-                    f"demerger of {ev.new_name or ev.new_isin} deferred: "
+                    f"demerger of "
+                    f"{ev.new_name or ev.new_symbol or ev.new_isin} deferred: "
                     f"{ev.symbol or ev.isin}'s split/bonus history could not "
                     f"be verified this run — it will apply on the next update")
                 continue
@@ -540,7 +549,8 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                     summary["warnings"].append(
                         f"Equity sheet is full ({equity_cap} rows) — could "
                         f"not append the demerged "
-                        f"{ev.new_name or ev.new_isin} row(s); free up rows "
+                        f"{ev.new_name or ev.new_symbol or ev.new_isin} "
+                        f"row(s); free up rows "
                         f"and run the updater again")
                     fits = False
                     break
@@ -553,7 +563,8 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                     child_cost = round(lot.qty * lot.avg_cost * prior_cf
                                        * ev.cost_pct / 100 / child_qty, 4)
                 child = EquityRow(
-                    owner=lot.owner, scrip=ev.new_name or ev.new_isin,
+                    owner=lot.owner,
+                    scrip=ev.new_name or ev.new_symbol or ev.new_isin,
                     isin_override=ev.new_isin, qty=child_qty,
                     avg_cost=child_cost,
                     # Indian CGT: demerged shares inherit the holding period
@@ -706,7 +717,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 if rate:
                     r.rate_auto = rate
                     metal_rated += 1
-        if metal_rated or sgb_priced:
+        # the as-of date belongs to the METAL benchmark rate only — SGB
+        # closes carry their own dates, and stamping on an SGB-only day
+        # would hide how stale the gold/silver rate really is
+        if metal_rated:
             data.bullion_rate_asof = today
         if metal_rows and not metal_rated:
             summary["warnings"].append(
@@ -934,31 +948,64 @@ def peek_persons(path: Path) -> list[str]:
         wb.close()
 
 
-def peek_class_states(path: Path) -> list[tuple[str, bool]]:
-    """(label, shown?) per asset class from the Settings sheet, cheaply
-    (read-only). Missing sheet (pre-v1.3 workbook) → registry defaults."""
+def peek_class_details(path: Path) -> list[tuple[str, bool, bool]]:
+    """(label, Settings-enabled, holds-rows) per asset class, cheaply
+    (openpyxl read-only). Missing Settings sheet (pre-v1.3 workbook) →
+    registry defaults. The holds-rows probe scans each class's holdings
+    sheet (owner column; Class column filter for Manual_Assets) — a light
+    mirror of class_has_data, close enough for display; run() re-checks
+    with the real reader."""
     from openpyxl import load_workbook
-    states = {c.label: c.default_enabled for c in ASSET_CLASSES}
+    enabled = {c.label: c.default_enabled for c in ASSET_CLASSES}
+    has_rows = {c.key: False for c in ASSET_CLASSES}
     wb = load_workbook(path, read_only=True)
     try:
         if "Settings" in wb.sheetnames:
             st = wb["Settings"]
             for row in st.iter_rows(min_row=4, max_row=20, max_col=2):
                 label = str(row[0].value or "").strip()
-                if label in states and row[1].value is not None:
-                    states[label] = str(row[1].value).strip().casefold() != "no"
+                if label in enabled and row[1].value is not None:
+                    enabled[label] = str(row[1].value).strip().casefold() != "no"
+        for cls in ASSET_CLASSES:
+            sheet = cls.owner_col.split("!")[0]
+            if sheet not in wb.sheetnames:
+                continue
+            ws = wb[sheet]
+            want = cls.class_filter[1].casefold() if cls.class_filter else None
+            for row in ws.iter_rows(min_row=4, max_row=min(ws.max_row, 600),
+                                    max_col=2, values_only=True):
+                owner = str(row[0] or "").strip()
+                if not owner:
+                    continue
+                if want is not None and (
+                        str(row[1] or "").strip().casefold() != want):
+                    continue
+                has_rows[cls.key] = True
+                break
     finally:
         wb.close()
-    return [(c.label, states[c.label]) for c in ASSET_CLASSES]
+    return [(c.label, enabled[c.label], has_rows[c.key])
+            for c in ASSET_CLASSES]
+
+
+def peek_class_states(path: Path) -> list[tuple[str, bool]]:
+    """(label, visible?) per asset class — the EFFECTIVE state (§3.14):
+    a class set to No that still holds rows IS visible, and must read so
+    (a prompt claiming 'hidden' about a tab in plain sight looks broken)."""
+    return [(label, on or rows)
+            for label, on, rows in peek_class_details(path)]
 
 
 def prompt_class_toggle(path: Path) -> list[str]:
     """Interactively show/hide asset classes — easier than editing the
     Settings sheet by hand. Returns the labels to flip."""
-    states = peek_class_states(path)
+    details = peek_class_details(path)
     print("\nYour asset classes — the workbook shows only what's on:")
-    for i, (label, shown) in enumerate(states, 1):
-        print(f"  {i:2}. {label:14} [{'shown' if shown else 'hidden'}]")
+    for i, (label, on, rows) in enumerate(details, 1):
+        state = ("shown" if on else
+                 "shown — holds rows; delete them to hide" if rows else
+                 "hidden")
+        print(f"  {i:2}. {label:14} [{state}]")
     print("Show or hide something? Type its number(s), e.g. 7 or 7 9 — "
           "or just press Enter to skip.")
     try:
@@ -967,12 +1014,17 @@ def prompt_class_toggle(path: Path) -> list[str]:
         return []
     toggles: list[str] = []
     for tok in raw.replace(",", " ").split():
-        if tok.isdigit() and 1 <= int(tok) <= len(states):
-            label, shown = states[int(tok) - 1]
+        if tok.isdigit() and 1 <= int(tok) <= len(details):
+            label, on, rows = details[int(tok) - 1]
             toggles.append(label)
-            if shown:
-                print(f"  ✓ {label} will be hidden (if it still holds rows, "
-                      f"it stays visible until you delete them)")
+            if on and rows:
+                print(f"  ✓ {label} — Settings set to No, but it still holds "
+                      f"rows, so it stays visible until you delete them")
+            elif on:
+                print(f"  ✓ {label} will be hidden")
+            elif rows:
+                print(f"  ✓ {label} stays shown (it holds rows) — "
+                      f"Settings set to Yes")
             else:
                 print(f"  ✓ {label} will be shown")
     return toggles
@@ -1006,6 +1058,16 @@ def prompt_new_persons(existing: list[str]) -> list[str]:
         print(f"  ✓ will add a sheet for {name} "
               f"(then record holdings with '{name}' in the Owner columns)")
     return added
+
+
+def _pause() -> None:
+    """--pause keeps a double-click console window open; the packaged entry
+    always passes it, so a scheduled/headless run (no stdin) must simply
+    proceed instead of dying on EOFError after the work is done."""
+    try:
+        input("\nPress Enter to close...")
+    except (EOFError, OSError):
+        pass
 
 
 def _use_os_trust_store() -> None:
@@ -1063,7 +1125,7 @@ def main(argv: list[str] | None = None) -> int:
                      else _c("2", line)))
 
     if args.pause:
-        input("\nPress Enter to close...")
+        _pause()
     return code
 
 

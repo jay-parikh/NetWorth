@@ -386,13 +386,19 @@ def read_workbook(path: str) -> PortfolioData:
                 details=_as_str(ws.cell(r, 11).value),
             ))
 
-    def master_rows(sheet: str) -> list[tuple[str, str, str]]:
+    def master_rows(sheet: str, key_col: int = 3) -> list[tuple[str, str, str]]:
+        """Master triples, kept only when the KEY column is non-empty.
+        MF/Stock masters key on col 3 (ISIN); NPS_Master keys on col 1
+        (Scheme Code) — its col 3 is the PFM name, and a blank PFM must
+        never drop a scheme from the master."""
         m = wb[sheet]
         out = []
         for r in range(4, m.max_row + 1):
-            isin = _as_str(m.cell(r, 3).value)
-            if isin:
-                out.append((_as_str(m.cell(r, 1).value), _as_str(m.cell(r, 2).value), isin))
+            if not _as_str(m.cell(r, key_col).value):
+                continue
+            out.append((_as_str(m.cell(r, 1).value),
+                        _as_str(m.cell(r, 2).value),
+                        _as_str(m.cell(r, 3).value)))
         return out
 
     if "History" in wb.sheetnames:
@@ -426,7 +432,7 @@ def read_workbook(path: str) -> PortfolioData:
     data.masters = Masters(
         mf_rows=master_rows("MF_Master"),
         stock_rows=master_rows("Stock_Master"),
-        nps_rows=(master_rows("NPS_Master")
+        nps_rows=(master_rows("NPS_Master", key_col=1)
                   if "NPS_Master" in wb.sheetnames else []),
         mf_refreshed=_as_str(wb["MF_Master"]["E2"].value),
         stock_refreshed=_as_str(wb["Stock_Master"]["E2"].value),

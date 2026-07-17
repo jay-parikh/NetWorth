@@ -648,7 +648,8 @@ def _write_equity(wb, F, data: PortfolioData):
                          f'=IF($D{r}="","",$D{r}*IF($S{r}="",1,$S{r}))',
                          F["c_units"])
         ws.write_formula(f"P{r}",
-                         f'=IF(OR($D{r}="",$E{r}=""),"",$E{r}/IF($S{r}="",1,$S{r}))',
+                         f'=IF(OR($D{r}="",$E{r}=""),"",'
+                         f'$E{r}*IF($T{r}="",1,$T{r})/IF($S{r}="",1,$S{r}))',
                          F["c_price"])
         ws.write_formula(
             f"N{r}",
@@ -1121,9 +1122,11 @@ def _write_gold_silver(wb, F, data: PortfolioData):
         "show_error": False, "input_title": "Type",
         "input_message": "SGB (fill the ISIN too) / Gold / Silver"})
     _redgreen(ws, F, f"M4:M{M.GS_LAST_ROW}")
+    # stale-benchmark amber applies to METAL rows only — SGB closes come from
+    # the exchange with their own dates, not the I2 benchmark as-of
     ws.conditional_format(f"I4:I{M.GS_LAST_ROW}", {
         "type": "formula",
-        "criteria": '=AND($I4<>"",$I$2<>"",TODAY()-$I$2>7)',
+        "criteria": '=AND($I4<>"",$B4<>"SGB",$I$2<>"",TODAY()-$I$2>7)',
         "format": F["cf_amber"]})
     ws.freeze_panes("A4")
     return ws
@@ -1423,7 +1426,11 @@ def _write_dividends(wb, F, data: PortfolioData):
                         "Source", "Details"], F["header"])
     ws.write_comment("H3", "Estimated shares held on the ex-date: your rows "
                            "bought before that date, adjusted for splits/bonuses. "
-                           "If you sold in between, correct it here by hand.")
+                           "If you sold in between: change the row's Source to "
+                           "Manual, then correct the Qty - Manual rows persist "
+                           "and replace the automatic one. (Editing a current-"
+                           "year Auto row directly is undone on the next "
+                           "update; older years are frozen and safe to edit.)")
     ws.write_comment("I3", "Rate x Qty - an estimate, marked amber. The exact "
                            "credit is on your bank statement.")
 
