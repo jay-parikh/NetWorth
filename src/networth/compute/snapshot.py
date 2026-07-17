@@ -76,7 +76,7 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
                            bonds=round(bonds, 2),
                            gold_silver=round(gold_silver, 2),
                            nps=round(nps, 2),
-                           real_estate=round(manual("Real Estate"), 2),
+                           real_estate=round(manual("Property"), 2),
                            cash=round(manual("Cash"), 2),
                            insurance=round(manual("Insurance"), 2),
                            other_assets=round(manual("Other"), 2))

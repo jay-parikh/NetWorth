@@ -150,6 +150,25 @@ each with a regression test (`tests/test_v142_polish.py`; suite at 163):
   restructure rows display their symbol instead of a raw ISIN; SPEC no
   longer describes the dropped GoldBeES proxy.
 
+## v1.4.3 — "A calm first open" (shipped v1.4.3, 2026-07-17)
+
+UX-only release: nothing new is fetched or computed differently for data the
+user can see — the workbook just stops overwhelming at first glance.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Settings choice wins | A class switched off is hidden AND excluded everywhere (Dashboard, allocation, person tabs, Projection, portfolio XIRR, new History snapshots record 0) even when it holds rows; rows never deleted; one amber Dashboard notice (I1) + one updater summary line name the hidden money with its value | off-with-data class: sheet hidden, status `Hidden - has data (not counted)`, exactly one summary line, Dashboard I1 names it, rows survive round-trip; portfolio XIRR with class off == portfolio XIRR with its rows absent |
+| Calm first open | Shipped template shows only the classic five (targets 40/15/20/15/10); EPF/Gold & Silver/NPS/Property/Cash/Insurance/Other ship hidden with sample rows waiting inside | fresh template hides exactly those class sheets + the reference sheets; enabling a class reveals its samples |
+| Reference lists switch | The four masters + Corporate_Actions hide behind ONE Settings row (16); dropdowns/lookups keep working against hidden sheets | switch No → all five hidden; Yes → all visible; round-trips |
+| Tab colours + Guide pointer | Colour-coded tab strip (navy/teal/blue/grey/gold); "New here? → Guide" note on the Dashboard | tabColor present in sheet XML per group |
+| Property, plainly | "Real Estate" class renamed **Property**; old label accepted everywhere on read (Settings row, Class cells, History header, allocation) | old-label workbook round-trips into Property with settings/history/xirr intact |
+| Clearer Manual Assets & Gold | Purpose-first sheet hints, per-column examples in comments, generic samples (apartment, coins, bars — no more Pune flat / bangles); Guide gains a 3-step "adding gold" box | comments/samples assert; Guide text mentions the steps |
+| Simpler Settings sheet | `Show?` column wording, plain statuses (`Shown`/`Hidden`/`Hidden - has data (not counted)`), "Balance targets (optional)" section, tolerance/total moved to rows 18/19 | layout asserts + reader tolerance |
+
+Docs in the same commit: SPEC (§2.1, §3.1–§3.3, §3.14–§3.18, §4, §6.2,
+§6.8, §6.11, §7), README, packaged README.txt, Guide sheet, release note.
+Suite: 170 tests.
+
 ## Release artifact layout (from R4)
 
 ```

@@ -163,18 +163,19 @@ def _history_classes(data: PortfolioData):
 
 def _write_settings(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Settings")
-    _widths(ws, {"A": 18, "B": 10, "C": 10, "D": 14, "E": 44})
+    _widths(ws, {"A": 18, "B": 10, "C": 10, "D": 26, "E": 44})
     _sheet_head(ws, F, "SETTINGS",
-                "Yes/No shows or hides each asset class - a class holding data "
-                "is never hidden. Target % feeds the Dashboard drift view. "
-                "Run the update after changing anything here.")
-    ws.write_row("A3", ["Asset class", "Enabled", "Target %", "Status", "Notes"],
+                "Show? - Yes shows a tab, No hides it. Nothing is ever "
+                "deleted: a hidden class keeps its rows, it just isn't "
+                "counted. Run the update after changing anything here.")
+    ws.write_row("A3", ["Asset class", "Show?", "Target %", "Status", "Notes"],
                  F["header"])
-    ws.write_comment("B3", "Yes = show this class's sheets and Dashboard "
-                           "presence. No = hide them. Data is never deleted.")
-    ws.write_comment("C3", "Your target share of the family total, in percent. "
-                           "Leave blank for no target. Drives the Dashboard "
-                           "drift view.")
+    ws.write_comment("B3", "Yes shows this class's tab and counts it "
+                           "everywhere. No hides the tab and leaves it out "
+                           "of the Dashboard - your rows stay saved.")
+    ws.write_comment("C3", "Optional. Your target share of the family total, "
+                           "in percent. Leave blank for no target. Drives "
+                           "the Dashboard drift view.")
     for i, cls in enumerate(ASSET_CLASSES):
         r = M.SETTINGS_FIRST_ROW + i
         setting = data.class_settings.get(cls.key)
@@ -187,21 +188,30 @@ def _write_settings(wb, F, data: PortfolioData):
         else:
             ws.write_blank(f"C{r}", None, F["in_rate"])
         if enabled:
-            status = "On"
+            status = "Shown"
         elif class_has_data(data, cls.key):
-            status = "On (has data)"
+            status = "Hidden - has data (not counted)"
         else:
-            status = "Off"
+            status = "Hidden"
         ws.write(f"D{r}", status, F["c_text"])
-        if status == "On (has data)":
-            ws.write(f"E{r}", "Holds rows, so it stays visible - delete or "
-                              "move them to hide it.", F["hint"])
+        if status.startswith("Hidden - has data"):
+            ws.write(f"E{r}", "Its rows are saved but not counted anywhere. "
+                              "Switch to Yes to include them.", F["hint"])
+    ref = M.SETTINGS_REF_ROW
+    ws.write(f"A{ref}", "Reference lists")
+    ws.write(f"B{ref}", "Yes" if data.show_references else "No", F["in_text"])
+    ws.write(f"D{ref}", "Shown" if data.show_references else "Hidden",
+             F["c_text"])
+    ws.write(f"E{ref}", "The stock, fund, bank and pension name lists, plus "
+                        "the actions history tab.", F["hint"])
     ws.data_validation(
-        f"B{M.SETTINGS_FIRST_ROW}:B{M.SETTINGS_LAST_ROW}",
+        f"B{M.SETTINGS_FIRST_ROW}:B{M.SETTINGS_REF_ROW}",
         {"validate": "list", "source": ["Yes", "No"], "show_error": False,
-         "input_title": "Show this class?",
-         "input_message": "Yes shows its sheets, No hides them. "
-                          "Data is never deleted."})
+         "input_title": "Show this?",
+         "input_message": "Yes shows the tab(s), No hides them. "
+                          "Nothing is ever deleted."})
+    ws.write(f"A{M.SETTINGS_TOL_ROW - 1}", "Balance targets (optional)",
+             F["section"])
     tol = M.SETTINGS_TOL_ROW
     ws.write(f"A{tol}", "Drift tolerance (± % points)", F["label"])
     ws.write_number(f"B{tol}", data.drift_tolerance_pct, F["in_rate"])
@@ -226,6 +236,15 @@ def _write_dashboard(wb, F, data: PortfolioData):
     _widths(ws, {"A": 16, "B": 15, "C": 15, "D": 15, "E": 14, "F": 15, "G": 16, "H": 18})
     ws.write("A1", "FAMILY PORTFOLIO — NET WORTH TRACKER", F["title"])
     ws.set_row(0, 18)
+    # awareness line (SPEC §3.14): classes switched off that still hold rows
+    off_data = M.off_with_data_classes(data)
+    if off_data:
+        ws.merge_range("I1:P1",
+                       "Hidden, not counted: "
+                       + " · ".join(c.label for c in off_data)
+                       + " — switch on in Settings to include.", F["cf_amber"])
+    ws.merge_range("I2:P2", "New here? The Guide tab (last tab) walks you "
+                            "through everything.", F["hint"])
     ws.write("A2", "As on", F["label"])
     ws.write_formula("B2", "=TODAY()", F["date_disp"])
     ws.write("D2", "Expected return % p.a.", F["label"])
@@ -391,9 +410,13 @@ def _write_dashboard(wb, F, data: PortfolioData):
     trend.set_x_axis({"num_format": "dd-mmm-yy"})
     ws.insert_chart("I38", trend, {"x_scale": 1.6, "y_scale": 1.2})
 
-    if hist_classes:
+    # chart series only for classes currently shown — a switched-off class's
+    # past History rows stay recorded on the sheet but aren't displayed
+    shown = [(i, cls) for i, cls in enumerate(hist_classes)
+             if effective_enabled(data, cls)]
+    if shown:
         area = wb.add_chart({"type": "area", "subtype": "stacked"})
-        for i, cls in enumerate(hist_classes):
+        for i, cls in shown:
             col = chr(ord("B") + i)
             area.add_series({
                 "name": cls.label,
@@ -1057,10 +1080,11 @@ def _write_gold_silver(wb, F, data: PortfolioData):
                  "H": 12, "I": 14, "J": 13, "K": 14, "L": 13, "M": 13,
                  "N": 12, "O": 12})
     _sheet_head(ws, F, "GOLD & SILVER",
-                "Type grams (and purity for jewellery, e.g. 0.916 for 22K) - "
-                "today's value appears at the daily bullion rate. Prefer your "
-                "jeweller's rate? Type it in Rate override - it wins. SGBs: "
-                "just fill the ISIN, they price like shares.")
+                "Coins, bars, jewellery, gold bonds. Weigh metal in grams, "
+                "pick the Type - today's value appears at the daily rate. "
+                "Jewellery: add purity (22K = 0.916). Prefer your jeweller's "
+                "rate? Type it in Rate override - it wins. SGBs: fill the "
+                "ISIN, they price like shares.")
     ws.write_row("A3", ["Owner", "Type", "Description / Series", "ISIN",
                         "Qty (g / units)", "Purity", "Buy Price ₹/unit",
                         "Buy Date", "Rate today (auto)", "Rate override",
@@ -1076,6 +1100,11 @@ def _write_gold_silver(wb, F, data: PortfolioData):
                            "rate is over a week old.")
     ws.write_comment("J3", "Your own ₹/gram (e.g. the jeweller's board rate). "
                            "When set, it always wins over the auto rate.")
+    ws.write_comment("C3", 'What is it? E.g. "Gold coins, 2 x 10 g (24K)", '
+                           '"Silver bar, 1 kg", "Jewellery, 40 g (22K)", '
+                           '"SGB 2023-24 Ser II".')
+    ws.write_comment("E3", "Total weight in grams (a 10 g coin x 2 = 20). "
+                           "SGBs: units from your statement (1 unit = 1 g).")
     ws.write_comment("F3", "Fine-metal fraction: 24K/SGB = blank or 1, "
                            "22K = 0.916, 18K = 0.75.")
     by_row = {M.FIRST_DATA_ROW + i: b for i, b in enumerate(data.bullion)}
@@ -1238,20 +1267,25 @@ def _write_manual_assets(wb, F, data: PortfolioData):
     _widths(ws, {"A": 12, "B": 13, "C": 28, "D": 20, "E": 14, "F": 13,
                  "G": 16, "H": 13, "I": 14, "J": 30, "K": 12})
     _sheet_head(ws, F, "OTHER ASSETS — VALUED BY YOU",
-                "The house, savings accounts, insurance surrender values, "
-                "anything else. Type today's value and its date - refresh it "
-                "now and then (the date turns amber after 90 days).")
+                "Things you value yourself: the house, savings balances, a "
+                "policy's surrender value, anything else. Only two numbers "
+                "matter - what it's worth today, and (if you like) what you "
+                "paid. Refresh the value now and then (amber after 90 days).")
     ws.write_row("A3", ["Owner", "Class", "Description", "Institution / Ref",
                         "Invested / Cost", "Cost date", "Current value ₹",
                         "Value as-on", "Net chg.", "Notes"], F["header"])
     ws.write("K3", "Key", F["key"])
-    ws.write_comment("B3", "Real Estate / Cash / Insurance / Other - each is "
+    ws.write_comment("B3", "Property / Cash / Insurance / Other - each is "
                            "its own line on the Dashboard.")
-    ws.write_comment("E3", "Optional. Real estate: purchase cost. Insurance: "
-                           "premiums paid so far. Enables Net chg. and a "
-                           "return figure.")
-    ws.write_comment("G3", "What it is worth today: market estimate, account "
-                           "balance, or the insurer's surrender value.")
+    ws.write_comment("C3", 'What is it? E.g. "Apartment (self-occupied)", '
+                           '"Savings account balance", "Life policy - '
+                           'surrender value today".')
+    ws.write_comment("E3", "Optional - what you paid. Property: purchase "
+                           "cost. Insurance: premiums paid so far. Enables "
+                           "Net chg. and a return figure.")
+    ws.write_comment("G3", "What it is worth today: your estimate, the "
+                           "account balance, or the insurer's surrender "
+                           "value. This is the number the Dashboard uses.")
     ws.write_comment("H3", "When you last checked the value. Amber after 90 "
                            "days - hand-typed values rot silently.")
     by_row = {M.FIRST_DATA_ROW + i: a for i, a in enumerate(data.manual_assets)}
@@ -1284,7 +1318,7 @@ def _write_manual_assets(wb, F, data: PortfolioData):
         "source": M.MANUAL_CLASS_LABELS,
         "show_error": False,
         "input_title": "Asset class",
-        "input_message": "Real Estate / Cash / Insurance / Other",
+        "input_message": "Property / Cash / Insurance / Other",
     })
     _redgreen(ws, F, f"I4:I{M.MA_LAST_ROW}")
     ws.conditional_format(f"H4:H{M.MA_LAST_ROW}", {
@@ -1665,15 +1699,37 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     # hide (never omit) the sheets of switched-off classes — data survives,
     # formulas keep resolving, flipping Yes brings everything back (SPEC §3.14).
     # A shared sheet (e.g. Manual_Assets) hides only when EVERY class on it
-    # is off, hence the subtraction.
+    # is off, hence the subtraction. The reference sheets (name lists + the
+    # actions audit tab) follow the Settings "Reference lists" switch alone.
     off = {sheet
            for cls in ASSET_CLASSES if not effective_enabled(data, cls)
            for sheet in cls.sheets}
     on = {sheet
           for cls in ASSET_CLASSES if effective_enabled(data, cls)
           for sheet in cls.sheets}
+    hidden = off - on
+    if not data.show_references:
+        hidden |= set(M.REFERENCE_SHEETS)
+
+    # tab colours (SPEC §3.1): the strip explains itself at a glance —
+    # navy = overview, teal = family members, blue = you type here,
+    # grey = automatic, gold = the Guide
+    TAB_NAVY, TAB_TEAL, TAB_BLUE = "#1F4E79", "#31859C", "#4472C4"
+    TAB_GREY, TAB_GOLD = "#A6A6A6", "#BF8F00"
+    tab_color = {"Dashboard": TAB_NAVY, "Projection": TAB_NAVY,
+                 "Settings": TAB_NAVY, "Guide": TAB_GOLD}
+    tab_color.update({p: TAB_TEAL for p in data.persons})
+    tab_color.update({s: TAB_BLUE for s in (
+        "Equity", "MutualFunds", "MF_SIP", "FixedDeposits", "PPF",
+        "PPF_Ledger", "EPF", "Bonds", "Gold_Silver", "NPS", "Manual_Assets")})
+    tab_color.update({s: TAB_GREY for s in
+                      ("By Scrip", "Dividends", "History") + M.REFERENCE_SHEETS})
+
     for ws in wb.worksheets():
-        if ws.get_name() in off - on:
+        name = ws.get_name()
+        if name in tab_color:
+            ws.set_tab_color(tab_color[name])
+        if name in hidden:
             ws.hide()
 
     wb.close()

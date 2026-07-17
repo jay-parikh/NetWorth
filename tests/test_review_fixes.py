@@ -344,7 +344,7 @@ def test_manual_class_case_normalises_and_unknown_warns(tmp_path):
     build_workbook(data, str(path))
     back = read_workbook(str(path))
     classes = [r.asset_class for r in back.manual_assets]
-    assert "Real Estate" in classes and "real estate" not in classes
+    assert "Property" in classes and "real estate" not in classes
     assert "RealEstate" in classes                   # unknown: kept, warned
     summary = run(path, price_data=_prices(), amfi_data=AmfiData(),
                   ca_data=[], div_data=[], today=TODAY)

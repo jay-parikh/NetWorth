@@ -28,7 +28,7 @@ def _wave1_data():
     data.class_settings["cash"] = ClassSetting(enabled=True)
     data.class_settings["epf"] = ClassSetting(enabled=True)
     data.manual_assets = [
-        ManualAssetRow(owner="Amit", asset_class="Real Estate",
+        ManualAssetRow(owner="Amit", asset_class="Property",
                        description="2BHK Baner", invested=4500000,
                        cost_date=date(2016, 7, 15), value=9000000,
                        as_on=date(2026, 7, 1)),
@@ -51,7 +51,7 @@ def test_epf_rates_table():
 
 def test_re_xirr_matches_hand_checked_two_flow():
     data = _wave1_data()
-    flows = manual_asset_flows(data, TODAY, "Real Estate")
+    flows = manual_asset_flows(data, TODAY, "Property")
     assert flows == [(date(2016, 7, 15), -4500000), (TODAY, 9000000)]
     # 45L → 90L over 10.0 years ≈ 7.18% — hand-checked doubling rate
     assert xirr(flows) == pytest.approx(0.0718, abs=0.0005)
@@ -74,10 +74,10 @@ def test_snapshot_and_dashboard_columns(tmp_path):
     d = wb["Dashboard"]
     headers = [d.cell(5, c).value for c in range(1, 11)]
     assert headers == ["Person", "Equity", "Mutual Funds", "Fixed Deposits",
-                       "PPF", "EPF", "Bonds", "Real Estate", "Cash", "Total"]
+                       "PPF", "EPF", "Bonds", "Property", "Cash", "Total"]
     # shared-sheet classes filter by their Class column
     assert ('SUMIFS(Manual_Assets!$G:$G,Manual_Assets!$A:$A,$A6,'
-            'Manual_Assets!$B:$B,"Real Estate")') in d["H6"].value
+            'Manual_Assets!$B:$B,"Property")') in d["H6"].value
     assert wb["Manual_Assets"].sheet_state == "visible"
     assert wb["EPF"].sheet_state == "visible"
     # Cash has no XIRR cell (has_xirr false) — its allocation XIRR is blank
@@ -88,7 +88,7 @@ def test_snapshot_and_dashboard_columns(tmp_path):
 def test_shared_sheet_hides_only_when_all_subclasses_off(tmp_path):
     data = _wave1_data()
     data.manual_assets = [r for r in data.manual_assets
-                          if r.asset_class == "Real Estate"]
+                          if r.asset_class == "Property"]
     data.class_settings["cash"] = ClassSetting(enabled=False)
     path = tmp_path / "wb.xlsx"
     build_workbook(data, str(path))
@@ -134,7 +134,7 @@ def test_wave1_round_trip_and_history(tmp_path):
     wb = load_workbook(path)
     h = wb["History"]
     headers = [h.cell(3, c).value for c in range(1, 12)]
-    assert "Real Estate" in headers and "EPF" in headers and "Cash" in headers
+    assert "Property" in headers and "EPF" in headers and "Cash" in headers
     again = read_workbook(str(path))
     assert again.history[-1].real_estate == 9000000
     assert again.history[-1].cash == 250000

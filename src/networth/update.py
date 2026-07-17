@@ -29,8 +29,9 @@ from .compute.restructures import (apply_demergers, consumed_label,
                                    integrate_restructures)
 from .model import (ASSET_CLASSES, MANUAL_CLASS_LABELS, DividendRow,
                     chained_adjustment_factor, class_has_data,
-                    cost_adjustment_factor, fy_label, load_fmv,
-                    load_restructures, resolve_isin)
+                    cost_adjustment_factor, effective_enabled, fy_label,
+                    load_fmv, load_restructures, off_with_data_classes,
+                    resolve_isin)
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -216,14 +217,14 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             s.enabled = not s.enabled
             toggled.append(f"{label_by_key[key]} → "
                            f"{'shown' if s.enabled else 'hidden'}")
-            # switched off while still holding rows: stays visible (never
-            # lose data — SPEC §3.14). Warn at the moment of the toggle only;
-            # No-with-data is otherwise the normal delete-to-hide state the
-            # shipped sample starts in, and nagging every run would drown it.
+            # v1.4.3 (SPEC §3.14): the choice wins — switched off means
+            # hidden and not counted, rows kept. Say so at toggle time; the
+            # steady-state reminder is the single not-counted line below.
             if not s.enabled and class_has_data(data, key):
                 summary["warnings"].append(
-                    f"{label_by_key[key]} still holds rows, so it stays "
-                    f"visible — delete or move its rows to hide it")
+                    f"{label_by_key[key]} is now hidden — its rows are "
+                    f"saved but not counted; switch it back on in Settings "
+                    f"to include them")
         summary["classes_toggled"] = toggled
 
     # a Manual_Assets row with a Class the dropdown doesn't know lands in NO
@@ -234,7 +235,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             summary["warnings"].append(
                 f"Manual_Assets row '{r.description or r.owner}' has "
                 f"unrecognised Class '{r.asset_class}' — it is counted in no "
-                f"class total; pick Real Estate / Cash / Insurance / Other")
+                f"class total; pick Property / Cash / Insurance / Other")
 
     if do_backup:
         summary["backup"] = str(make_backup(path))
@@ -675,6 +676,19 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
 
     # ---- net-worth history: one snapshot per day (SPEC §6.11) ----
     snap = net_worth_snapshot(data, today)
+    # v1.4.3 (SPEC §3.14): a switched-off class is not counted anywhere.
+    # One line (mirrored by the Dashboard notice) keeps hidden money on the
+    # user's radar — with its value, measured before zeroing the snapshot.
+    off_data = off_with_data_classes(data)
+    if off_data:
+        parts = [f"{c.label} ₹{v:,.0f}" if (v := getattr(snap, c.key, 0.0))
+                 else c.label for c in off_data]
+        summary["warnings"].append(
+            "hidden and not counted (your Settings choice): "
+            + " · ".join(parts) + " — switch on in Settings to include")
+    for cls in ASSET_CLASSES:
+        if not effective_enabled(data, cls):
+            setattr(snap, cls.key, 0.0)
     data.history = upsert_snapshot(data.history, snap,
                                    keep=M.HISTORY_LAST_ROW - M.FIRST_DATA_ROW + 1)
     summary["net_worth"] = round(snap.total, 2)
@@ -840,6 +854,8 @@ def peek_class_details(path: Path) -> list[tuple[str, bool, bool]]:
             st = wb["Settings"]
             for row in st.iter_rows(min_row=4, max_row=20, max_col=2):
                 label = str(row[0].value or "").strip()
+                if label == "Real Estate":            # pre-v1.4.3 label
+                    label = "Property"
                 if label in enabled and row[1].value is not None:
                     enabled[label] = str(row[1].value).strip().casefold() != "no"
         for cls in ASSET_CLASSES:
@@ -865,11 +881,10 @@ def peek_class_details(path: Path) -> list[tuple[str, bool, bool]]:
 
 
 def peek_class_states(path: Path) -> list[tuple[str, bool]]:
-    """(label, visible?) per asset class — the EFFECTIVE state (§3.14):
-    a class set to No that still holds rows IS visible, and must read so
-    (a prompt claiming 'hidden' about a tab in plain sight looks broken)."""
-    return [(label, on or rows)
-            for label, on, rows in peek_class_details(path)]
+    """(label, visible?) per asset class. Since v1.4.3 the Settings choice
+    IS the state (§3.14) — off means hidden, rows or not."""
+    return [(label, on)
+            for label, on, _rows in peek_class_details(path)]
 
 
 def prompt_class_toggle(path: Path) -> list[str]:
@@ -879,7 +894,7 @@ def prompt_class_toggle(path: Path) -> list[str]:
     print("\nYour asset classes — the workbook shows only what's on:")
     for i, (label, on, rows) in enumerate(details, 1):
         state = ("shown" if on else
-                 "shown — holds rows; delete them to hide" if rows else
+                 "hidden — holds rows (not counted)" if rows else
                  "hidden")
         print(f"  {i:2}. {label:14} [{state}]")
     print("Show or hide something? Type its number(s), e.g. 7 or 7 9 — "
@@ -894,13 +909,13 @@ def prompt_class_toggle(path: Path) -> list[str]:
             label, on, rows = details[int(tok) - 1]
             toggles.append(label)
             if on and rows:
-                print(f"  ✓ {label} — Settings set to No, but it still holds "
-                      f"rows, so it stays visible until you delete them")
+                print(f"  ✓ {label} will be hidden — its rows are saved "
+                      f"but won't be counted until you show it again")
             elif on:
                 print(f"  ✓ {label} will be hidden")
             elif rows:
-                print(f"  ✓ {label} stays shown (it holds rows) — "
-                      f"Settings set to Yes")
+                print(f"  ✓ {label} will be shown — its saved rows count "
+                      f"again")
             else:
                 print(f"  ✓ {label} will be shown")
     return toggles

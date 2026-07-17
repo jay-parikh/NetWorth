@@ -25,8 +25,10 @@ from .model import (
 
 # the Class dropdown is non-blocking, so users can type any casing — Excel's
 # SUMIFS matches case-insensitively and the Python side must agree, so typed
-# variants are canonicalised on read ("real estate" → "Real Estate")
+# variants are canonicalised on read ("property" → "Property"). "Real Estate"
+# was the pre-v1.4.3 label for the Property class; old rows read seamlessly.
 _CANON_CLASS = {label.casefold(): label for label in MANUAL_CLASS_LABELS}
+_CANON_CLASS["real estate"] = "Property"
 
 
 def _as_date(v) -> date | None:
@@ -100,6 +102,7 @@ def read_workbook(path: str) -> PortfolioData:
     # map rows back by class label (layout is dynamic since R10)
     data.xirr = ClassXirr(portfolio=_as_float(dash["B4"].value))
     key_by_label = {c.label: c.key for c in ASSET_CLASSES}
+    key_by_label["Real Estate"] = "real_estate"       # pre-v1.4.3 label
     for r in range(15, 40):
         if _as_str(dash.cell(r, 1).value) == "Asset class":
             for rr in range(r + 1, r + 1 + len(ASSET_CLASSES) + 5):
@@ -114,6 +117,8 @@ def read_workbook(path: str) -> PortfolioData:
         label_rows = {_as_str(st.cell(r, 1).value): r for r in range(4, 21)}
         for cls in ASSET_CLASSES:
             r = label_rows.get(cls.label)
+            if r is None and cls.key == "real_estate":
+                r = label_rows.get("Real Estate")     # pre-v1.4.3 label
             if r is None:
                 continue
             enabled_txt = _as_str(st.cell(r, 2).value).casefold()
@@ -122,6 +127,10 @@ def read_workbook(path: str) -> PortfolioData:
                 else cls.default_enabled,
                 target_pct=_as_float(st.cell(r, 3).value),
             )
+        ref_row = label_rows.get("Reference lists")
+        if ref_row:                                   # absent pre-v1.4.3 → No
+            data.show_references = (
+                _as_str(st.cell(ref_row, 2).value).casefold() == "yes")
         tol_row = next((r for r in range(16, 25)
                         if _as_str(st.cell(r, 1).value).startswith("Drift tolerance")),
                        None)
@@ -407,6 +416,7 @@ def read_workbook(path: str) -> PortfolioData:
         # columns are label-keyed (SPEC §6.11): a class column may be absent
         # (never enabled) or in any position; unknown labels are ignored
         key_by_label = {c.label: c.key for c in ASSET_CLASSES}
+        key_by_label["Real Estate"] = "real_estate"   # pre-v1.4.3 label
         col_key: dict[int, str] = {}
         for c in range(2, 40):
             key = key_by_label.get(_as_str(ws.cell(h, c).value))

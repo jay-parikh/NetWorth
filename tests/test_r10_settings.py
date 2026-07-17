@@ -16,29 +16,51 @@ from networth.update import run
 TODAY = date(2026, 7, 15)
 
 
-def test_default_template_shows_everything(tmp_path):
-    # the shipped sample populates EVERY class (v1.4 onboarding: play with
-    # the samples, delete what you don't own) — so nothing ships hidden
+REFERENCE = {"MF_Master", "Stock_Master", "Bank_Master", "NPS_Master",
+             "Corporate_Actions"}
+
+
+def test_default_template_shows_core_only(tmp_path):
+    # v1.4.3 calm first open: the classic five show; the other classes ship
+    # hidden WITH their sample rows waiting inside; the reference sheets
+    # tuck away behind the Settings "Reference lists" switch
     path = tmp_path / "wb.xlsx"
     build_workbook(sample_portfolio(), str(path))
     wb = load_workbook(path)
     assert "Settings" in wb.sheetnames
-    assert all(ws.sheet_state == "visible" for ws in wb.worksheets)
+    hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
+    assert hidden == {"EPF", "Gold_Silver", "NPS", "Manual_Assets"} | REFERENCE
     st = wb["Settings"]
     n = len(ASSET_CLASSES)
     labels = [st.cell(r, 1).value for r in range(4, 4 + n)]
     assert labels == [c.label for c in ASSET_CLASSES]
-    # classic five ship Yes; new classes ship No + sample rows, so their
-    # status reads "On (has data)" and DELETING the samples hides them —
-    # the Guide's delete-to-hide onboarding (v1.4 review fix)
     for i, cls in enumerate(ASSET_CLASSES):
         if cls.default_enabled:
             assert st.cell(4 + i, 2).value == "Yes"
-            assert st.cell(4 + i, 4).value == "On"
+            assert st.cell(4 + i, 4).value == "Shown"
         else:
             assert st.cell(4 + i, 2).value == "No"
-            assert st.cell(4 + i, 4).value == "On (has data)"
-    assert st["B17"].value == 5                     # drift tolerance default
+            assert st.cell(4 + i, 4).value == "Hidden - has data (not counted)"
+    assert st["A16"].value == "Reference lists" and st["B16"].value == "No"
+    assert st["B18"].value == 5                     # drift tolerance default
+    # the Dashboard carries the one-line awareness note for the hidden money
+    notice = wb["Dashboard"]["I1"].value or ""
+    assert "Hidden, not counted" in notice and "EPF" in notice
+
+
+def test_reference_lists_switch_shows_masters(tmp_path):
+    data = sample_portfolio()
+    data.show_references = True
+    path = tmp_path / "wb.xlsx"
+    build_workbook(data, str(path))
+    wb = load_workbook(path)
+    for name in REFERENCE:
+        assert wb[name].sheet_state == "visible", name
+    back = read_workbook(str(path))
+    assert back.show_references is True             # round-trips
+    data.show_references = False
+    build_workbook(data, str(path))
+    assert read_workbook(str(path)).show_references is False
 
 
 def test_registry_defaults_hide_new_classes(tmp_path):
@@ -49,7 +71,7 @@ def test_registry_defaults_hide_new_classes(tmp_path):
     build_workbook(classic(), str(path))
     wb = load_workbook(path)
     hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
-    assert hidden == {"EPF", "Manual_Assets", "Gold_Silver", "NPS", "NPS_Master"}
+    assert hidden == {"EPF", "Manual_Assets", "Gold_Silver", "NPS"} | REFERENCE
 
 
 def test_disabled_empty_class_hides_sheets_and_columns(tmp_path):
@@ -78,31 +100,36 @@ def test_disabled_empty_class_hides_sheets_and_columns(tmp_path):
     assert a["B3"].value == "=B10"
     assert a["A14"].value == "EQUITY"
     st = wb["Settings"]
-    assert st.cell(9, 4).value == "Off"              # Bonds registry row status
+    assert st.cell(9, 4).value == "Hidden"           # Bonds registry row status
 
 
-def test_disabled_class_with_data_stays_visible_and_warns(tmp_path):
+def test_disabled_class_with_data_hides_and_warns(tmp_path):
     data = sample_portfolio()                        # bonds HAS a row
     data.class_settings["bonds"] = ClassSetting(enabled=False)
     path = tmp_path / "wb.xlsx"
     build_workbook(data, str(path))
     wb = load_workbook(path)
-    assert wb["Bonds"].sheet_state == "visible"      # force-shown
-    assert wb["Settings"].cell(9, 4).value == "On (has data)"
-    # No-with-data is the shipped delete-to-hide state, so a plain run stays
-    # quiet about it (the Settings Status column already explains it)...
+    # v1.4.3: the Settings choice wins — hidden even though it holds a row
+    assert wb["Bonds"].sheet_state == "hidden"
+    assert (wb["Settings"].cell(9, 4).value
+            == "Hidden - has data (not counted)")
+    # every run carries exactly ONE awareness line, naming the hidden money
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="T"),
                   amfi_data=AmfiData(), ca_data=[], div_data=[], today=TODAY)
-    assert not any("stays visible" in w for w in summary["warnings"])
+    hidden_lines = [w for w in summary["warnings"]
+                    if w.startswith("hidden and not counted")]
+    assert len(hidden_lines) == 1 and "Bonds" in hidden_lines[0]
+    # ...mirrored by the Dashboard notice in the regenerated workbook
+    wb = load_workbook(path)
+    assert "Bonds" in (wb["Dashboard"]["I1"].value or "")
     # the user's No round-trips unchanged (it is their setting, not ours)
     back = read_workbook(str(path))
     assert back.class_settings["bonds"].enabled is False
-    # ...but the moment the user toggles OFF a class that holds rows, the
-    # updater says why nothing will disappear
+    # toggling OFF a class that holds rows says what happens, right then
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="T"),
                   amfi_data=AmfiData(), ca_data=[], div_data=[],
                   toggle_classes=["Equity"], today=TODAY)
-    assert any("Equity still holds rows" in w for w in summary["warnings"])
+    assert any("Equity is now hidden" in w for w in summary["warnings"])
 
 
 def test_settings_round_trip_any_combination(tmp_path):

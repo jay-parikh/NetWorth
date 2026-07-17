@@ -3,7 +3,9 @@
 Three people (Amit, Priya, Rahul) with real ISINs/scheme names so the first
 updater run works end-to-end (SPEC §4). Prices/NAVs/XIRR figures are the
 updater-written values captured on 2026-07-13/14 — the user's first update
-overwrites them. Deleting the sample rows is the onboarding step.
+overwrites them. Onboarding = replace the sample rows with your own; classes
+you don't own stay switched off in Settings (their samples wait inside the
+hidden tabs as worked examples).
 """
 
 from __future__ import annotations
@@ -95,9 +97,10 @@ def sample_portfolio() -> PortfolioData:
             BondRow("Rahul", "8.5% NHAI Bond 2029", "INE906B07CB9", 50, 1000,
                     1000, 1015, 8.5, date(2029, 1, 15), date(2024, 1, 15)),
         ],
-        # every class ships a couple of rows that SHOW how it works — the
-        # onboarding step is deleting what you don't own (the sheet then
-        # hides itself; its Settings toggle is already No for new classes)
+        # every class ships a couple of rows that SHOW how it works. Classes
+        # whose Settings toggle is No start hidden (v1.4.3: the toggle wins),
+        # so these samples are the worked example a user finds waiting the
+        # moment they switch a class on.
         epf=[
             EPFRow("Amit", "AcmeCorp / UAN 100200300400", "MH/BAN/12345/678",
                    1500000, date(2026, 3, 31), 8.25,
@@ -107,10 +110,14 @@ def sample_portfolio() -> PortfolioData:
             BullionRow("Amit", "SGB", "SGB Jun-2028 (2020-21 Ser III)",
                        "IN0020200104", 20, None, 4889, date(2020, 6, 30),
                        rate_auto=14093.7, maturity=date(2028, 6, 30)),
-            BullionRow("Priya", "Gold", "Bangles 22K", "", 60, 0.916, 4800,
-                       date(2021, 11, 4), rate_auto=14167.9),
-            BullionRow("Rahul", "Silver", "Coins 999", "", 500, None, 72,
-                       date(2022, 3, 10), rate_auto=217.43),
+            # generic coin/bar/jewellery examples: weigh in grams, pick the
+            # metal, purity blank for 24K/999 (22K jewellery = 0.916)
+            BullionRow("Priya", "Gold", "Gold coins, 2 x 10 g (24K)", "",
+                       20, None, 6450, date(2023, 10, 12), rate_auto=14167.9),
+            BullionRow("Priya", "Gold", "Jewellery, 40 g (22K)", "", 40,
+                       0.916, 4800, date(2021, 11, 4), rate_auto=14167.9),
+            BullionRow("Rahul", "Silver", "Silver bar, 1 kg", "", 1000,
+                       None, 72, date(2022, 3, 10), rate_auto=217.43),
         ],
         nps=[
             NPSRow("Amit", "110012345678",
@@ -119,29 +126,32 @@ def sample_portfolio() -> PortfolioData:
                    first_contribution=date(2019, 6, 1), xirr=0.0776),
         ],
         manual_assets=[
-            ManualAssetRow("Amit", "Real Estate", "2BHK, Baner, Pune",
-                           "Sub-registrar doc 4521/2016", 4500000,
+            # deliberately generic examples — what you paid (optional) and
+            # what it's worth today are the only numbers that matter
+            ManualAssetRow("Amit", "Property", "Apartment (self-occupied)",
+                           "Purchase deed", 4500000,
                            date(2016, 7, 15), 9000000, date(2026, 7, 1)),
-            ManualAssetRow("Priya", "Cash", "Savings account", "HDFC Bank",
-                           None, None, 250000, date(2026, 7, 10)),
-            ManualAssetRow("Rahul", "Insurance", "LIC Jeevan Anand (surrender value)",
-                           "LIC", 380000, date(2015, 5, 1), 520000,
+            ManualAssetRow("Priya", "Cash", "Savings account balance",
+                           "HDFC Bank", None, None, 250000, date(2026, 7, 10)),
+            ManualAssetRow("Rahul", "Insurance",
+                           "Life policy - surrender value today", "LIC",
+                           380000, date(2015, 5, 1), 520000,
                            date(2026, 6, 1)),
             # "Other" is the hand-converted ₹ home for anything without a
             # feed — e.g. foreign RSUs until multi-currency lands (ROADMAP)
-            ManualAssetRow("Priya", "Other", "US RSUs, vested (hand-converted ₹)",
+            ManualAssetRow("Priya", "Other", "Employee shares (US), in ₹",
                            "Employer plan", 240000, date(2024, 1, 10), 300000,
                            date(2026, 7, 1)),
         ],
         bullion_rate_asof=date(2026, 7, 16),
-        # new classes keep their registry default of No: they show anyway
-        # while their sample rows exist (effective_enabled), and DELETING the
-        # samples is what tidies the tabs away — the Guide's promised flow.
-        # Targets on a few classes light up the drift view (they sum to 100).
+        # first open shows only the classic five (registry defaults); the
+        # other classes ship hidden WITH their sample rows inside, so
+        # switching one on in Settings reveals a worked example instantly.
+        # Targets on the visible classes light up the drift view (sum 100).
         class_settings={
             c.key: ClassSetting(enabled=c.default_enabled, target_pct={
-                "equity": 40, "mutual_funds": 10, "fixed_deposits": 15,
-                "ppf": 10, "gold_silver": 10, "real_estate": 15,
+                "equity": 40, "mutual_funds": 15, "fixed_deposits": 20,
+                "ppf": 15, "bonds": 10,
             }.get(c.key))
             for c in ASSET_CLASSES
         },
@@ -159,19 +169,16 @@ def sample_portfolio() -> PortfolioData:
                         source="Auto", details="Interim Dividend - Rs 10 Per Share"),
         ],
         inflation_pct=7,
+        # class XIRRs live in the Dashboard allocation table, which lists
+        # only the SHOWN classes — hidden classes carry no stored figure
+        # (the updater computes theirs the moment they're switched on)
         xirr=ClassXirr(
             portfolio=0.0676209694,
             equity=0.0664365522,
             mutual_funds=0.0876706058,
             fixed_deposits=0.0721401469,
             ppf=0.071,
-            epf=0.0825,
             bonds=0.0059830784,
-            gold_silver=0.231,
-            nps=0.0776,
-            real_estate=0.0718,
-            insurance=0.0284,
-            other_assets=0.0937,
         ),
         masters=masters,
     )

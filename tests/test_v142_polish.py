@@ -74,15 +74,17 @@ def test_dividend_qty_comment_explains_manual(tmp_path):
 
 # 4 — the console prompt reports EFFECTIVE visibility -----------------------
 
-def test_peek_states_are_effective_on_shipped_template(tmp_path):
+def test_peek_states_match_settings_on_shipped_template(tmp_path):
     path = tmp_path / "wb.xlsx"
     build_workbook(sample_portfolio(), str(path))
-    # shipped template: every class visible (five by Yes, seven by rows)
-    assert all(shown for _label, shown in peek_class_states(path))
+    # v1.4.3: the Settings choice IS the state — core five shown, rest hidden
+    states = dict(peek_class_states(path))
+    assert states["Equity"] is True and states["Bonds"] is True
+    assert states["EPF"] is False and states["Property"] is False
     details = {label: (on, rows) for label, on, rows in peek_class_details(path)}
-    assert details["EPF"] == (False, True)       # No + sample rows
+    assert details["EPF"] == (False, True)       # hidden, sample rows inside
     assert details["Equity"] == (True, True)
-    assert details["Real Estate"][1] is True     # Manual_Assets class filter
+    assert details["Property"][1] is True        # Manual_Assets class filter
     assert details["Other"][1] is True
 
 

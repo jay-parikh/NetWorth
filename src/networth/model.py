@@ -50,11 +50,13 @@ PROJECTION_YEARS = 20          # Projection rows 4..24 (n = 0..20)
 # contributes a fixed number of data rows (AssetClass.person_rows below).
 PERSON_BLOCKS_START = 14
 
-# Settings sheet (SPEC §3.14): class rows 4..15, then tolerance/total cells.
+# Settings sheet (SPEC §3.14): class rows 4..15, the Reference-lists row,
+# then the optional balance-targets cells.
 SETTINGS_FIRST_ROW = 4
 SETTINGS_LAST_ROW = 15
-SETTINGS_TOL_ROW = 17
-SETTINGS_SUM_ROW = 18
+SETTINGS_REF_ROW = 16          # "Reference lists" Yes/No (masters + actions tab)
+SETTINGS_TOL_ROW = 18
+SETTINGS_SUM_ROW = 19
 
 TEMPLATE_FILENAME = "Family_Portfolio_Tracker.xlsx"
 
@@ -96,13 +98,12 @@ def _manual(key: str, label: str) -> AssetClass:
 
 ASSET_CLASSES: list[AssetClass] = [
     AssetClass("equity", "Equity", "Equity!$I:$I", "Equity!$A:$A",
-               ("Equity", "By Scrip", "Corporate_Actions", "Dividends",
-                "Stock_Master"), person_rows=40),
+               ("Equity", "By Scrip", "Dividends"), person_rows=40),
     AssetClass("mutual_funds", "Mutual Funds", "MutualFunds!$I:$I",
-               "MutualFunds!$A:$A", ("MutualFunds", "MF_SIP", "MF_Master"),
+               "MutualFunds!$A:$A", ("MutualFunds", "MF_SIP"),
                person_rows=20),
     AssetClass("fixed_deposits", "Fixed Deposits", "FixedDeposits!$I:$I",
-               "FixedDeposits!$A:$A", ("FixedDeposits", "Bank_Master"),
+               "FixedDeposits!$A:$A", ("FixedDeposits",),
                person_rows=15),
     AssetClass("ppf", "PPF", "PPF!$H:$H", "PPF!$A:$A",
                ("PPF", "PPF_Ledger"), person_rows=10),
@@ -114,15 +115,22 @@ ASSET_CLASSES: list[AssetClass] = [
                "Gold_Silver!$A:$A", ("Gold_Silver",), person_rows=10,
                default_enabled=False),
     AssetClass("nps", "NPS", "NPS!$G:$G", "NPS!$A:$A",
-               ("NPS", "NPS_Master"), person_rows=10, default_enabled=False),
-    _manual("real_estate", "Real Estate"),
+               ("NPS",), person_rows=10, default_enabled=False),
+    _manual("real_estate", "Property"),
     _manual("cash", "Cash"),
     _manual("insurance", "Insurance"),
     _manual("other_assets", "Other"),
 ]
 
-# Manual_Assets Class-column values, in dropdown order
-MANUAL_CLASS_LABELS = ["Real Estate", "Cash", "Insurance", "Other"]
+# Reference sheets (SPEC §3.14): the four name lists + the actions audit tab.
+# Visible only when the Settings "Reference lists" switch is Yes — their
+# formulas (type-ahead dropdowns, INDEX/MATCH lookups) work fine hidden.
+REFERENCE_SHEETS = ("MF_Master", "Stock_Master", "Bank_Master", "NPS_Master",
+                    "Corporate_Actions")
+
+# Manual_Assets Class-column values, in dropdown order. "Property" was
+# labelled "Real Estate" before v1.4.3 — the reader canonicalises old rows.
+MANUAL_CLASS_LABELS = ["Property", "Cash", "Insurance", "Other"]
 
 
 @dataclass
@@ -143,7 +151,8 @@ def _manual_rows(data: "PortfolioData", label: str) -> list:
 
 
 def class_has_data(data: "PortfolioData", key: str) -> bool:
-    """A class holding user rows is never hidden (SPEC §3.14)."""
+    """Whether the class holds any user rows — drives the Settings status
+    text and the "hidden but not counted" notices, never visibility."""
     return bool({
         "equity": lambda: data.equity,
         "mutual_funds": lambda: data.mutual_funds or data.sip,
@@ -153,7 +162,7 @@ def class_has_data(data: "PortfolioData", key: str) -> bool:
         "bonds": lambda: data.bonds,
         "gold_silver": lambda: data.bullion,
         "nps": lambda: data.nps,
-        "real_estate": lambda: _manual_rows(data, "Real Estate"),
+        "real_estate": lambda: _manual_rows(data, "Property"),
         "cash": lambda: _manual_rows(data, "Cash"),
         "insurance": lambda: _manual_rows(data, "Insurance"),
         "other_assets": lambda: _manual_rows(data, "Other"),
@@ -161,13 +170,22 @@ def class_has_data(data: "PortfolioData", key: str) -> bool:
 
 
 def effective_enabled(data: "PortfolioData", cls: AssetClass) -> bool:
+    """The user's Settings choice wins (SPEC §3.14, changed in v1.4.3):
+    a class switched off is hidden and not counted even when it holds rows.
+    Rows are never deleted — switching back on restores everything."""
     setting = data.class_settings.get(cls.key)
-    enabled = setting.enabled if setting else cls.default_enabled
-    return enabled or class_has_data(data, cls.key)
+    return setting.enabled if setting else cls.default_enabled
 
 
 def enabled_classes(data: "PortfolioData") -> list[AssetClass]:
     return [c for c in ASSET_CLASSES if effective_enabled(data, c)]
+
+
+def off_with_data_classes(data: "PortfolioData") -> list[AssetClass]:
+    """Classes switched off that still hold rows — the ones the Dashboard
+    notice line and the updater's one-line warning must mention."""
+    return [c for c in ASSET_CLASSES
+            if not effective_enabled(data, c) and class_has_data(data, c.key)]
 
 
 # ------------------------------------------------------------------ rows ----
@@ -258,7 +276,7 @@ class BullionRow:
     reference rate (§5.7) — a typed Rate override always wins."""
     owner: str = ""
     metal_type: str = ""               # SGB | Gold | Silver
-    description: str = ""              # "SGB 2023-24 Ser II", "Bangles 22K"
+    description: str = ""              # "SGB 2023-24 Ser II", "Gold coins, 2 x 10 g"
     isin: str = ""                     # SGB only
     qty: float | None = None           # SGB: units (1 unit = 1 g); metal: grams
     purity: float | None = None        # blank = 1 (SGB always 1); 22K = 0.916
@@ -290,7 +308,7 @@ class ManualAssetRow:
     insurance surrender value, or anything else. The user types the current
     value; the as-on date flags staleness (amber past 90 days)."""
     owner: str = ""
-    asset_class: str = ""              # Real Estate | Cash | Insurance | Other
+    asset_class: str = ""              # Property | Cash | Insurance | Other
     description: str = ""
     institution: str = ""
     invested: float | None = None      # optional; enables Net chg. + XIRR
@@ -593,7 +611,9 @@ class PortfolioData:
     # per-class Yes/No + allocation target, from the Settings sheet (SPEC §3.14)
     class_settings: dict[str, "ClassSetting"] = field(
         default_factory=default_class_settings)
-    drift_tolerance_pct: float = 5         # Settings B17 (R11 drift band)
+    # Settings "Reference lists" switch: shows/hides REFERENCE_SHEETS
+    show_references: bool = False
+    drift_tolerance_pct: float = 5         # Settings drift band (R11)
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person
     xirr: ClassXirr = field(default_factory=ClassXirr)
     masters: Masters = field(default_factory=Masters)

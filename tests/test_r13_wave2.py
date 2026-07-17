@@ -155,7 +155,9 @@ def test_wave2_sheets_and_round_trip(tmp_path):
     build_workbook(data, str(path))
     wb = load_workbook(path)
     assert wb["Gold_Silver"].sheet_state == "visible"
-    assert wb["NPS_Master"].sheet_state == "visible"   # hides with NPS only
+    # since v1.4.3 the masters are reference sheets — hidden until the
+    # Settings "Reference lists" switch says otherwise; lookups still work
+    assert wb["NPS_Master"].sheet_state == "hidden"
     gs = wb["Gold_Silver"]
     assert 'IF($J4="",$I4,$J4)' in gs["K4"].value      # override wins, live
     nps = wb["NPS"]

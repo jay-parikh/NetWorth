@@ -16,7 +16,7 @@ All on **your own computer**. Nothing ever uploaded.
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
-![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-170%20passing-brightgreen)
 
 </div>
 
@@ -55,14 +55,16 @@ You need Excel (or the free LibreOffice) and zero technical skills.
 
 1. **Download** the zip for your computer from the **Releases** page and
    unzip it. Keep the files together.
-2. **Open** `Family_Portfolio_Tracker.xlsx` and just look around — **every
-   tab already has sample rows showing exactly how it works**: a share
-   portfolio, SIPs, an FD, a PPF ledger, an EPF balance, gold bangles, an
-   SGB, an NPS account, even a sample flat in Pune.
+2. **Open** `Family_Portfolio_Tracker.xlsx` and just look around. It opens
+   **calm**: the five everyday tabs (shares, mutual funds, FDs, PPF, bonds)
+   with sample rows showing exactly how each works. Gold & silver, EPF,
+   NPS, property, cash, insurance are all there too — one switch away on
+   the Settings tab, each with a worked example waiting inside.
 3. **Make it yours, organically.** Replace the sample family (Amit / Priya /
    Rahul) with your names. Overtype sample rows with your own holdings —
-   dropdowns find your funds and stocks, IDs fill themselves in. **Delete
-   the samples for things you don't own — those tabs tidy themselves away.**
+   dropdowns find your funds and stocks, IDs fill themselves in. **Switch
+   on what you own, switch off what you don't** — your choice always wins,
+   and nothing is ever deleted.
 4. **Save, close, double‑click `Update Portfolio`.** It backs your file up,
    fetches everything, recomputes every number, and prints a friendly
    one‑screen summary. It'll even ask if you want to add a family member or
@@ -93,7 +95,7 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 |---|---|
 | **Dashboard** | Family net worth, person × asset‑class grid, XIRR returns, inflation check, FY‑end estimate, dividends this year — plus five charts: allocation pie, **actual‑vs‑target**, per‑person, net‑worth trend, and a stacked **net worth by class over time** |
 | **Projection** | Your corpus over 20 years: your return vs inflation |
-| **Settings** | One Yes/No per asset class (show only what you own) + your target allocation % per class |
+| **Settings** | One **Show?** Yes/No per asset class (show only what you own — a hidden class keeps its rows but isn't counted, and one amber line on the Dashboard reminds you), a switch for the reference tabs, and your optional target allocation % per class |
 | **One tab per person** | Each family member's holdings and allocation |
 | **Equity** | Live prices, day/total change, per‑stock return, post‑split quantities, ▲/▼ day arrows |
 | **Mutual Funds** *(+ SIP ledger)* | Fund summary auto‑built from one‑row‑per‑purchase |
@@ -101,11 +103,16 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 | **Gold & Silver** | SGBs priced like shares; jewellery/coins at the **daily bullion (IBJA) rate** × grams × purity — or your jeweller's rate if you type it |
 | **NPS** | Units × daily NAV from NPS Trust, scheme picked from a dropdown |
 | **Bonds** | Value, maturity amount, coupon‑aware returns |
-| **Manual Assets** | The house, savings accounts, insurance surrender value — you type the value, it joins the family total |
+| **Manual Assets** | Property, cash, insurance surrender value, anything else — you type today's value, it joins the family total |
 | **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart |
-| **Corporate Actions** | The transparent record: every split, bonus, merger and demerger applied |
 | **History** | A dated net‑worth snapshot per update — feeds the trend charts |
 | **Guide** | The 2‑minute manual, right inside the file |
+
+The tab strip is colour‑coded — navy for overview, teal for family members,
+blue where you type, grey for the automatic tabs, gold for the Guide. The
+reference tabs (stock/fund/bank/pension name lists and the corporate‑actions
+audit trail) stay tucked away until you flip **Reference lists** to Yes on
+Settings.
 
 ---
 
@@ -195,7 +202,7 @@ Needs **Python 3.10+**. No compilers, no Excel, no admin rights.
 ```bash
 python -m networth.generate            # build the workbook from code (sample data)
 python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
-pytest                                 # 138 tests — golden values, parsers, scenario
+pytest                                 # 170 tests — golden values, parsers, scenario
                                        #   suites per milestone, round-trip identity
 ```
 

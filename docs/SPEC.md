@@ -95,27 +95,44 @@ never editing the Dashboard/person/History logic:
 | `default_enabled` | new-workbook default (classic five = Yes; later classes = No) |
 | `has_xirr` | blank the allocation-table XIRR cell when false (e.g. Cash) |
 
-v1.3 registry order (12 classes — Settings rows 4–15 exactly): Equity
-(sheets: Equity, By Scrip, Corporate_Actions, Dividends, Stock_Master; 40
-person rows) → Mutual Funds (MutualFunds, MF_SIP, MF_Master; 20) → Fixed
-Deposits (FixedDeposits, Bank_Master; 15) → PPF (PPF, PPF_Ledger; 10) →
-EPF (EPF; 10; default off) → Bonds (Bonds; 15) → Gold & Silver
-(Gold_Silver; 10; default off) → NPS (NPS, NPS_Master; 10; default off) →
-Real Estate / Cash / Insurance / Other (all on the shared Manual_Assets
-sheet via `class_filter`; no person block; default off; Cash has
-`has_xirr = false`).
+Registry order since v1.4.3 (12 classes — Settings rows 4–15 exactly):
+Equity (sheets: Equity, By Scrip, Dividends; 40 person rows) → Mutual Funds
+(MutualFunds, MF_SIP; 20) → Fixed Deposits (FixedDeposits; 15) → PPF (PPF,
+PPF_Ledger; 10) → EPF (EPF; 10; default off) → Bonds (Bonds; 15) → Gold &
+Silver (Gold_Silver; 10; default off) → NPS (NPS; 10; default off) →
+Property / Cash / Insurance / Other (all on the shared Manual_Assets sheet
+via `class_filter`; no person block; default off; Cash has
+`has_xirr = false`). **"Property" was labelled "Real Estate" before
+v1.4.3** — readers accept the old label wherever labels are matched
+(Settings rows, Manual_Assets Class cells, the History header, the
+allocation table) so old workbooks read seamlessly.
 
-**Effective enablement (normative):** `effective = enabled OR has_data`. A
-class holding user rows is never hidden — the generator shows it with Status
-`On (has data)` and the updater warns; data is never deleted, and a hidden
-value can never sit inside a visible total. Surfaces driven by the effective
-set: Dashboard matrix columns (Total and Expected-@-FY columns shift left),
-allocation-table rows and pie range, person summary rows and holding blocks
-(stacked from row 14 in registry order, each `person_rows` deep, one blank
-row between blocks), History columns (§6.11) and all chart ranges. Sheets of
-a non-effective class are **hidden, never omitted** — openpyxl reads hidden
-sheets, formulas keep resolving, and flipping Yes (or unhiding by hand)
-brings everything back.
+**Reference sheets (v1.4.3):** the four masters (MF_Master, Stock_Master,
+Bank_Master, NPS_Master) plus the Corporate_Actions audit tab form a fixed
+REFERENCE set whose visibility is driven solely by the Settings "Reference
+lists" switch (§3.14), hidden by default. Every dropdown and INDEX/MATCH
+formula resolves against hidden sheets, so nothing breaks — the tabs are
+simply out of a first-time user's face.
+
+**Enablement (normative — CHANGED in v1.4.3):** the user's Settings choice
+wins: `shown = enabled`, rows or no rows. A class switched off is hidden
+and **excluded from every displayed number** — Dashboard matrix and
+allocation, person sheets, Projection / FY-expected (§6.8), the portfolio
+XIRR (§6.2), and new History snapshots record 0 for it (§6.11). Data is
+never deleted: its sheets are **hidden, never omitted** — openpyxl reads
+hidden sheets, formulas keep resolving, and flipping Yes brings everything
+(and its numbers) back. Awareness is mandatory whenever an off class holds
+rows: the Dashboard carries a one-line amber notice (merged I1:P1 —
+`Hidden, not counted: <labels> — switch on in Settings to include.`) and
+the updater prints one matching summary line naming each such class with
+its measured value. Surfaces driven by the enabled set: Dashboard matrix
+columns (Total and Expected-@-FY columns shift left), allocation-table rows
+and pie range, person summary rows and holding blocks (stacked from row 14
+in registry order, each `person_rows` deep, one blank row between blocks),
+and chart series. The History sheet's COLUMNS still include any class with
+nonzero recorded history — data preservation, §6.11 — only its chart series
+is dropped. (The pre-v1.4.3 rule was `enabled OR has_data`; v1.4.3 made the
+user's choice authoritative.)
 
 ---
 
@@ -132,9 +149,9 @@ brings everything back.
 | … | Equity | data entry | stock holdings |
 | … | MutualFunds | computed summary | one row per (owner, scheme), derived from MF_SIP |
 | … | MF_SIP | data entry | one row per MF purchase/redemption |
-| … | MF_Master | master | AMFI scheme list (~14k rows) |
-| … | Stock_Master | master | listed-stock list (~4.5k rows) |
-| v1 | Bank_Master | master | bundled Indian bank list (Bank Name, Type; sorted; §3.11) |
+| … | MF_Master | reference (hidden) | AMFI scheme list (~14k rows); Reference-lists switch §3.14 |
+| … | Stock_Master | reference (hidden) | listed-stock list (~4.5k rows); Reference-lists switch |
+| v1 | Bank_Master | reference (hidden) | bundled Indian bank list (Bank Name, Type; sorted; §3.11) |
 | … | FixedDeposits | data entry | FDs |
 | … | PPF | data entry | PPF accounts |
 | v1.1 | PPF_Ledger | data entry | one row per PPF deposit (optional; §6.10) |
@@ -142,10 +159,10 @@ brings everything back.
 | … | Bonds | data entry | corporate/other bonds |
 | v1.3 | Gold_Silver | data entry (§3.15) | SGBs + physical gold/silver at the daily rate (default off) |
 | v1.3 | NPS | data entry (§3.16) | NPS accounts — units × daily NAV (default off) |
-| v1.3 | NPS_Master | master | NPS scheme list (§3.16); hides with NPS |
-| v1.3 | Manual_Assets | data entry (§3.18) | hand-valued assets: Real Estate / Cash / Insurance / Other (default off) |
+| v1.3 | NPS_Master | reference (hidden) | NPS scheme list (§3.16); Reference-lists switch |
+| v1.3 | Manual_Assets | data entry (§3.18) | hand-valued assets: Property / Cash / Insurance / Other (default off) |
 | … | By Scrip | computed | family-wide exposure per stock |
-| v1 | Corporate_Actions | audit (§6.7) | fetched + manual corporate actions and their effect |
+| v1 | Corporate_Actions | reference (hidden, §6.7) | fetched + manual corporate actions and their effect; Reference-lists switch |
 | v1.2 | Dividends | mixed (§3.13) | FY dividend ledger — auto + manual rows, by-month chart |
 | v1.1 | History | updater data | one net-worth snapshot per day (§6.11) |
 | … | Guide | static text | 2-minute manual |
@@ -178,6 +195,12 @@ Bank_NameList  = (v1) same pattern over Bank_Master
 - **Cell comments** carry field help on headers (e.g. “Redemption = negative
   Amount”). Comments are part of the template; implementations must preserve
   the ability to regenerate them (openpyxl cannot — see CLAUDE.md).
+- **Tab colours (v1.4.3):** the tab strip is colour-coded so it explains
+  itself at a glance — navy `#1F4E79` for the overview tabs (Dashboard,
+  Projection, Settings), teal `#31859C` for person tabs, blue `#4472C4` for
+  every data-entry tab, grey `#A6A6A6` for the automatic tabs (By Scrip,
+  Dividends, History) and the reference sheets, gold `#BF8F00` for the
+  Guide.
 
 ### 3.3 Dashboard
 
@@ -189,6 +212,8 @@ it. `<L>` is the last allocation-table row (`19 + #enabled`).
 | Cell(s) | Content | Kind |
 |---|---|---|
 | A1 | `FAMILY PORTFOLIO — NET WORTH TRACKER` | static |
+| I1:P1 (merged) | v1.4.3 hidden-money notice — present only when a switched-off class holds rows: `Hidden, not counted: <labels> — switch on in Settings to include.` (amber) | generator-written |
+| I2:P2 (merged) | `New here? The Guide tab (last tab) walks you through everything.` | static |
 | A2 / B2 | `As on` / `=TODAY()` | computed |
 | A3 / B3 | `Family net worth` / `=<T>16` | computed |
 | E3 | inflation % p.a. input (default 7) | **input** |
@@ -466,27 +491,31 @@ fresh). The Dashboard shows one cell: `Dividends FY <label>` =
 Dividends do **not** feed equity XIRR (roadmap; changing return semantics
 deserves its own release).
 
-### 3.14 Settings (v1.3, R10)
+### 3.14 Settings (v1.3, R10; simplified in v1.4.3)
 
-The one place the user tunes the workbook. Title r1, hint r2, header r3
-(`Asset class, Enabled, Target %, Status, Notes`), one row per registry class
+The one place the user tunes the workbook. Title r1, hint r2 ("Show? — Yes
+shows a tab, No hides it. Nothing is ever deleted…"), header r3
+(`Asset class, Show?, Target %, Status, Notes`), one row per registry class
 from r4 (rows 4–15 reserved), then:
 
 | Cell | Content | Kind |
 |---|---|---|
 | B4:B15 | `Yes` / `No` dropdown (non-blocking) — show or hide the class | **input** |
-| C4:C15 | target allocation %, blank = no target (R11 drift view) | **input** |
-| D4:D15 | `On` / `Off` / `On (has data)` | generator-written |
-| E4:E15 | note (e.g. why a No class is still visible) | generator-written |
-| A17/B17 | `Drift tolerance (± % points)`, default **5** | **input** |
-| A18/B18 | `Targets total` = `SUM(C4:C15)`, **amber** when non-zero and ≠ 100 | computed |
+| C4:C15 | target allocation %, blank = no target (R11 drift view; header comment says "optional") | **input** |
+| D4:D15 | `Shown` / `Hidden` / `Hidden - has data (not counted)` | generator-written |
+| E4:E15 | note (for the has-data case: rows are saved but not counted; switch to Yes to include) | generator-written |
+| A16/B16 | `Reference lists` — Yes/No for the REFERENCE sheets (§2.1); default **No** | **input** |
+| A17 | `Balance targets (optional)` section label | static |
+| A18/B18 | `Drift tolerance (± % points)`, default **5** | **input** |
+| A19/B19 | `Targets total` = `SUM(C4:C15)`, **amber** when non-zero and ≠ 100 | computed |
 
-Reader rules: match class rows by label anywhere in rows 4–20 (tolerant);
-missing sheet (a pre-v1.3 workbook) ⇒ registry defaults; the user's No on a
-has-data class round-trips unchanged (it is their setting — only the
-*effective* visibility overrides it). Real form-control checkboxes are
-deliberately not used (xlsxwriter cannot write them; LibreOffice renders
-them poorly) — the Yes/No validation dropdown is the normative control.
+Reader rules: match class rows by label anywhere in rows 4–20 (tolerant;
+"Real Estate" accepted for Property); a missing `Reference lists` row
+(pre-v1.4.3 workbook) ⇒ No; missing sheet (pre-v1.3) ⇒ registry defaults;
+the user's No always round-trips unchanged. Real form-control checkboxes
+are deliberately not used (xlsxwriter cannot write them; LibreOffice
+renders them poorly) — the Yes/No validation dropdown is the normative
+control.
 
 ### 3.15 Gold_Silver (v1.3, R13; default off)
 
@@ -499,7 +528,7 @@ header r3, data r4..53, TOTAL r55.
 |---|---|---|---|
 | A | Owner | input | |
 | B | Type | input | dropdown: SGB / Gold / Silver |
-| C | Description / Series | input | "SGB 2023-24 Ser II", "Bangles 22K" |
+| C | Description / Series | input | "SGB 2023-24 Ser II", "Gold coins, 2 x 10 g (24K)", "Silver bar, 1 kg" (header comment carries these examples) |
 | D | ISIN | input | SGB only — drives bhavcopy pricing |
 | E | Qty (g / units) | input | SGB: units (1 unit = 1 g); metal: grams |
 | F | Purity | input | blank = 1 (SGB always 1); 22K = 0.916, 18K = 0.75 |
@@ -541,7 +570,8 @@ sorted by scheme name (the dropdown sort rule, §3.12), **add-only merge
 keyed by scheme code** (§6.4 pattern). The reader keeps a row when its
 **Scheme Code** is non-empty — PFM is descriptive, and a blank PFM must
 never drop a scheme from the master (the MF/Stock masters key on their
-ISIN column instead). Hidden together with the NPS sheet.
+ISIN column instead). A REFERENCE sheet since v1.4.3 — visibility follows
+the Settings "Reference lists" switch (§2.1), not the NPS class.
 
 ### 3.17 EPF (v1.3, R12; default off)
 
@@ -567,16 +597,17 @@ estimate nature.
 ### 3.18 Manual_Assets (v1.3, R12; shared sheet, four registry classes, default off)
 
 One sheet for every hand-valued asset; the `Class` column routes each row to
-its own registry class (Real Estate / Cash / Insurance / Other — each with
+its own registry class (Property / Cash / Insurance / Other — each with
 its own Dashboard column, allocation row, target and History column via the
 `class_filter` SUMIFS criterion, §2.1). The sheet hides only when ALL four
-are off. Title r1, hint r2, header r3, data r4..63, TOTAL r65.
+are off. Title r1, hint r2 ("Things you value yourself… only two numbers
+matter"), header r3, data r4..63, TOTAL r65.
 
 | Col | Header | Kind | Definition |
 |---|---|---|---|
 | A | Owner | input | |
-| B | Class | input | dropdown (non-blocking): Real Estate / Cash / Insurance / Other. Matching is **case-insensitive** — Excel's SUMIFS already is, and the reader canonicalises a typed variant ("real estate") to the dropdown label so both sides agree. A value matching NO label counts in no class (only the sheet TOTAL sees it); the updater warns naming the row |
-| C | Description | input | "2BHK Baner", "HDFC savings", "LIC Jeevan…" |
+| B | Class | input | dropdown (non-blocking): Property / Cash / Insurance / Other. Matching is **case-insensitive** — Excel's SUMIFS already is, and the reader canonicalises a typed variant ("property", and the pre-v1.4.3 "Real Estate") to the dropdown label so both sides agree. A value matching NO label counts in no class (only the sheet TOTAL sees it); the updater warns naming the row |
+| C | Description | input | "Apartment (self-occupied)", "Savings account balance", "Life policy - surrender value today" (the header comment carries these examples) |
 | D | Institution / Ref | input | bank, insurer, registrar |
 | E | Invested / Cost | input (optional) | RE: purchase cost; Insurance: premiums paid; enables Net chg. + XIRR |
 | F | Cost date | input (optional) | XIRR anchor |
@@ -596,17 +627,19 @@ sheets show one summary row per subclass. XIRR per §6.2 (Cash excluded).
 The released template ships with fictional holdings for three people (Amit,
 Priya, Rahul) using **real ISINs** so the first updater run works end-to-end.
 MF samples must be real AMFI (Scheme Name, Fund House, ISIN) triples; equity
-samples real BSE scrips. **v1.4: EVERY asset class carries sample rows**
-(incl. a real SGB ISIN, gold jewellery with purity, an NPS scheme from the
-seeded master, an EPF passbook line, real estate / cash / insurance / other
-rows), with targets on a few classes (summing to 100) so the drift view
-demonstrates itself. The classic five ship with Settings **Yes**; every
-newer class ships **No** — visible anyway while its sample rows exist
-(effective-enabled, §3.14), so the shipped file still demonstrates
-everything. Sample rows are ordinary input rows — **the onboarding step is
-deleting what you don't own**: because the toggle is already No, a class
-whose rows are gone hides its sheets on the very next run with no Settings
-edit needed, and the workbook slims itself to the user's real life.
+samples real BSE scrips. **EVERY asset class carries sample rows** (incl. a
+real SGB ISIN, generic gold coins / 22K jewellery / a silver bar, an NPS
+scheme from the seeded master, an EPF passbook line, and deliberately
+generic Property ("Apartment (self-occupied)") / Cash / Insurance / Other
+rows). Targets sit on the five default-on classes (40/15/20/15/10 — sum
+100) so the drift view demonstrates itself. **v1.4.3 calm first open:** the
+classic five ship Settings **Yes** and are all a new user sees; every newer
+class ships **No and therefore hidden**, its sample rows waiting inside as
+a worked example the moment it is switched on. The stored ClassXirr carries
+figures only for the shown classes (the allocation table lists only those);
+hidden classes get theirs computed when enabled. Onboarding = replace the
+sample rows with your own and switch on what you own — nothing needs
+deleting to keep the workbook tidy.
 
 ---
 
@@ -849,11 +882,14 @@ Per asset class (skip rows with missing required inputs):
 | EPF *(v1.3)* | −Balance @ as-on (PPF flat path verbatim) | +Balance·(1+Rate%)^(days/365) @ today |
 | Gold & Silver *(v1.3)* | −Qty·BuyPrice @ Buy Date | +Cur. val @ today; SGB rows add each historical semi-annual coupon `+Qty·BuyPrice·1.25%` (§3.15 approximation note) |
 | NPS *(v1.3)* | −Total contributed @ First contribution (row skipped when either optional input is blank) | +Units·NAV @ today |
-| Real Estate / Insurance / Other *(v1.3)* | −Invested @ Cost date (row skipped when Invested, Cost date or Value is blank) | +Current value @ today |
+| Property / Insurance / Other *(v1.3)* | −Invested @ Cost date (row skipped when Invested, Cost date or Value is blank) | +Current value @ today |
 | Cash *(v1.3)* | **excluded from XIRR entirely** (`has_xirr` false, §2.1) — a balance has no meaningful money-weighted return | |
 
-Class XIRR = solver over that class's union; Portfolio XIRR = solver over the
-union of **all** classes. Written as plain values to: Dashboard B4, the
+Class XIRR = solver over that class's union. Portfolio XIRR = solver over
+the union of the **enabled** classes only (v1.4.3, §2.1) — a switched-off
+class contributes nothing to the family figure; its per-class value may
+still be computed (harmless, and ready when re-enabled) but is written
+nowhere while hidden. Written as plain values to: Dashboard B4, the
 allocation table's XIRR column, Equity class cell, MutualFunds L column +
 MF_SIP J2.
 
@@ -975,11 +1011,12 @@ Bonds : Qty·CurrentPrice + coupons falling in (today, FYend]   (redemption if M
 Equity/MF: CurVal·(1+ExpectedReturn%)^(YEARFRAC(today, FYend)) — estimate,
            driven by the Dashboard "Expected return %" input
 Gold & Silver / NPS: market-linked — same ExpectedReturn% growth   (v1.3)
-Manual (RE/Cash/Insurance/Other): held FLAT at Current value    (v1.3 —
+Manual (Property/Cash/Insurance/Other): held FLAT at Current value (v1.3 —
            estimating property or surrender-value appreciation would be
            false precision; the header comment says so)
 ```
 
+Classes switched off in Settings contribute nothing (v1.4.3, §2.1).
 Aggregated per person + TOTAL into the Dashboard `Expected @ 31-Mar-<FY>`
 column; the estimate nature is stated in the header comment.
 
@@ -1023,20 +1060,25 @@ flat estimate.
 
 The updater records one dated snapshot per run into the **History** sheet.
 **Columns are label-keyed, not positional**: the header row is `Date` + the
-label of every class that is effective-enabled OR carries nonzero history
-(an old trend never disappears because a class was switched off) + `Total`
-(`=SUM` across that row's class columns). The reader maps columns back by
-header label — unknown labels are ignored, absent classes read as 0 — so a
-pre-v1.3 workbook (fixed five columns) reads losslessly and old totals
-recompute identically. Per-class values are computed in Python to mirror the
-Dashboard (equity qty×factor×close, MF units×NAV, FD compound value, PPF
-Balance-today, bonds qty×price; FD uses actual/365, a hair off Excel's
-30/360 — immaterial for a trend). **One row per calendar day**: a re-run on
-the same day overwrites that day's row; rows are capped to the most recent
-`HISTORY_LAST_ROW-3`. The Dashboard carries a line chart over History Date ×
-Total plus a stacked-area chart over the class columns ("Net worth by class
-over time"). History rows are **data** — the reader loads them and the
-generator writes them back, so they survive regeneration.
+label of every class that is enabled OR carries nonzero history (recorded
+numbers are never dropped by a toggle) + `Total` (`=SUM` across that row's
+class columns). The reader maps columns back by header label ("Real Estate"
+accepted for Property) — unknown labels are ignored, absent classes read as
+0 — so a pre-v1.3 workbook (fixed five columns) reads losslessly and old
+totals recompute identically. Per-class values are computed in Python to
+mirror the Dashboard (equity qty×factor×close, MF units×NAV, FD compound
+value, PPF Balance-today, bonds qty×price; FD uses actual/365, a hair off
+Excel's 30/360 — immaterial for a trend). **v1.4.3:** before the snapshot
+is stored, every switched-off class is zeroed — "not counted" holds for the
+trend too, and the run's one-line warning states the measured value that
+was left out. Old rows keep whatever they recorded (they were true then).
+**One row per calendar day**: a re-run on the same day overwrites that
+day's row; rows are capped to the most recent `HISTORY_LAST_ROW-3`. The
+Dashboard carries a line chart over History Date × Total plus a
+stacked-area chart whose series cover only the currently-shown classes
+("Net worth by class over time"). History rows are **data** — the reader
+loads them and the generator writes them back, so they survive
+regeneration.
 
 ### 6.12 Dividend quantity at ex-date (v1.2, R9)
 
@@ -1187,16 +1229,14 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    case-insensitively; capped at the Dashboard's 10 people. v1.4: then offer
    to SHOW/HIDE asset classes — a numbered list of the registry classes with
    their current state; chosen numbers flip the Settings Yes/No (§3.14), the
-   easy alternative to editing the sheet. The listed state is the
-   EFFECTIVE visibility (a No class holding rows reads
-   "shown — holds rows; delete them to hide", never "hidden" — a prompt
-   contradicting a tab in plain sight looks broken), and the per-toggle
-   confirmation spells out what will actually happen. Toggling OFF a class that still
-   holds rows warns (in the summary too) that it stays visible until its
-   rows go; steady-state No-with-data stays quiet — it is the shipped
-   delete-to-hide state (§4), and the Settings Status column already
-   explains it. Prompting must never hang or break a run — any error is
-   swallowed.
+   easy alternative to editing the sheet. v1.4.3: the listed state IS the
+   Settings choice — "shown", "hidden", or "hidden — holds rows (not
+   counted)" — and the per-toggle confirmation spells out what will happen
+   (off with rows: "will be hidden — its rows are saved but won't be
+   counted until you show it again"). Toggling OFF a class that holds rows
+   also warns in the summary; every run additionally carries the single
+   hidden-money awareness line (§2.1). Prompting must never hang or break a
+   run — any error is swallowed.
 3. refuse politely if the file is locked/open (detect via exclusive-open probe)
 4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
 5. READ  — all input columns of all data sheets (hidden ones too) + persons
@@ -1217,8 +1257,9 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            (§6.11)
 8. REGENERATE — build the complete workbook (xlsxwriter): structure from this
            spec + user inputs + computed/updater values; sheets of
-           non-effective classes hidden (§2.1); atomic replace
-           (write temp file, then swap)
+           switched-off classes hidden, reference sheets per the
+           Reference-lists switch, tab colours applied (§2.1/§3.2);
+           atomic replace (write temp file, then swap)
 9. REPORT — console summary (rows matched/unmatched per sheet, sources used,
            XIRR figures, PPF/history/added-people, backup path). v1.4: the
            console is a product surface — banner with version, live

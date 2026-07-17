@@ -17,7 +17,7 @@ def test_every_class_sheet_ships_with_sample_rows():
     data = sample_portfolio()
     assert data.epf and data.bullion and data.nps
     classes = {r.asset_class for r in data.manual_assets}
-    assert {"Real Estate", "Cash", "Insurance"} <= classes
+    assert {"Property", "Cash", "Insurance"} <= classes
     # SGB + physical gold + silver all demonstrated
     assert {b.metal_type for b in data.bullion} == {"SGB", "Gold", "Silver"}
     # a few targets light up the drift view, and they sum to 100

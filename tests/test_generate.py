@@ -74,7 +74,7 @@ def test_comments_survive(built):
 
 def test_dashboard_formulas(wb):
     d = wb["Dashboard"]
-    assert d["B3"].value == "=N16"      # 12 classes → Total in column N
+    assert d["B3"].value == "=G16"      # 5 shown classes → Total in column G
     assert "SUMIFS(Equity!$I:$I,Equity!$A:$A,$A6)" in d["B6"].value
     assert d["G16"].value == "=SUM(G6:G15)"
     assert d["E4"].value.startswith('=IF(B4="","",(1+B4)/(1+E3/100)-1)')
@@ -119,16 +119,18 @@ def test_projection_span(wb):
 def test_person_sheet_blocks(wb):
     a = wb["Amit"]
     assert a["B2"].value == "Amit"
-    # 12 summary rows push the blocks down: total row 18, blocks from 21
-    assert a["A18"].value == "Total"
-    assert a["A21"].value == "EQUITY"
-    assert 'MATCH($B$2&"#"&1,Equity!$Q:$Q,0)' in a["A23"].value
+    # 5 shown classes: summary rows 6-10, total row 11, blocks from 14
+    assert a["A11"].value == "Total"
+    assert a["A14"].value == "EQUITY"
+    assert 'MATCH($B$2&"#"&1,Equity!$Q:$Q,0)' in a["A16"].value
     # person Qty/Avg-cost pull the post-action (demat) view
-    assert "INDEX(Equity!$O:$O" in a["C23"].value
-    assert "INDEX(Equity!$P:$P" in a["D23"].value
-    # stacked blocks: EQ(21) MF(64) FD(87) PPF(105) EPF(118) BONDS(131) …
-    assert a["A118"].value == "EPF"
-    assert a["A131"].value == "BONDS"
+    assert "INDEX(Equity!$O:$O" in a["C16"].value
+    assert "INDEX(Equity!$P:$P" in a["D16"].value
+    # stacked blocks: EQ(14) MF(57) FD(80) PPF(98) BONDS(111); hidden
+    # classes (EPF etc.) contribute no block at all
+    assert a["A111"].value == "BONDS"
+    col_a = [a.cell(r, 1).value for r in range(1, 140)]
+    assert "EPF" not in col_a and "GOLD & SILVER" not in col_a
 
 
 def test_masters_loaded(wb):

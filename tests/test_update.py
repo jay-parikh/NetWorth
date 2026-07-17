@@ -52,7 +52,10 @@ def test_update_run(workbook):
     assert summary["stocks_added"] == 1
     assert summary["bonds_matched"] == 1
     assert summary["mf_matched"] == 2
-    assert not summary["warnings"]
+    # the only line is the standing hidden-money awareness note (v1.4.3) —
+    # the shipped sample keeps its off-classes' rows inside hidden tabs
+    assert [w for w in summary["warnings"]
+            if not w.startswith("hidden and not counted")] == []
     assert (workbook.parent / "backups").exists()
 
     back = read_workbook(str(workbook))
@@ -95,7 +98,9 @@ def test_update_degrades_gracefully(workbook):
     finally:
         U.bhav_mod.fetch, U.amfi_mod.fetch, U.ca_mod.fetch = orig
 
-    assert len(summary["warnings"]) == 3
+    failures = [w for w in summary["warnings"]
+                if not w.startswith("hidden and not counted")]
+    assert len(failures) == 3
     back = read_workbook(str(workbook))
     assert back.equity[0].close == 1520          # unchanged
     assert back.xirr.portfolio is not None        # XIRR still recomputed

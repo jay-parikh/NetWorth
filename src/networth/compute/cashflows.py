@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..model import ClassXirr, PortfolioData
+from ..model import ClassXirr, PortfolioData, enabled_classes
 from .xirr import xirr
 
 Flow = tuple[date, float]
@@ -262,7 +262,7 @@ def compute_all_xirr(data: PortfolioData, today: date | None = None) -> ClassXir
     bonds = bond_flows(data, today)
     gs = bullion_flows(data, today)
     nps = nps_flows(data, today)
-    re_ = manual_asset_flows(data, today, "Real Estate")
+    re_ = manual_asset_flows(data, today, "Property")
     ins = manual_asset_flows(data, today, "Insurance")
     oth = manual_asset_flows(data, today, "Other")
     # Cash is excluded from XIRR entirely (has_xirr = false, SPEC §2.1)
@@ -275,9 +275,17 @@ def compute_all_xirr(data: PortfolioData, today: date | None = None) -> ClassXir
         else:
             r.xirr = None
 
+    # the family/portfolio XIRR combines only the classes that are counted —
+    # a switched-off class is excluded everywhere (SPEC §3.14, v1.4.3); its
+    # per-class figure is still computed (harmless, and ready when re-enabled)
+    flows_by_key = {"equity": eq, "mutual_funds": mf, "fixed_deposits": fd,
+                    "ppf": ppf, "epf": epf, "bonds": bonds, "gold_silver": gs,
+                    "nps": nps, "real_estate": re_, "insurance": ins,
+                    "other_assets": oth}
+    on = {c.key for c in enabled_classes(data)}
     return ClassXirr(
-        portfolio=xirr(eq + mf + fd + ppf + epf + bonds + gs + nps
-                       + re_ + ins + oth),
+        portfolio=xirr([f for k, fl in flows_by_key.items() if k in on
+                        for f in fl]),
         equity=xirr(eq),
         mutual_funds=xirr(mf),
         fixed_deposits=xirr(fd),
