@@ -508,6 +508,9 @@ from r4 (rows 4–15 reserved), then:
 | A17 | `Balance targets (optional)` section label | static |
 | A18/B18 | `Drift tolerance (± % points)`, default **5** | **input** |
 | A19/B19 | `Targets total` = `SUM(C4:C15)`, **amber** when non-zero and ≠ 100 | computed |
+| A20 | `Privacy (optional)` section label (v1.5) | static |
+| A21/B21 | `Privacy mask` — Yes/No for the ••• Mask (§3.19); default **No** | **input** |
+| A22/B22 | `Lock file (encryption)` — Yes/No for the at-rest Lock (§3.19); default **No** | **input** |
 
 Reader rules: match class rows by label anywhere in rows 4–20 (tolerant;
 "Real Estate" accepted for Property); a missing `Reference lists` row
@@ -619,6 +622,77 @@ matter"), header r3, data r4..63, TOTAL r65.
 
 No per-person holding block (the sheet itself is the overview); person
 sheets show one summary row per subclass. XIRR per §6.2 (Cash excluded).
+
+### 3.19 Privacy — Mask + Lock (v1.5)
+
+Two opt-in layers sharing ONE password, independently switchable (§3.14
+rows 21–22 → four legal states). **Threat model (stated to users in these
+words' spirit):** the Mask stops shoulder-surfing and casual household
+snooping in an open file; the Lock protects the file at rest (lost
+laptop/USB, synced folders, semi-technical snoops). Neither defends a
+compromised machine (malware/keylogger) or someone who knows the password.
+Values are NEVER removed or transformed — the workbook stays the data
+store, and every state round-trips losslessly.
+
+**Mask (curtain).** A masked build differs only in presentation:
+
+- every non-date number format becomes the literal
+  `"•••";"•••";"•••";@` — three explicit sections (a single section would
+  render `-•••`, leaking the sign); text passes through; dates stay
+  visible. The workbook default format carries `hidden + locked` so
+  format-less cells are covered too. (Never put a num_format into the
+  workbook DEFAULTS — xlsxwriter's numFmtId table collides and masked
+  numbers render as dates.)
+- every sheet is protected with `selectLockedCells` disallowed — no
+  selection means no status-bar SUM, no copy-paste, no Go To; the `hidden`
+  cell attribute blanks the formula bar. The sheet password is derived
+  from the stored fingerprint (the real password may be absent on a
+  keep-masked run); Excel sheet protection is the weak legacy hash — the
+  curtain's REAL check is the PBKDF2 verification below.
+- every value-derived visual is suppressed (it would leak through •••):
+  charts (replaced by a grey note), the allocation data bar, red/green
+  fonts, the day-change icon set — implemented by swapping the xlsxwriter
+  worksheet class for one whose `conditional_format`/`insert_chart` no-op.
+- the password is never stored: `pbkdf2-sha256$<iter>$<salt>$<hash>`
+  (200k iterations) lives in the constant defined name `NW_Privacy`;
+  `NW_Masked` (`yes`/`no`) records the at-rest state. openpyxl returns
+  constant defined names WITH their quotes — readers must strip them.
+- known residual channels, documented not hidden: Excel's Show-Formulas
+  view and Find-All results pane (manual test matrix), unprotecting a
+  sheet with the derived password. RESET (an explicit interactive action)
+  turns the mask off and clears the fingerprint — data is never lost.
+
+**Lock (safe).** Standard OOXML Agile encryption — Excel's native
+"password to open" (AES-256, SHA-512 KDF), via `msoffcrypto-tool`:
+
+- at rest the file is a CFB ciphertext container (magic `D0 CF 11 E0`);
+  nothing — values, names, structure — is readable without the password.
+  Excel/LibreOffice prompt natively, and an Excel re-save keeps the
+  encryption.
+- the updater needs the password even to READ the file: wrong password or
+  a headless run exits politely with the file untouched. Scheduled
+  hands-free updates cannot run while Locked (documented).
+- write path: the workbook is built to an in-memory buffer, encrypted in
+  memory, and the encryption **self-verifies** (decrypt-back must equal
+  the plaintext) before the atomic replace — plaintext never touches disk
+  and an encryption failure can never destroy the file. Backups byte-copy
+  the at-rest ciphertext, so backups are encrypted for free.
+- the KDF is the encryption's own; no separate fingerprint is needed for
+  verification (decrypt success IS the check). NO recovery exists by
+  design; enabling it warns to write the password down. Enabling the Lock
+  on an unconfirmed password is refused (no lockout by typo): the
+  transition to encrypted happens only in a run where the password was
+  proven (typed and verified, or used to decrypt).
+
+**States & flows.** mask-only at rest = plain zip with ••• formats;
+lock-only = ciphertext with a normal workbook inside; both = ciphertext
+with a masked workbook inside. Viewing: a verified password + the user's
+explicit choice writes the current build unmasked ("open (viewing)");
+the next run (Enter at the prompt), or the offline `--lock` flag
+(read → regenerate, no fetching), puts the mask back. While the mask is
+on, a backup taken of an unmasked-at-rest file is named
+`*.unmasked-backup-*` and purged on the next masked/locked run (one
+warning line says so) — readable copies never linger in backups/.
 
 ---
 
@@ -1221,6 +1295,16 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
 ```
 1. locate workbook (same folder as the executable; default filename, else
    the single *.xlsx present; else prompt)
+1b. PRIVACY front door (v1.5, §3.19): an encrypted workbook prompts for
+   the password before anything else (3 tries, each a trial decryption);
+   headless+locked exits politely, file untouched. The interactive prompts
+   afterwards read the decrypted in-memory copy. Then, per state: first
+   enable → set-password flow (twice, ≥4 chars; loud no-recovery warning
+   when the Lock is being enabled); Lock being turned on with an existing
+   password → confirm it before anything is encrypted; masked file →
+   "password to show / Enter to keep masked / RESET"; locked+masked →
+   "show the numbers this time? (y/N)". A --lock run skips fetching
+   entirely and just re-masks/re-encrypts (offline).
 2. INTERACTIVE (console runs only, i.e. stdin.isatty(); skipped when headless
    or --no-prompt): show the current people and offer to add new person
    sheet(s). Names entered here (or via repeatable --add-person NAME) are
@@ -1259,7 +1343,9 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            spec + user inputs + computed/updater values; sheets of
            switched-off classes hidden, reference sheets per the
            Reference-lists switch, tab colours applied (§2.1/§3.2);
-           atomic replace (write temp file, then swap)
+           masked and/or encrypted per the privacy state (§3.19 — the
+           Lock path builds in memory and writes only self-verified
+           ciphertext); atomic replace (write temp file, then swap)
 9. REPORT — console summary (rows matched/unmatched per sheet, sources used,
            XIRR figures, PPF/history/added-people, backup path). v1.4: the
            console is a product surface — banner with version, live

@@ -169,6 +169,22 @@ Docs in the same commit: SPEC (§2.1, §3.1–§3.3, §3.14–§3.18, §4, §6.2
 §6.8, §6.11, §7), README, packaged README.txt, Guide sheet, release note.
 Suite: 170 tests.
 
+## v1.5.0 — "Privacy: Mask + Lock" (shipped v1.5.0, 2026-07-17)
+
+Two opt-in privacy layers sharing one password (SPEC §3.19); all four
+Mask×Lock combinations are legal states. Design reviewed with an explicit
+threat model and leak-vector audit.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Privacy mask (curtain) | Every number renders ••• (3-section literal format — no `-•••` sign leak; dates/text visible); all sheets protected with selection disallowed (kills status-bar SUM/copy/Go To); charts, data bars, red/green and icon sets suppressed (each chart replaced by a grey note); values intact underneath | masked build: 0 chart XMLs, 10 notes, no dataBar/iconSet/conditionalFormatting, sheetProtection+selectLockedCells everywhere, reader gets full values, round-trip identity holds |
+| Password fingerprint | pbkdf2-sha256 (200k) in defined name `NW_Privacy` + at-rest state in `NW_Masked`; password itself never stored, never echoed (getpass), never in argv | hash round-trips; verify accepts/rejects; RESET clears both |
+| Lock (encryption at rest) | Standard OOXML Agile encryption via msoffcrypto-tool 6.0; Excel/LO prompt natively; updater needs the password even to read; build-in-memory + encrypt + **self-verify** before atomic replace — plaintext never on disk; backups byte-copy ciphertext | encrypted file is CFB magic; wrong pw/headless exits with file byte-identical; decrypt+read identity; unconfirmed-password enable is refused (no lockout by typo) |
+| Flows | First-enable set-password (loud no-recovery warning for Lock); locked update prompt (3 trial-decrypt tries); mask prompt (show / Enter=keep / RESET); both-layers "show this time? y/N"; `--lock` offline re-mask/re-encrypt; unmasked view-backups auto-purged when the mask returns | lifecycle tests cover all four states + transitions; relock provably fetches nothing |
+
+Docs in-commit: SPEC §3.14 rows 20–22 + new §3.19 + §7; Guide privacy
+section; README; packaged README.txt. Suite: 181 tests.
+
 ## Release artifact layout (from R4)
 
 ```

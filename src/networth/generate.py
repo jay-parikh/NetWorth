@@ -30,9 +30,42 @@ KEY = "#BFBFBF"
 
 DATE_FMT = "dd-mm-yyyy"
 
+# Privacy mask (SPEC §3.19): a masked build swaps every numeric format to
+# this literal — explicit negative/zero sections (a single section would
+# render "-•••", a sign leak); "@" keeps text visible. Dates stay readable.
+MASK_NUM = '"•••";"•••";"•••";@'
+_DATE_FORMATS = (DATE_FMT,)
 
-def _formats(wb: xlsxwriter.Workbook) -> dict:
+
+class _MaskedWorksheet(xlsxwriter.worksheet.Worksheet):
+    """Worksheet used for masked builds: value-derived visuals leak through
+    ••• (a data bar's length, a red/green font, a chart) — so conditional
+    formats are dropped and each chart becomes a grey explanatory note."""
+
+    def conditional_format(self, *args, **kwargs):
+        return 0
+
+    def insert_chart(self, *args, **kwargs):
+        cell = args[0] if args and isinstance(args[0], str) else "A1"
+        return self.insert_textbox(cell, (
+            "Charts are hidden while privacy is on.\n"
+            "Run Update Portfolio with your password to see them."), {
+            "width": 420, "height": 90,
+            "fill": {"color": GREY_BG},
+            "line": {"color": "#C9C9C9"},
+            "font": {"color": HINT, "size": 10, "italic": True},
+            "align": {"vertical": "middle", "horizontal": "center"},
+        })
+
+
+def _formats(wb: xlsxwriter.Workbook, masked: bool = False) -> dict:
     def f(**kw):
+        if masked and kw.get("num_format") not in _DATE_FORMATS:
+            # every non-date format gets the mask (hidden/locked arrive via
+            # default_format_properties). Never put a num_format INTO the
+            # workbook defaults — xlsxwriter then hands the same numFmtId to
+            # different codes and masked numbers render as dates.
+            kw = {**kw, "num_format": MASK_NUM}
         return wb.add_format(kw)
 
     return {
@@ -227,6 +260,29 @@ def _write_settings(wb, F, data: PortfolioData):
         "type": "formula",
         "criteria": f"=AND(B{tot}>0,B{tot}<>100)",
         "format": F["cf_amber"]})
+    # privacy block (SPEC §3.19) — two independent switches, one password;
+    # all four Mask×Lock combinations are legal states
+    ws.write(f"A{M.SETTINGS_PRIVACY_ROW - 1}", "Privacy (optional)",
+             F["section"])
+    pr, lk = M.SETTINGS_PRIVACY_ROW, M.SETTINGS_LOCK_ROW
+    ws.write(f"A{pr}", "Privacy mask")
+    ws.write(f"B{pr}", "Yes" if data.privacy_enabled else "No", F["in_text"])
+    ws.write(f"D{pr}", "On" if data.privacy_enabled else "Off", F["c_text"])
+    ws.write(f"E{pr}", "Numbers show as ••• until you type your password in "
+                       "the update window. A curtain against onlookers, "
+                       "not a safe.", F["hint"])
+    ws.write(f"A{lk}", "Lock file (encryption)")
+    ws.write(f"B{lk}", "Yes" if data.lock_enabled else "No", F["in_text"])
+    ws.write(f"D{lk}", "On" if data.lock_enabled else "Off", F["c_text"])
+    ws.write(f"E{lk}", "The file itself needs the password to open - in "
+                       "Excel too. A forgotten password cannot be recovered: "
+                       "write it down somewhere safe.", F["hint"])
+    ws.data_validation(f"B{pr}:B{lk}", {
+        "validate": "list", "source": ["Yes", "No"], "show_error": False,
+        "input_title": "Turn this on?",
+        "input_message": "The update window will ask you to set a password "
+                         "the first time. Yes/No takes effect on the next "
+                         "update run."})
     ws.freeze_panes("A4")
     return ws
 
@@ -1636,9 +1692,31 @@ def _write_guide(wb, F):
 
 # ------------------------------------------------------------------ build ---
 
-def build_workbook(data: PortfolioData, out_path: str) -> None:
-    wb = xlsxwriter.Workbook(out_path, {"default_date_format": DATE_FMT})
-    F = _formats(wb)
+def build_workbook(data: PortfolioData, out_path, *, masked: bool = False) -> None:
+    """Build the workbook to a path or a BytesIO (the Lock path builds in
+    memory so plaintext never touches disk — SPEC §3.19). `masked` is a
+    render-time decision, never stored on `data`."""
+    options: dict = {"default_date_format": DATE_FMT}
+    if masked:
+        # the default xf catches cells written with no explicit format —
+        # hidden/locked ONLY here (a default num_format would collide with
+        # the numFmtId table, see _formats); all numeric cells are written
+        # through _formats(), which applies the ••• mask itself
+        options["default_format_properties"] = {"locked": True, "hidden": True}
+    if not isinstance(out_path, str):
+        options["in_memory"] = True
+    wb = xlsxwriter.Workbook(out_path, options)
+    if masked:
+        # worksheet_class is a Workbook CLASS attribute, not an option —
+        # shadow it on the instance so every add_worksheet suppresses the
+        # value-derived visuals (charts, data bars, red/green, icon sets)
+        wb.worksheet_class = _MaskedWorksheet
+    F = _formats(wb, masked)
+
+    if data.privacy_hash:
+        wb.define_name("NW_Privacy", f'="{data.privacy_hash}"')
+    if data.privacy_enabled or data.lock_enabled:
+        wb.define_name("NW_Masked", '="yes"' if masked else '="no"')
 
     wb.define_name(
         "MF_SchemeList",
@@ -1725,12 +1803,22 @@ def build_workbook(data: PortfolioData, out_path: str) -> None:
     tab_color.update({s: TAB_GREY for s in
                       ("By Scrip", "Dividends", "History") + M.REFERENCE_SHEETS})
 
+    if masked:
+        # the mask can't be casually cleared: every sheet protected, no
+        # selectable cells (also closes the status-bar SUM / copy leaks).
+        # The password is derived from the stored fingerprint — the real
+        # password may not be available on a keep-masked run.
+        from .crypto import sheet_password
+        sheet_pw = sheet_password(data.privacy_hash)
+
     for ws in wb.worksheets():
         name = ws.get_name()
         if name in tab_color:
             ws.set_tab_color(tab_color[name])
         if name in hidden:
             ws.hide()
+        if masked:
+            ws.protect(sheet_pw, {"select_locked_cells": False})
 
     wb.close()
 

@@ -96,6 +96,20 @@ GUIDE_ROWS: list[tuple] = [
     ("kv", "Delisted stocks", "kept at their last known price and shaded amber"),
     ("space",),
 
+    ("section", "🔒", "Keep the numbers private (optional)"),
+    ("text", "Two switches on the Settings tab, both off until you want them, sharing one password:"),
+    ("kv", "Privacy mask", "every number shows as ••• (names and dates stay). A curtain against people "
+           "glancing at your screen — not a safe. Forgot the password? Type RESET in the update window."),
+    ("kv", "Lock file", "the file itself is encrypted — Excel asks for the password just to open it, "
+           "and updates need it too. Real protection for a lost laptop or a synced folder."),
+    ("text", 'Turn either on, run "Update Portfolio", and it walks you through choosing a password.'),
+    ("text", "To see masked numbers: run the update and type the password — press Enter next time"),
+    ("text", "(or run with --lock) and the mask goes straight back on."),
+    ("text", "⚠  The Lock has no reset and no recovery — that is what makes it real. Write the"),
+    ("text", "password down somewhere safe. Backups made before locking stay readable; delete the"),
+    ("text", "backups folder if that matters. Scheduled hands-free updates can't run while locked."),
+    ("space",),
+
     ("section", "💡", "Good to know"),
     ("bullet", "Return figures (XIRR) are filled in by the updater — run it again after you make changes."),
     ("bullet", "Add, delete or sort rows freely. Just don't rename the tabs — the Dashboard finds them by name."),

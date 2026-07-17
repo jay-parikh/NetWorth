@@ -16,7 +16,7 @@ a = Analysis(
            ("../data/epf_rates.csv", "data"),
            ("../data/bullion_proxies.csv", "data"),
            ("../data/restructures.csv", "data")],
-    hiddenimports=["truststore"],
+    hiddenimports=["truststore", "msoffcrypto", "msoffcrypto.format.ooxml"],
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "test", "unittest"],

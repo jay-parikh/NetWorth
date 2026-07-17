@@ -15,7 +15,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import io
+
 from . import __version__
+from . import crypto
 from . import model as M
 from .compute.cashflows import compute_all_xirr, ppf_ledger_by_account
 from .compute.projections import fy_expected_by_person
@@ -113,17 +116,32 @@ def ensure_closed(path: Path) -> None:
                     "close it and run again")
 
 
-def make_backup(path: Path) -> Path:
+def make_backup(path: Path, *, unmasked: bool = False) -> Path:
+    """Byte-copy the at-rest file. A Locked file yields an encrypted backup
+    for free. `unmasked=True` (mask on but the file was left open for
+    viewing) names the copy distinctly so the next masked run can purge the
+    readable copies (SPEC §3.19)."""
     from datetime import datetime
     bdir = path.parent / "backups"
     bdir.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    dest = bdir / f"{path.stem}.backup-{stamp}{path.suffix}"
+    kind = "unmasked-backup" if unmasked else "backup"
+    dest = bdir / f"{path.stem}.{kind}-{stamp}{path.suffix}"
     shutil.copy2(path, dest)
     backups = sorted(bdir.glob(f"{path.stem}.backup-*{path.suffix}"))
     for old in backups[:-KEEP_BACKUPS]:
         old.unlink()
     return dest
+
+
+def _purge_unmasked_backups(path: Path) -> int:
+    """Remove the readable view-run backups once the file is masked/locked
+    again — they were the one place hidden numbers could linger."""
+    gone = 0
+    for p in path.parent.glob(f"backups/{path.stem}.unmasked-backup-*"):
+        p.unlink()
+        gone += 1
+    return gone
 
 
 def _dividend_qty(owner: str, isin: str, ex: date, equity_rows,
@@ -182,12 +200,26 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         div_data=None, bullion_rates=None, nps_data=None, restructures=None,
         add_persons: list[str] | None = None,
         toggle_classes: list[str] | None = None,
+        password: str | None = None, reveal: bool = False,
+        reset_privacy: bool = False,
         today: date | None = None, do_backup: bool = True) -> dict:
     today = today or date.today()
     summary: dict = {"warnings": []}
 
     ensure_closed(path)
-    data = read_workbook(str(path))
+    # ---- privacy read path (SPEC §3.19): a Locked file is ciphertext and
+    # cannot even be read without the password — which is the point
+    locked_at_rest = crypto.is_encrypted(path)
+    if locked_at_rest:
+        if not password:
+            raise _fail(f"{path.name} is locked — run by double-click and "
+                        "type your password (a scheduled run can't)")
+        try:
+            data = read_workbook(crypto.decrypt_workbook(path, password))
+        except crypto.WrongPassword:
+            raise _fail("wrong password — the file was not touched")
+    else:
+        data = read_workbook(str(path))
 
     # add new people (declaratively: they land in data.persons, so regeneration
     # creates their sheet, Dashboard row, By-Scrip column — everything)
@@ -227,6 +259,40 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                     f"to include them")
         summary["classes_toggled"] = toggled
 
+    # ---- privacy state resolution (SPEC §3.19) — four legal Mask×Lock
+    # combinations, transitions included; the user's Settings Yes/No always
+    # round-trips untouched (only RESET, an explicit user action, edits it)
+    if reset_privacy and not data.lock_enabled:
+        data.privacy_enabled = False
+        data.privacy_hash = ""
+        summary["warnings"].append(
+            "privacy mask RESET — the numbers are visible again; switch "
+            "Privacy mask to Yes in Settings to start over")
+    wants_privacy = data.privacy_enabled or data.lock_enabled
+    if wants_privacy and not data.privacy_hash and password:
+        data.privacy_hash = crypto.hash_password(password)   # first enable
+    pw_ok = bool(password) and (
+        locked_at_rest or crypto.verify_password(password, data.privacy_hash))
+    if wants_privacy and not data.privacy_hash:
+        summary["warnings"].append(
+            "privacy is switched on in Settings but no password is set — "
+            "run by double-click once to choose one; nothing was masked or "
+            "locked this run")
+    mask_active = data.privacy_enabled and bool(data.privacy_hash)
+    lock_active = data.lock_enabled and bool(data.privacy_hash)
+    if lock_active and not locked_at_rest and not pw_ok:
+        # never encrypt on an unconfirmed password — that could lock the
+        # user out with a password they mistyped or misremember
+        lock_active = False
+        summary["warnings"].append(
+            "Lock file is switched on but the password wasn't confirmed "
+            "this run — run by double-click and type it to lock the file")
+    if lock_active and not locked_at_rest:
+        summary["warnings"].append(
+            "the file is now locked; backups made BEFORE locking are still "
+            "readable — delete the backups folder if that matters")
+    masked_build = mask_active and not (pw_ok and reveal)
+
     # a Manual_Assets row with a Class the dropdown doesn't know lands in NO
     # class column: it shows in the sheet TOTAL but in no person/family total
     # (the dropdown is non-blocking by design — so say it, never guess)
@@ -238,7 +304,9 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 f"class total; pick Property / Cash / Insurance / Other")
 
     if do_backup:
-        summary["backup"] = str(make_backup(path))
+        summary["backup"] = str(make_backup(
+            path, unmasked=(mask_active and not data.masked_at_rest
+                            and not locked_at_rest)))
 
     # ---- restructures (SPEC §6.15): curated file + Manual rows; the one
     # corporate-action category with no free feed. Runs BEFORE pricing so
@@ -694,12 +762,69 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     summary["net_worth"] = round(snap.total, 2)
     summary["history_points"] = len(data.history)
 
-    # ---- regenerate, atomically ----
+    # ---- regenerate, atomically (SPEC §3.19: on the Lock path the plain
+    # workbook exists only in memory — the disk only ever sees ciphertext,
+    # and encrypt_workbook self-verifies before anything is replaced) ----
     tmp = path.with_name(path.stem + ".new" + path.suffix)
-    build_workbook(data, str(tmp))
+    if lock_active:
+        buf = io.BytesIO()
+        build_workbook(data, buf, masked=masked_build)
+        tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
+    else:
+        build_workbook(data, str(tmp), masked=masked_build)
     os.replace(tmp, path)
+    if masked_build or lock_active:
+        gone = _purge_unmasked_backups(path)
+        if gone:
+            summary["warnings"].append(
+                f"removed {gone} readable backup(s) now that the file is "
+                f"masked again")
+    summary["privacy"] = ("locked + masked" if lock_active and masked_build
+                          else "locked" if lock_active
+                          else "masked" if masked_build
+                          else "open (viewing)" if mask_active else "")
     summary["workbook"] = str(path)
     return summary
+
+
+def relock(path: Path, password: str | None = None) -> dict:
+    """Offline "put the curtain/safe back" (SPEC §3.19, `--lock`): read →
+    regenerate masked/encrypted. No fetching, no computing — seconds, works
+    without internet. Used after a viewing run left the file open."""
+    ensure_closed(path)
+    locked_at_rest = crypto.is_encrypted(path)
+    if locked_at_rest and not password:
+        raise _fail(f"{path.name} is locked — the password is needed even "
+                    "to re-lock it")
+    if locked_at_rest:
+        try:
+            data = read_workbook(crypto.decrypt_workbook(path, password))
+        except crypto.WrongPassword:
+            raise _fail("wrong password — the file was not touched")
+    else:
+        data = read_workbook(str(path))
+    if not (data.privacy_enabled or data.lock_enabled) or not data.privacy_hash:
+        raise _fail("privacy is not switched on for this workbook — "
+                    "nothing to lock (see the Settings tab)")
+    lock_active = data.lock_enabled and (
+        locked_at_rest
+        or (bool(password) and crypto.verify_password(password, data.privacy_hash)))
+    if data.lock_enabled and not lock_active:
+        raise _fail("type your password to lock the file (run by "
+                    "double-click, choose --lock)")
+    masked_build = data.privacy_enabled
+    tmp = path.with_name(path.stem + ".new" + path.suffix)
+    if lock_active:
+        buf = io.BytesIO()
+        build_workbook(data, buf, masked=masked_build)
+        tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
+    else:
+        build_workbook(data, str(tmp), masked=masked_build)
+    os.replace(tmp, path)
+    gone = _purge_unmasked_backups(path)
+    return {"privacy": ("locked + masked" if lock_active and masked_build
+                        else "locked" if lock_active else "masked"),
+            "purged_backups": gone, "workbook": str(path)}
 
 
 def _row(icon: str, label: str, text: str) -> None:
@@ -750,6 +875,15 @@ def _print_summary(s: dict) -> None:
         _row("👥", "Added", f"sheet(s) for {', '.join(s['persons_added'])}")
     if s.get("classes_toggled"):
         _row("🗂️", "Classes", "; ".join(s["classes_toggled"]))
+    if s.get("privacy"):
+        _row("🔒", "Privacy", {
+            "masked": "numbers masked (•••)",
+            "locked": "file locked (encrypted at rest)",
+            "locked + masked": "file locked + numbers masked",
+            "open (viewing)": "numbers OPEN for viewing — press Enter at "
+                              "the next run's password prompt (or use "
+                              "--lock) to mask them again",
+        }.get(s["privacy"], s["privacy"]))
     if s.get("backup"):
         _row("💾", "Backup", s["backup"])
     for w in s["warnings"]:
@@ -825,9 +959,12 @@ def version_line(current: str, session=None, timeout: int = 8) -> str:
             f"newer one)")
 
 
-def peek_persons(path: Path) -> list[str]:
-    """Read just the current people from the Dashboard, cheaply (read-only)."""
+def peek_persons(path) -> list[str]:
+    """Read just the current people from the Dashboard, cheaply (read-only).
+    Accepts a path or a decrypted BytesIO (Locked workbooks)."""
     from openpyxl import load_workbook
+    if hasattr(path, "seek"):
+        path.seek(0)
     wb = load_workbook(path, read_only=True)
     try:
         dash = wb["Dashboard"]
@@ -846,6 +983,8 @@ def peek_class_details(path: Path) -> list[tuple[str, bool, bool]]:
     mirror of class_has_data, close enough for display; run() re-checks
     with the real reader."""
     from openpyxl import load_workbook
+    if hasattr(path, "seek"):
+        path.seek(0)
     enabled = {c.label: c.default_enabled for c in ASSET_CLASSES}
     has_rows = {c.key: False for c in ASSET_CLASSES}
     wb = load_workbook(path, read_only=True)
@@ -921,6 +1060,100 @@ def prompt_class_toggle(path: Path) -> list[str]:
     return toggles
 
 
+def peek_privacy(source) -> tuple[bool, bool, bool]:
+    """(mask wanted, lock wanted, password already set) — cheap read-only
+    peek so main() knows which privacy prompt to show (SPEC §3.19)."""
+    from openpyxl import load_workbook
+    if hasattr(source, "seek"):
+        source.seek(0)
+    mask = lock = False
+    has_hash = False
+    wb = load_workbook(source, read_only=True)
+    try:
+        if "Settings" in wb.sheetnames:
+            st = wb["Settings"]
+            for row in st.iter_rows(min_row=M.SETTINGS_REF_ROW,
+                                    max_row=M.SETTINGS_LOCK_ROW + 1,
+                                    max_col=2):
+                label = str(row[0].value or "").strip()
+                val = str(row[1].value or "").strip().casefold() == "yes"
+                if label == "Privacy mask":
+                    mask = val
+                elif label.startswith("Lock file"):
+                    lock = val
+        has_hash = bool("NW_Privacy" in wb.defined_names
+                        and (wb.defined_names["NW_Privacy"].value or "").strip())
+    finally:
+        wb.close()
+    return mask, lock, has_hash
+
+
+def _prompt_set_password(for_lock: bool) -> str | None:
+    """First-enable flow: choose the privacy password (never echoed, never
+    stored — only a fingerprint). Returns None if the user backs out."""
+    import getpass
+    print("\n🔒 Privacy is switched on — let's set your password.")
+    print("   It is never stored anywhere; don't lose it.")
+    if for_lock:
+        print("   ⚠️  You are LOCKING the file: a forgotten password cannot "
+              "be recovered by anyone — write it down somewhere safe.")
+    for _ in range(3):
+        try:
+            p1 = getpass.getpass("  New password (min 4 characters): ")
+            if not p1:
+                return None
+            if len(p1) < 4:
+                print("  Too short — 4 characters minimum.")
+                continue
+            p2 = getpass.getpass("  Type it once more: ")
+        except (EOFError, OSError):
+            return None
+        if p1 == p2:
+            return p1
+        print("  They don't match — try again.")
+    return None
+
+
+def _prompt_unlock(path: Path) -> str | None:
+    """Password prompt for a Locked (encrypted) workbook — 3 tries, each
+    verified by a trial decryption. None = give up, file untouched."""
+    import getpass
+    print(f"\n🔒 {path.name} is locked.")
+    for attempt in range(3):
+        try:
+            pw = getpass.getpass("  Password: ")
+        except (EOFError, OSError):
+            return None
+        if not pw:
+            return None
+        try:
+            crypto.decrypt_workbook(path, pw)
+            return pw
+        except crypto.WrongPassword:
+            print("  Wrong password." + (" Try again." if attempt < 2 else ""))
+    return None
+
+
+def _prompt_mask_password() -> tuple[str | None, bool]:
+    """Mask-only prompt: (password, reset). Enter keeps the mask; a correct
+    password reveals the numbers this run; RESET turns the mask off."""
+    import getpass
+    print("\n🔒 The numbers are masked (•••).")
+    try:
+        pw = getpass.getpass("  Password to show them this run "
+                             "(Enter = keep masked, RESET = turn off): ")
+    except (EOFError, OSError):
+        return None, False
+    if pw.strip() == "RESET":
+        try:
+            sure = input("  Turn the privacy mask OFF and show all numbers? "
+                         "Type YES to confirm: ").strip()
+        except (EOFError, OSError):
+            return None, False
+        return None, sure == "YES"
+    return (pw or None), False
+
+
 def prompt_new_persons(existing: list[str]) -> list[str]:
     """Interactively collect new person names (double-click / Terminal only).
     Adding a person here is optional — you can also just type a name in a yellow
@@ -985,25 +1218,75 @@ def main(argv: list[str] | None = None) -> int:
                         help="never ask interactive questions (e.g. add a person)")
     parser.add_argument("--add-person", action="append", metavar="NAME", default=[],
                         help="add a person's sheet without prompting (repeatable)")
+    parser.add_argument("--lock", action="store_true",
+                        help="just put the privacy mask/lock back "
+                             "(no fetching; works offline)")
     args = parser.parse_args(argv)
 
     code = 0
     _banner(f"NetWorth v{__version__} — updating your family portfolio")
     try:
         path = locate_workbook(args.workbook)
-        new_persons = list(args.add_person)
         # interactive only when attached to a real console — never hangs a
         # headless/scheduled run
         interactive = sys.stdin.isatty() and not args.no_prompt
-        toggles: list[str] = []
-        if interactive:
-            try:
-                new_persons += prompt_new_persons(peek_persons(path))
-                toggles = prompt_class_toggle(path)
-            except Exception:  # noqa: BLE001 — prompting must never break the run
-                pass
-        summary = run(path, add_persons=new_persons, toggle_classes=toggles)
-        _print_summary(summary)
+
+        # privacy front door (SPEC §3.19): a Locked file is ciphertext, so
+        # the password comes before anything — even the peeks read a
+        # decrypted in-memory copy; nothing on disk changes without it
+        password: str | None = None
+        peek_src = path
+        locked = crypto.is_encrypted(path)
+        if locked:
+            if not interactive:
+                raise _fail(f"{path.name} is locked — a scheduled/headless "
+                            "run cannot update it; run it by double-click")
+            password = _prompt_unlock(path)
+            if password is None:
+                raise _fail("no password — the file was not touched")
+            peek_src = crypto.decrypt_workbook(path, password)
+
+        if args.lock:
+            res = relock(path, password=password)
+            extra = (f" · removed {res['purged_backups']} readable backup(s)"
+                     if res["purged_backups"] else "")
+            _row("🔒", "Privacy", res["privacy"] + extra)
+            _say(_c("1;32", f"\n  ✅ {Path(res['workbook']).name} is put away"))
+        else:
+            new_persons = list(args.add_person)
+            toggles: list[str] = []
+            reveal = reset = False
+            if interactive:
+                try:
+                    new_persons += prompt_new_persons(peek_persons(peek_src))
+                    toggles = prompt_class_toggle(peek_src)
+                except Exception:  # noqa: BLE001 — prompting must never break the run
+                    pass
+                try:
+                    mask_on, lock_on, has_hash = peek_privacy(peek_src)
+                    if (mask_on or lock_on) and not has_hash:
+                        password = _prompt_set_password(lock_on) or password
+                    elif lock_on and not locked:
+                        # turning the Lock on: confirm the password BEFORE
+                        # anything gets encrypted (no lockout by typo)
+                        import getpass
+                        pw = getpass.getpass(
+                            "\n🔒 Confirm your password to LOCK the file: ")
+                        password = pw or password
+                    elif locked and mask_on:
+                        ans = input("  Show the numbers in the file this "
+                                    "time? (y/N): ").strip().casefold()
+                        reveal = ans == "y"
+                    elif mask_on:
+                        pw, reset = _prompt_mask_password()
+                        if pw:
+                            password, reveal = pw, True
+                except Exception:  # noqa: BLE001
+                    pass
+            summary = run(path, add_persons=new_persons,
+                          toggle_classes=toggles, password=password,
+                          reveal=reveal, reset_privacy=reset)
+            _print_summary(summary)
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
     except Exception as e:  # noqa: BLE001 — last-resort user-facing message

@@ -49,5 +49,14 @@ PRIVACY
   data: AMFI fund NAVs, BSE/NSE prices and announcements, NPS Trust NAVs,
   and the IBJA bullion rate.
 
+  Want the file itself protected? Two optional switches on the Settings
+  tab (one password for both):
+    - Privacy mask : every number shows as ... until you type your
+      password in the update window. A curtain, not a safe (RESET works
+      if you forget).
+    - Lock file    : real encryption - Excel asks for the password just
+      to open the file, and updates need it too. NO recovery if the
+      password is forgotten: write it down somewhere safe.
+
 Project home, source code and new versions:
   https://github.com/jay-parikh/NetWorth

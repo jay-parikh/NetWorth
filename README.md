@@ -163,6 +163,17 @@ turn it off with `--no-update-check`.
 
 **Nothing about your holdings is ever uploaded, anywhere.**
 
+And since v1.5, two optional privacy layers guard the file itself — both
+off until you want them, sharing one password (Settings tab):
+
+- **Privacy mask** — every number shows as `•••` until you type your
+  password in the update window. A curtain against people glancing at your
+  screen; honest about being a curtain (type RESET if you forget).
+- **Lock file** — real encryption (Excel's own "password to open",
+  AES‑256). Without the password the file is unreadable anywhere — a lost
+  laptop or a synced folder reveals nothing. Real also means: **no
+  recovery if you forget the password.** Write it down.
+
 ---
 
 ## 🛠️ For developers

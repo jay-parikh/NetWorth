@@ -51,12 +51,14 @@ PROJECTION_YEARS = 20          # Projection rows 4..24 (n = 0..20)
 PERSON_BLOCKS_START = 14
 
 # Settings sheet (SPEC §3.14): class rows 4..15, the Reference-lists row,
-# then the optional balance-targets cells.
+# the optional balance-targets cells, then the privacy block (§3.19).
 SETTINGS_FIRST_ROW = 4
 SETTINGS_LAST_ROW = 15
 SETTINGS_REF_ROW = 16          # "Reference lists" Yes/No (masters + actions tab)
 SETTINGS_TOL_ROW = 18
 SETTINGS_SUM_ROW = 19
+SETTINGS_PRIVACY_ROW = 21      # "Privacy mask" Yes/No (••• curtain)
+SETTINGS_LOCK_ROW = 22         # "Lock file (encryption)" Yes/No
 
 TEMPLATE_FILENAME = "Family_Portfolio_Tracker.xlsx"
 
@@ -613,6 +615,13 @@ class PortfolioData:
         default_factory=default_class_settings)
     # Settings "Reference lists" switch: shows/hides REFERENCE_SHEETS
     show_references: bool = False
+    # privacy (SPEC §3.19): the user's two switches + the stored password
+    # fingerprint (never the password). masked_at_rest mirrors the NW_Masked
+    # defined name — what state the file on disk was in when read.
+    privacy_enabled: bool = False          # Mask: figures show as •••
+    lock_enabled: bool = False             # Lock: whole-file encryption
+    privacy_hash: str = ""                 # pbkdf2-sha256$iter$salt$hash
+    masked_at_rest: bool = False
     drift_tolerance_pct: float = 5         # Settings drift band (R11)
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person
     xirr: ClassXirr = field(default_factory=ClassXirr)

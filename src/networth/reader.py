@@ -71,9 +71,20 @@ def _data_rows(ws, header: int):
         yield r
 
 
-def read_workbook(path: str) -> PortfolioData:
-    wb = load_workbook(path, read_only=False, data_only=False)
+def read_workbook(source) -> PortfolioData:
+    """`source` is a path string or a file-like (the Lock path decrypts to a
+    BytesIO so plaintext never touches disk — SPEC §3.19)."""
+    wb = load_workbook(source, read_only=False, data_only=False)
     data = PortfolioData()
+
+    # privacy fingerprint + at-rest state (SPEC §3.19) — stored as constant
+    # defined names; openpyxl returns the constant WITH its quotes
+    def _named(name: str) -> str:
+        if name in wb.defined_names:
+            return (wb.defined_names[name].value or "").strip().strip('"')
+        return ""
+    data.privacy_hash = _named("NW_Privacy")
+    data.masked_at_rest = _named("NW_Masked") == "yes"
 
     dash = wb["Dashboard"]
     data.persons = [
@@ -114,7 +125,7 @@ def read_workbook(path: str) -> PortfolioData:
 
     if "Settings" in wb.sheetnames:
         st = wb["Settings"]
-        label_rows = {_as_str(st.cell(r, 1).value): r for r in range(4, 21)}
+        label_rows = {_as_str(st.cell(r, 1).value): r for r in range(4, 24)}
         for cls in ASSET_CLASSES:
             r = label_rows.get(cls.label)
             if r is None and cls.key == "real_estate":
@@ -131,6 +142,16 @@ def read_workbook(path: str) -> PortfolioData:
         if ref_row:                                   # absent pre-v1.4.3 → No
             data.show_references = (
                 _as_str(st.cell(ref_row, 2).value).casefold() == "yes")
+        # privacy switches (SPEC §3.19) — absent pre-v1.5 → both off
+        pr = label_rows.get("Privacy mask")
+        if pr:
+            data.privacy_enabled = (
+                _as_str(st.cell(pr, 2).value).casefold() == "yes")
+        lk = next((r for lbl, r in label_rows.items()
+                   if lbl.startswith("Lock file")), None)
+        if lk:
+            data.lock_enabled = (
+                _as_str(st.cell(lk, 2).value).casefold() == "yes")
         tol_row = next((r for r in range(16, 25)
                         if _as_str(st.cell(r, 1).value).startswith("Drift tolerance")),
                        None)

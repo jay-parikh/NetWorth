@@ -14,6 +14,7 @@ dependencies = [
     "openpyxl>=3.1",
     "requests>=2.31",
     "truststore>=0.9",
+    "msoffcrypto-tool>=6.0",     # the privacy Lock: OOXML encryption (§3.19)
 ]
 
 [project.optional-dependencies]
