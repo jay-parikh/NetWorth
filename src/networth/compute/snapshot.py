@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from ..model import HistorySnapshot, PortfolioData
+from .cashflows import flat_accrual
 
 
 def _yf(a: date, b: date) -> float:
@@ -52,7 +53,7 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
         if not r.balance:
             continue
         if r.as_on and r.rate:
-            epf += r.balance * (1 + r.rate / 100) ** _yf(r.as_on, today)
+            epf += flat_accrual(r.balance, r.rate, r.as_on, today)
         else:
             epf += r.balance
 

@@ -18,6 +18,15 @@ def _yearfrac(a: date, b: date) -> float:
     return (b - a).days / 365.0
 
 
+def flat_accrual(balance: float, rate_pct: float, as_on: date,
+                 to: date) -> float:
+    """The PPF/EPF flat path (SPEC §6.2/§6.10): a passbook balance grown at
+    its annual rate from its as-on date. THE single definition — cashflows,
+    projections and the net-worth snapshot all use it, so the three surfaces
+    can never drift apart."""
+    return balance * (1 + rate_pct / 100) ** _yearfrac(as_on, to)
+
+
 def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
     flows: list[Flow] = []
     for r in data.equity:
@@ -106,9 +115,8 @@ def ppf_flows(data: PortfolioData, today: date) -> list[Flow]:
             continue
         if not (r.balance and r.rate and r.as_on) or r.as_on >= today:
             continue
-        value = r.balance * (1 + r.rate / 100) ** _yearfrac(r.as_on, today)
         flows.append((r.as_on, -r.balance))
-        flows.append((today, value))
+        flows.append((today, flat_accrual(r.balance, r.rate, r.as_on, today)))
     return flows
 
 
@@ -119,9 +127,8 @@ def epf_flows(data: PortfolioData, today: date) -> list[Flow]:
     for r in data.epf:
         if not (r.balance and r.rate and r.as_on) or r.as_on >= today:
             continue
-        value = r.balance * (1 + r.rate / 100) ** _yearfrac(r.as_on, today)
         flows.append((r.as_on, -r.balance))
-        flows.append((today, value))
+        flows.append((today, flat_accrual(r.balance, r.rate, r.as_on, today)))
     return flows
 
 

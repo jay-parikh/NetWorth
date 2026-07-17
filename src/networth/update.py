@@ -25,10 +25,12 @@ from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .fetch import corporate_actions as ca_mod
-from .model import (ASSET_CLASSES, MANUAL_CLASS_LABELS, RESTRUCTURE_TYPES,
-                    DividendRow, EquityRow, chained_adjustment_factor,
-                    class_has_data, cost_adjustment_factor, fy_label,
-                    load_fmv, load_restructures, resolve_isin)
+from .compute.restructures import (apply_demergers, consumed_label,
+                                   integrate_restructures)
+from .model import (ASSET_CLASSES, MANUAL_CLASS_LABELS, DividendRow,
+                    chained_adjustment_factor, class_has_data,
+                    cost_adjustment_factor, fy_label, load_fmv,
+                    load_restructures, resolve_isin)
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -251,56 +253,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         # below writes into them) — the loaded-from-CSV path is fresh anyway
         from dataclasses import replace as _replace
         restructures = [_replace(c) for c in restructures]
-    _isin_by_name = {name: isin for _s, name, isin in data.masters.stock_rows}
-    _held = {row.isin_override or _isin_by_name.get(row.scrip, "")
-             for row in data.equity}
-    _held.discard("")
-    # chain-aware: a demerger/merger on a SUCCESSOR of a held ISIN concerns
-    # this workbook too (the held lots resolve into it)
-    _held |= {resolve_isin(i, restructures, today) for i in _held}
-    # new_isin is part of the key: a demerger's retention row and child rows
-    # share (isin, type, ex_date) and must track Applied independently
-    manual_keys = {(a.isin, a.type, a.ex_date, a.new_isin)
-                   for a in data.corporate_actions if a.source == "Manual"}
-    prev_applied = {(a.isin, a.type, a.ex_date, a.new_isin): a.applied
-                    for a in data.corporate_actions if a.applied}
-    # only events touching a HELD security surface on the audit sheet — the
-    # curated file covers everyone, the workbook shows what matters here
-    curated = [c for c in restructures
-               if c.isin in _held
-               and (c.isin, c.type, c.ex_date, c.new_isin) not in manual_keys]
-    for c in curated:                        # Applied survives the rewrite
-        c.applied = c.applied or prev_applied.get(
-            (c.isin, c.type, c.ex_date, c.new_isin))
-    data.corporate_actions = ([a for a in data.corporate_actions
-                               if a.source != "Curated"] + curated)
-    restructure_events = [a for a in data.corporate_actions
-                          if a.type in RESTRUCTURE_TYPES and a.ex_date
-                          and a.ex_date <= today]
+    restructure_events = integrate_restructures(data, restructures, today)
 
     def _consumed_label(isin: str) -> str | None:
-        hops = [a for a in restructure_events
-                if a.isin == isin and a.type in ("MERGER", "ISIN_CHANGE")
-                and a.new_isin and a.new_isin != isin]
-        if not hops:
-            return None
-        return "Merged" if any(h.type == "MERGER" for h in hops) else "Renamed"
-
-    if restructure_events:
-        # successor securities join the master immediately (add-only safe:
-        # they are new ISINs) so name lookups resolve before listing
-        known = {i for _s, _n, i in data.masters.stock_rows}
-        fresh = [(a.new_symbol or a.new_isin,
-                  # display-name fallback: a symbol reads far better than a
-                  # raw ISIN when a Manual row omits the name
-                  a.new_name or a.new_symbol or a.new_isin,
-                  a.new_isin)
-                 for a in restructure_events
-                 if a.new_isin and a.new_isin != a.isin
-                 and a.new_isin not in known]
-        if fresh:
-            data.masters.stock_rows.extend(fresh)
-            data.masters.stock_rows.sort(key=lambda r: r[1].casefold())
+        return consumed_label(isin, restructure_events)
     # demerger child rows are appended AFTER the corporate-actions refresh
     # below: child quantities need the FULL split/bonus history, and a fresh
     # workbook's sheet has none of it yet (§6.15)
@@ -496,93 +452,13 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         data.corporate_actions = manual + auto
         summary["ca_rows"] = len(data.corporate_actions)
 
-    # ---- demerger children (SPEC §6.15): append-once child rows per lot,
-    # AFTER the corporate-actions refresh so quantities come from the full
-    # split/bonus history. The persisted Applied date is the idempotency
-    # token — re-runs skip applied events, so a user deleting a child row is
-    # respected. An event that cannot be applied safely this run (feed not
-    # verified, sheet full) is NOT stamped and retries on the next update.
-    children_added = 0
-    unstamped: set[int] = set()
-    equity_cap = M.EQUITY_LAST_ROW - M.FIRST_DATA_ROW + 1
-    if restructure_events:
-        from datetime import timedelta
-        for ev in restructure_events:
-            if (ev.type != "DEMERGER" or ev.applied
-                    or not ev.new_isin or ev.new_isin == ev.isin):
-                continue
-            if not ca_injected and ev.isin not in ca_checked:
-                # applying now would freeze child quantities computed from an
-                # unverified (possibly empty) actions table — defer
-                unstamped.add(id(ev))
-                summary["warnings"].append(
-                    f"demerger of "
-                    f"{ev.new_name or ev.new_symbol or ev.new_isin} deferred: "
-                    f"{ev.symbol or ev.isin}'s split/bonus history could not "
-                    f"be verified this run — it will apply on the next update")
-                continue
-            eve = ev.ex_date - timedelta(days=1)
-            # children land ATOMICALLY per event: a half-applied event that
-            # is retried next run would otherwise duplicate its early rows
-            new_children: list[EquityRow] = []
-            fits = True
-            for lot in data.equity:
-                lot_isin = lot.isin_override or isin_by_name.get(lot.scrip, "")
-                if not lot_isin or not lot.qty:
-                    continue
-                # chain-aware: a lot still keyed to a merged-away ISIN that
-                # resolved into ev.isin by the ex-date demerges too
-                if (lot_isin != ev.isin and resolve_isin(
-                        lot_isin, data.corporate_actions, eve) != ev.isin):
-                    continue
-                if lot.cost_date and lot.cost_date >= ev.ex_date:
-                    continue
-                qty_adj = lot.qty * chained_adjustment_factor(
-                    lot_isin, lot.cost_date, eve, data.corporate_actions)
-                ratio = (ev.ratio_from / ev.ratio_to
-                         if ev.ratio_from and ev.ratio_to else 1.0)
-                child_qty = round(qty_adj * ratio, 4)
-                if child_qty <= 0:
-                    continue
-                if len(data.equity) + len(new_children) >= equity_cap:
-                    unstamped.add(id(ev))
-                    summary["warnings"].append(
-                        f"Equity sheet is full ({equity_cap} rows) — could "
-                        f"not append the demerged "
-                        f"{ev.new_name or ev.new_symbol or ev.new_isin} "
-                        f"row(s); free up rows "
-                        f"and run the updater again")
-                    fits = False
-                    break
-                child_cost = None
-                if lot.avg_cost and ev.cost_pct is not None:
-                    # the cost available to apportion is the original cost ×
-                    # the retention of every EARLIER demerger on this chain
-                    prior_cf = cost_adjustment_factor(
-                        lot_isin, lot.cost_date, eve, data.corporate_actions)
-                    child_cost = round(lot.qty * lot.avg_cost * prior_cf
-                                       * ev.cost_pct / 100 / child_qty, 4)
-                child = EquityRow(
-                    owner=lot.owner,
-                    scrip=ev.new_name or ev.new_symbol or ev.new_isin,
-                    isin_override=ev.new_isin, qty=child_qty,
-                    avg_cost=child_cost,
-                    # Indian CGT: demerged shares inherit the holding period
-                    cost_date=lot.cost_date,
-                    flag=f"DEMERGER:{ev.isin}@{ev.ex_date.isoformat()}")
-                # price the child in the same run (the bhavcopy is fetched)
-                quote = price_data.prices.get(ev.new_isin) if price_data else None
-                if quote:
-                    child.close = quote["close"]
-                    child.prev_close = quote["prev"]
-                    child.close_date = price_data.trade_date or today
-                new_children.append(child)
-            if fits:
-                data.equity.extend(new_children)
-                children_added += len(new_children)
-        for ev in restructure_events:            # stamp the audit trail
-            if not ev.applied and id(ev) not in unstamped:
-                ev.applied = today
+    # ---- demerger children (SPEC §6.15) — see compute/restructures.py for
+    # the mechanism (append-once, atomic per event, verification/capacity
+    # gates that defer WITHOUT stamping so the event retries next run)
+    children_added, rs_warnings = apply_demergers(
+        data, restructure_events, ca_checked=ca_checked,
+        ca_trusted=ca_injected, price_data=price_data, today=today)
+    summary["warnings"].extend(rs_warnings)
     summary["restructure_children"] = children_added
 
     adjusted = 0

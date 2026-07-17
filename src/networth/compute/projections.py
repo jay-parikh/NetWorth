@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from ..model import PortfolioData
-from .cashflows import coupon_dates
+from .cashflows import coupon_dates, flat_accrual
 
 
 def fy_end(today: date) -> date:
@@ -67,7 +67,7 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
             bal, _ = ppf_value(deposits, rates, end)
             add(r.owner, bal)
         elif r.balance and r.rate and r.as_on:
-            add(r.owner, r.balance * (1 + r.rate / 100) ** _yf(r.as_on, end))
+            add(r.owner, flat_accrual(r.balance, r.rate, r.as_on, end))
 
     for r in data.bonds:
         if not (r.qty and (r.cur_price or r.face)):
@@ -95,7 +95,7 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
         if not r.balance:
             continue
         if r.as_on and r.rate:
-            add(r.owner, r.balance * (1 + r.rate / 100) ** _yf(r.as_on, end))
+            add(r.owner, flat_accrual(r.balance, r.rate, r.as_on, end))
         else:
             add(r.owner, r.balance)
 
