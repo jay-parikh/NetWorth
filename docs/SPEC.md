@@ -138,6 +138,18 @@ user's choice authoritative.)
 
 ## 3. Workbook specification
 
+**Keep + gloss (v1.5.1, normative).** Domain terms are correct and are never
+renamed or softened in any user-facing text — headers, banners, comments or the
+Guide (`compute`, `NAV`, `ISIN`, `XIRR`, `corpus`, `PRAN`, `UAN`, `SGB`,
+`coupon`, `Face Value`, `ex-date`, …). Instead, every jargon-bearing header
+carries a plain-language hover comment that **leads with the term** and
+explains it (e.g. "XIRR = your return a year - it counts WHEN you invested…";
+"ISIN = the code that identifies it, on your statement…"). Shared gloss strings
+live in `generate.py` (`_G_XIRR`, `_G_ISIN`, `_G_NAV`, `_G_CURVAL`,
+`_G_NETCHG`) so the same term is explained the same way on every sheet, and the
+Guide ends with a short "Words you'll see" glossary. Because only comments and
+banner help-text changed, nothing the reader matches on moves.
+
 ### 3.1 Sheet map (tab order)
 
 | # | Sheet | Kind | Purpose |
@@ -418,9 +430,19 @@ Stock Name. Merge policy is **add-only** (§6.4). v1 adds `Status` and
 `data/banks_in.csv` (RBI scheduled banks + major SFBs/co-ops). Static; only
 release updates refresh it.
 
-**Guide** — plain-text manual covering: inputs vs computed colours, how to add
-people/holdings, dropdown usage, what the updater does, backups, and the v1
-flags (amber = stale/delisted/FMV-estimated).
+**Guide** — a designed, in-workbook manual driven entirely by `GUIDE_ROWS`
+(`guide_text.py`); the renderer (`_write_guide`) turns row kinds (title,
+section, legend, step, kv, bullet, tip, text, footer, space) into a page with a
+navy title banner, colour-cycled section bars, numbered step badges and a swatch
+legend. The title banner is **frozen** (`freeze_panes(2, 0)`) so it stays in view
+while scrolling. Plain, non-technical language throughout (house rule). Sections
+(kept deliberately short and scannable): the colour rule, a 4-step start, a
+"where does each thing go?" table, what the updater quietly handles, "make it
+yours" (show/hide · add a person · targets), the optional privacy switches, a
+short **"words you'll see"** glossary (XIRR, ISIN, NAV, PRAN/UAN, SGB, ex-date)
+that lets the sheets keep their exact terms while staying self-explanatory, and
+"good to know". Covers inputs-vs-computed colours and the v1 amber flags
+(stale/delisted/FMV-estimated).
 
 ### 3.12 Type-ahead dropdowns (normative mechanism)
 
@@ -1302,9 +1324,13 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    enable → set-password flow (twice, ≥4 chars; loud no-recovery warning
    when the Lock is being enabled); Lock being turned on with an existing
    password → confirm it before anything is encrypted; masked file →
-   "password to show / Enter to keep masked / RESET"; locked+masked →
-   "show the numbers this time? (y/N)". A --lock run skips fetching
-   entirely and just re-masks/re-encrypts (offline).
+   one plain question ("see them this time?", Enter keeps the mask) and,
+   only on yes, the password — verified on the spot against the stored
+   fingerprint (3 tries, wrong is never silent; RESET typed here leads to
+   the separate mask-off confirmation); locked+masked → the same
+   see-them-this-time question (the password already unlocked the file).
+   A --lock run skips fetching entirely and just re-masks/re-encrypts
+   (offline).
 2. INTERACTIVE (console runs only, i.e. stdin.isatty(); skipped when headless
    or --no-prompt): show the current people and offer to add new person
    sheet(s). Names entered here (or via repeatable --add-person NAME) are

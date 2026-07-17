@@ -217,3 +217,39 @@ def test_relock_is_offline(tmp_path, monkeypatch):
     res = relock(path)
     assert res["privacy"] == "masked"
     assert read_workbook(str(path)).masked_at_rest is True
+
+
+# ---- the interactive mask prompt -------------------------------------------
+
+def test_mask_prompt_staged_flow(monkeypatch):
+    """Enter alone keeps the mask (no password asked); a wrong password is
+    caught at the prompt with retries; RESET needs its own YES."""
+    import getpass
+    from networth.update import _prompt_mask_password
+    h = crypto.hash_password(PW)
+
+    def feed(answers, typed):
+        a, t = iter(answers), iter(typed)
+        monkeypatch.setattr("builtins.input", lambda *_: next(a))
+        monkeypatch.setattr(getpass, "getpass", lambda *_: next(t))
+
+    feed([""], [])                                    # Enter → stay masked,
+    assert _prompt_mask_password(h) == (None, False)  # password never asked
+    feed(["y"], [PW])                                 # y + right password
+    assert _prompt_mask_password(h) == (PW, False)
+    feed(["y"], ["typo", PW])                         # typo, then right
+    assert _prompt_mask_password(h) == (PW, False)
+    feed(["y"], ["a", "b", "c"])                      # 3 wrong → stay masked
+    assert _prompt_mask_password(h) == (None, False)
+    feed(["y", "YES"], ["RESET"])                     # forgot → RESET → YES
+    assert _prompt_mask_password(h) == (None, True)
+    feed(["y", ""], ["RESET"])                        # RESET, then back out
+    assert _prompt_mask_password(h) == (None, False)
+
+
+def test_wrong_password_is_never_silent(tmp_path):
+    path = tmp_path / "wb.xlsx"
+    build_workbook(_priv_data(), str(path), masked=True)
+    s = _upd(path, password="wrong", reveal=True)
+    assert s["privacy"] == "masked"
+    assert any("didn't match" in w for w in s["warnings"])

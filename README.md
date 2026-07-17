@@ -16,7 +16,7 @@ All on **your own computer**. Nothing ever uploaded.
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
-![Tests](https://img.shields.io/badge/tests-170%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-185%20passing-brightgreen)
 
 </div>
 
@@ -213,7 +213,7 @@ Needs **Python 3.10+**. No compilers, no Excel, no admin rights.
 ```bash
 python -m networth.generate            # build the workbook from code (sample data)
 python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
-pytest                                 # 170 tests — golden values, parsers, scenario
+pytest                                 # 185 tests — golden values, parsers, scenario
                                        #   suites per milestone, round-trip identity
 ```
 
@@ -243,7 +243,7 @@ three OSes, builds the apps and attaches them to the GitHub Release.
 | Document | What it's for |
 |---|---|
 | [docs/SPEC.md](docs/SPEC.md) | **The product** — every sheet, data contract and algorithm, platform‑agnostic |
-| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.4) |
+| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.5) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Everything else, with ✅ / 🚧 / ⬜ status |
 | [docs/PLAN.md](docs/PLAN.md) · [docs/PLAN-v1.2.md](docs/PLAN-v1.2.md) | The approved architecture & design decisions |
 | [CLAUDE.md](CLAUDE.md) | Working notes & conventions for contributors |

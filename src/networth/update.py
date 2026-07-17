@@ -292,6 +292,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             "the file is now locked; backups made BEFORE locking are still "
             "readable — delete the backups folder if that matters")
     masked_build = mask_active and not (pw_ok and reveal)
+    if password and mask_active and not pw_ok:
+        # a wrong password is never silent — say why the numbers stayed hidden
+        summary["warnings"].append(
+            "the password didn't match — the numbers stay masked (•••)")
 
     # a Manual_Assets row with a Class the dropdown doesn't know lands in NO
     # class column: it shows in the sheet TOTAL but in no person/family total
@@ -878,11 +882,10 @@ def _print_summary(s: dict) -> None:
     if s.get("privacy"):
         _row("🔒", "Privacy", {
             "masked": "numbers masked (•••)",
-            "locked": "file locked (encrypted at rest)",
-            "locked + masked": "file locked + numbers masked",
-            "open (viewing)": "numbers OPEN for viewing — press Enter at "
-                              "the next run's password prompt (or use "
-                              "--lock) to mask them again",
+            "locked": "file locked (needs your password to open)",
+            "locked + masked": "file locked + numbers masked (•••)",
+            "open (viewing)": "numbers visible this one time — the next "
+                              "update masks them again (or run --lock now)",
         }.get(s["privacy"], s["privacy"]))
     if s.get("backup"):
         _row("💾", "Backup", s["backup"])
@@ -1060,14 +1063,15 @@ def prompt_class_toggle(path: Path) -> list[str]:
     return toggles
 
 
-def peek_privacy(source) -> tuple[bool, bool, bool]:
-    """(mask wanted, lock wanted, password already set) — cheap read-only
-    peek so main() knows which privacy prompt to show (SPEC §3.19)."""
+def peek_privacy(source) -> tuple[bool, bool, str]:
+    """(mask wanted, lock wanted, stored password fingerprint or "") — cheap
+    read-only peek so main() knows which privacy prompt to show (SPEC §3.19);
+    the fingerprint lets the mask prompt verify a password on the spot."""
     from openpyxl import load_workbook
     if hasattr(source, "seek"):
         source.seek(0)
     mask = lock = False
-    has_hash = False
+    stored_hash = ""
     wb = load_workbook(source, read_only=True)
     try:
         if "Settings" in wb.sheetnames:
@@ -1081,11 +1085,12 @@ def peek_privacy(source) -> tuple[bool, bool, bool]:
                     mask = val
                 elif label.startswith("Lock file"):
                     lock = val
-        has_hash = bool("NW_Privacy" in wb.defined_names
-                        and (wb.defined_names["NW_Privacy"].value or "").strip())
+        if "NW_Privacy" in wb.defined_names:
+            stored_hash = (wb.defined_names["NW_Privacy"].value
+                           or "").strip().strip('"')
     finally:
         wb.close()
-    return mask, lock, has_hash
+    return mask, lock, stored_hash
 
 
 def _prompt_set_password(for_lock: bool) -> str | None:
@@ -1134,24 +1139,42 @@ def _prompt_unlock(path: Path) -> str | None:
     return None
 
 
-def _prompt_mask_password() -> tuple[str | None, bool]:
-    """Mask-only prompt: (password, reset). Enter keeps the mask; a correct
-    password reveals the numbers this run; RESET turns the mask off."""
+def _prompt_mask_password(stored_hash: str) -> tuple[str | None, bool]:
+    """Mask-only prompt: (password, reset). One plain question first — Enter
+    (the common case) keeps the mask and asks nothing more. Only a "y" leads
+    to the password, which is checked on the spot (3 tries) so a typo is
+    never silent; RESET at the password prompt is the forgot-it escape."""
     import getpass
-    print("\n🔒 The numbers are masked (•••).")
+    print("\n🔒 Your numbers are masked (•••).")
     try:
-        pw = getpass.getpass("  Password to show them this run "
-                             "(Enter = keep masked, RESET = turn off): ")
+        ans = input("  See them this time? Type y — or just press Enter "
+                    "to leave them masked: ").strip().casefold()
     except (EOFError, OSError):
         return None, False
-    if pw.strip() == "RESET":
+    if ans != "y":
+        return None, False
+    for attempt in range(3):
         try:
-            sure = input("  Turn the privacy mask OFF and show all numbers? "
-                         "Type YES to confirm: ").strip()
+            pw = getpass.getpass("  Your password (forgot it? type RESET): ")
         except (EOFError, OSError):
             return None, False
-        return None, sure == "YES"
-    return (pw or None), False
+        if not pw:
+            return None, False
+        if pw.strip() == "RESET":
+            print("\n  RESET turns the mask off completely — anyone who "
+                  "opens the file will see every number.")
+            try:
+                sure = input("  Type YES to confirm, or press Enter to "
+                             "keep the mask: ").strip()
+            except (EOFError, OSError):
+                return None, False
+            return None, sure == "YES"
+        if crypto.verify_password(pw, stored_hash):
+            return pw, False
+        print("  That password doesn't match."
+              + (" Try again." if attempt < 2
+                 else " The numbers stay masked this time."))
+    return None, False
 
 
 def prompt_new_persons(existing: list[str]) -> list[str]:
@@ -1263,8 +1286,8 @@ def main(argv: list[str] | None = None) -> int:
                 except Exception:  # noqa: BLE001 — prompting must never break the run
                     pass
                 try:
-                    mask_on, lock_on, has_hash = peek_privacy(peek_src)
-                    if (mask_on or lock_on) and not has_hash:
+                    mask_on, lock_on, stored_hash = peek_privacy(peek_src)
+                    if (mask_on or lock_on) and not stored_hash:
                         password = _prompt_set_password(lock_on) or password
                     elif lock_on and not locked:
                         # turning the Lock on: confirm the password BEFORE
@@ -1274,11 +1297,13 @@ def main(argv: list[str] | None = None) -> int:
                             "\n🔒 Confirm your password to LOCK the file: ")
                         password = pw or password
                     elif locked and mask_on:
-                        ans = input("  Show the numbers in the file this "
-                                    "time? (y/N): ").strip().casefold()
+                        print("\n🔒 Your numbers are masked (•••).")
+                        ans = input("  See them this time? Type y — or just "
+                                    "press Enter to leave them masked: "
+                                    ).strip().casefold()
                         reveal = ans == "y"
                     elif mask_on:
-                        pw, reset = _prompt_mask_password()
+                        pw, reset = _prompt_mask_password(stored_hash)
                         if pw:
                             password, reveal = pw, True
                 except Exception:  # noqa: BLE001

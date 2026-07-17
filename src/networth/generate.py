@@ -130,10 +130,21 @@ def _typeahead(anchor_sheet: str, name_list: str, col: str = "C",
 
 # Excel silently drops a validation whose input message exceeds 255 chars —
 # keep this tip well under that.
-_DROPDOWN_TIP = ("FILTER IN 2 STEPS: type the first letters, press ENTER, "
-                 "then re-open the dropdown (arrow or Alt+Down) - only "
+_DROPDOWN_TIP = ("PICK IN 2 STEPS: type the first letters, press ENTER, "
+                 "then re-open the dropdown (click its arrow) - only "
                  "matching names remain. Excel does not suggest while "
                  "typing. Free text is allowed for names not in the list.")
+
+# shared plain-language glosses (keep + gloss: the term stays, the hover
+# comment explains it — same wording everywhere a term appears)
+_G_XIRR = ("XIRR = your return a year - it counts WHEN you invested, not just "
+           "how much. Written by the updater; run it after you change a "
+           "holding.")
+_G_ISIN = ("ISIN = the code that identifies it, on your statement. It fills "
+           "in when you pick from the dropdown - you rarely type it.")
+_G_NAV = "NAV = the price of one unit of the fund."
+_G_CURVAL = "Current value - what this is worth right now."
+_G_NETCHG = "Net change - your gain (green) or loss (red) since you bought."
 
 
 def _add_dropdown(ws, rng: str, source: str, title: str) -> None:
@@ -313,6 +324,7 @@ def _write_dashboard(wb, F, data: PortfolioData):
         "B3", f'={chr(ord("B") + len(enabled_classes(data)))}{M.DASH_TOTAL_ROW}',
         F["money_bold"])
     ws.write("A4", "Portfolio XIRR", F["label"])
+    ws.write_comment("A4", "The whole family together: " + _G_XIRR)
     if data.xirr.portfolio is not None:
         ws.write_number("B4", data.xirr.portfolio, F["u_pct_bold"])
     else:
@@ -320,6 +332,8 @@ def _write_dashboard(wb, F, data: PortfolioData):
     ws.write("D3", "Inflation % p.a.", F["label"])
     ws.write_number("E3", data.inflation_pct, F["in_yellow"])
     ws.write("D4", "Real return", F["label"])
+    ws.write_comment("D4", "'Real' = after taking inflation out: your return "
+                           "minus inflation.")
     ws.write_formula("E4", '=IF(B4="","",(1+B4)/(1+E3/100)-1)', F["u_pct"])
     ws.write_formula(
         "F4", '=IF(B4="","",IF(B4>E3/100,"Beats inflation ✓","Below inflation ✗"))')
@@ -375,8 +389,11 @@ def _write_dashboard(wb, F, data: PortfolioData):
     ws.write("A18", "Allocation by asset class", F["section"])
     ws.write_row("A19", ["Asset class", "Value", "XIRR", "Actual %",
                          "Target %", "Drift", "Rebalance hint"], F["header"])
+    ws.write_comment("C19", _G_XIRR)
     ws.write_comment("E19", "Set targets on the Settings tab (Target % column). "
                             "Blank = no target for that class.")
+    ws.write_comment("F19", "Drift = how far this class is from your Target % "
+                            "(in percentage points).")
     ws.write_comment("G19", "Indicative pre-tax amount to reach your target - "
                             "not lot-level selling advice.")
     alloc_last = 19 + n
@@ -500,6 +517,10 @@ def _write_projection(wb, F):
     ws.write_row("A3", ["Year", "Corpus @ portfolio XIRR",
                         "Corpus growing at inflation", "Real corpus (today's money)"],
                  F["header"])
+    ws.write_comment("B3", "Corpus = your total money. This column: growing "
+                           "at your portfolio XIRR.")
+    ws.write_comment("D3", "'Real' / 'today's money' = with inflation taken "
+                           "out, so every year stays comparable to today.")
     for n in range(M.PROJECTION_YEARS + 1):
         r = M.FIRST_DATA_ROW + n
         ws.write_formula(f"A{r}", f"=YEAR(TODAY())+{n}", F["c_text"])
@@ -585,6 +606,8 @@ def _write_person(wb, F, name: str, data: PortfolioData):
     ws.write_formula("B3", f"=B{total_row}", F["money_bold"])
 
     ws.write_row("A5", ["Asset class", "Value", "# holdings"], F["header"])
+    ws.write_comment("C5", "How many rows (holdings) of that class this "
+                           "person has.")
     for i, cls in enumerate(enabled):
         r = 6 + i
         ws.write(f"A{r}", cls.label)
@@ -614,6 +637,9 @@ def _write_person(wb, F, name: str, data: PortfolioData):
         last = first + cls.person_rows - 1
         ws.write(f"A{title_row}", title, F["section"])
         ws.write_row(f"A{title_row + 1}", headers, F["header"])
+        for ci, h in enumerate(headers):
+            if h == "XIRR":
+                ws.write_comment(f"{chr(ord('A') + ci)}{title_row + 1}", _G_XIRR)
         for r in range(first, last + 1):
             slot = r - first + 1
             for ci, (col, fmt) in enumerate(zip(cols, fmts)):
@@ -637,8 +663,8 @@ def _write_equity(wb, F, data: PortfolioData):
                  "H": 16, "I": 14, "J": 14, "K": 13, "L": 12, "M": 13, "N": 9,
                  "O": 11, "P": 15, "Q": 13, "R": 14, "S": 10, "T": 11})
     _sheet_head(ws, F, "EQUITY HOLDINGS",
-                "Yellow-ish/blue cells are inputs. Pick the Scrip from the dropdown — "
-                "ISIN fills itself. Prices refresh via the updater.")
+                "Type in the coloured cells. Pick the Scrip from the dropdown — "
+                "the ISIN fills itself. Prices refresh when you run the updater.")
     ws.write_row("A3", ["Owner", "ISIN", "Scrip", "Quantity", "Avg. cost",
                         "Closing Price", "Prev. close", "Closing Price Date",
                         "Cur. val", "Invested", "Net chg.", "Day chg.",
@@ -649,17 +675,26 @@ def _write_equity(wb, F, data: PortfolioData):
     ws.write("R3", "Flags", F["key"])
     ws.write("S3", "Adj factor", F["header"])
     ws.write("T3", "Cost factor", F["header"])
-    ws.write_comment("T3", "Demerger cost apportionment (written by the "
-                           "updater): Invested = Quantity x Avg. cost x this. "
-                           "Blank = 1. Your typed Avg. cost never changes; "
-                           "the spun-off share of the cost moves to the new "
-                           "company's row.")
+    ws.write_comment("T3", "Written by the updater after a demerger: the share "
+                           "of your cost that stays with this row. Invested = "
+                           "Quantity x Avg. cost x this. Blank = 1. Your typed "
+                           "Avg. cost never changes; the spun-off company's "
+                           "row carries the rest of the cost.")
+    ws.write_comment("B3", _G_ISIN)
+    ws.write_comment("G3", "The price at the previous market close - "
+                           "'Day chg.' measures against it.")
+    ws.write_comment("I3", _G_CURVAL)
+    ws.write_comment("K3", _G_NETCHG)
+    ws.write_comment("L3", "Day change - how much this holding moved today.")
+    ws.write_comment("N3", _G_XIRR)
     ws.write_comment("D3", "As bought. After a split/bonus, 'Qty today' shows the "
-                           "post-action share count - matching your demat.")
-    ws.write_comment("E3", "As bought (per share). Leave blank for pre-Feb-2018 "
-                           "purchases whose price you don't know - the updater "
-                           "fills the 31-Jan-2018 FMV (LTCG grandfathering value) "
-                           "and marks the cell amber.")
+                           "post-action share count - matching your demat "
+                           "(your broker's app).")
+    ws.write_comment("E3", "As bought (per share). Bought before Feb 2018 and "
+                           "don't know the price? Leave it blank - the updater "
+                           "fills the government's official 31-Jan-2018 value "
+                           "(the tax rule for old purchases) and marks the "
+                           "cell amber.")
     ws.write_comment("O3", "Your holding after splits/bonuses (Quantity x Adj "
                            "factor) - should match your demat. Updates "
                            "automatically from the Corporate_Actions sheet.")
@@ -688,10 +723,10 @@ def _write_equity(wb, F, data: PortfolioData):
             if row.avg_cost is not None:
                 if row.fmv_used:
                     ws.write_number(f"E{r}", row.avg_cost, F["amber_price"])
-                    ws.write_comment(f"E{r}", "Cost unknown - using the 31-01-2018 "
-                                              "FMV (LTCG grandfathering value). "
-                                              "Overtype with the real cost if you "
-                                              "find it.")
+                    ws.write_comment(f"E{r}", "Cost unknown - using the government's "
+                                              "official 31-Jan-2018 value (the tax "
+                                              "rule for old purchases). Overtype "
+                                              "with the real cost if you find it.")
                 else:
                     ws.write_number(f"E{r}", row.avg_cost, F["in_price"])
             # both markers can coexist (an FMV-costed holding later merges) —
@@ -786,9 +821,12 @@ def _write_mutualfunds(wb, F, data: PortfolioData):
                         "Avg cost NAV", "Current NAV", "Invested", "Cur. val",
                         "Net chg.", "Return %", "XIRR"], F["header"])
     ws.write("N3", "Key", F["header"])
-    ws.write_comment("L3", "XIRR (annualised, cashflow-dated return) is computed and "
-                           "written by the updater each time you run it. Run it after "
-                           "adding or changing purchases.")
+    ws.write_comment("D3", _G_ISIN)
+    ws.write_comment("F3", "The average price you paid for one unit. " + _G_NAV)
+    ws.write_comment("G3", "Today's NAV, fetched on every update. " + _G_NAV)
+    ws.write_comment("I3", _G_CURVAL)
+    ws.write_comment("J3", _G_NETCHG)
+    ws.write_comment("L3", _G_XIRR)
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.mutual_funds)}
     for r in range(M.FIRST_DATA_ROW, M.MF_LAST_ROW + 1):
@@ -851,13 +889,15 @@ def _write_mf_sip(wb, F, data: PortfolioData):
                 "One row per purchase — SIP instalment or lump sum. "
                 "Redemption = negative Amount.")
     ws.write("J1", "Portfolio MF XIRR", F["label"])
-    ws.write_comment("J1", "Written by the updater (plain value). Run it after any change.")
+    ws.write_comment("J1", "All your funds together: " + _G_XIRR)
     if data.xirr.mutual_funds is not None:
         ws.write_number("J2", data.xirr.mutual_funds, F["u_pct_bold"])
     else:
         ws.write_blank("J2", None, F["u_pct_bold"])
     ws.write_row("A3", ["Owner", "Fund House", "Scheme Name", "ISIN", "Date",
                         "Amount", "NAV on date", "Units"], F["header"])
+    ws.write_comment("D3", _G_ISIN)
+    ws.write_comment("G3", _G_NAV + " Yours is on the purchase statement.")
     ws.write_comment("H3", "Units = Amount / NAV on date (auto). If you know units but "
                            "not the NAV, you may overtype Units with the number from "
                            "your statement.")
@@ -932,6 +972,13 @@ def _write_fd(wb, F, data: PortfolioData):
                         "Rate % p.a.", "Start Date", "Maturity Date", "Comp./yr",
                         "Value as on today", "Maturity Value"], F["header"])
     ws.write("L3", "Key", F["header"])
+    ws.write_comment("D3", "The amount you deposited.")
+    ws.write_comment("E3", "The interest rate a year (p.a. = per annum), "
+                           "from your FD receipt.")
+    ws.write_comment("H3", "How many times a year interest is added: "
+                           "4 = quarterly (most banks), 1 = yearly. "
+                           "It's on your FD receipt.")
+    ws.write_comment("J3", "What the bank will pay you on the maturity date.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.fixed_deposits)}
     for r in range(M.FIRST_DATA_ROW, M.FD_LAST_ROW + 1):
@@ -1003,13 +1050,18 @@ def _write_ppf(wb, F, data: PortfolioData):
     ws.write("L3", "Key", F["header"])
     ws.write_comment("D3", "Only used when this account has NO rows on PPF_Ledger. "
                            "With a ledger, Balance today is computed from the deposits.")
-    ws.write_comment("F3", "Auto-filled with the current PPF rate by the updater if "
-                           "left blank; overtype to pin a specific rate.")
-    ws.write_comment("H3", "With a PPF_Ledger: deposits + interest to date (official "
-                           "monthly-minimum-balance rule). Without: your Current "
-                           "Balance. This is what the Dashboard totals.")
+    ws.write_comment("E3", "The date your typed balance was true - from your "
+                           "passbook or statement.")
+    ws.write_comment("F3", "(ref) = for reference. Auto-filled with the current PPF "
+                           "rate by the updater if left blank; overtype to pin a "
+                           "specific rate.")
+    ws.write_comment("H3", "With a PPF_Ledger: deposits + interest to date, "
+                           "computed by the official PPF interest rule. Without: "
+                           "your Current Balance. This is what the Dashboard "
+                           "totals.")
     ws.write_comment("I3", "Total interest earned to date (ledger accounts only), "
                            "written by the updater.")
+    ws.write_comment("J3", _G_XIRR)
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.ppf)}
     for r in range(M.FIRST_DATA_ROW, M.PPF_LAST_ROW + 1):
@@ -1050,9 +1102,9 @@ def _write_ppf_ledger(wb, F, data: PortfolioData):
     _widths(ws, {"A": 12, "B": 18, "C": 13, "D": 14})
     _sheet_head(ws, F, "PPF DEPOSIT LEDGER (optional)",
                 "One row per PPF deposit. Match Owner + Account No. to a row on the "
-                "PPF sheet. Fill this in and the updater computes exact balance, "
-                "interest and XIRR (monthly-minimum-balance rule). Leave empty to "
-                "keep using the Current Balance you typed on the PPF sheet.")
+                "PPF sheet. Fill this in and the updater computes the exact balance, "
+                "interest and XIRR by the official PPF interest rule. Leave empty "
+                "to keep using the Current Balance you typed on the PPF sheet.")
     ws.write_row("A3", ["Owner", "Account No.", "Date", "Amount"], F["header"])
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.ppf_ledger)}
     for r in range(M.FIRST_DATA_ROW, M.PPF_LEDGER_LAST_ROW + 1):
@@ -1083,11 +1135,18 @@ def _write_bonds(wb, F, data: PortfolioData):
     ws.write("N3", "Key", F["header"])
     ws.write("O3", "Maturity Value", F["header"])
     ws.write("P3", "Coupons till maturity", F["header"])
-    ws.write_comment("O3", "Redemption at face value (Qty x Face). For cumulative/"
-                           "zero-coupon bonds set Face Value to the redemption amount "
-                           "and Coupon to 0.")
-    ws.write_comment("P3", "Simple sum of remaining annual coupons to maturity "
-                           "(not reinvested).")
+    ws.write_comment("C3", _G_ISIN)
+    ws.write_comment("E3", "What each bond pays back at maturity - its printed "
+                           "value, from your statement.")
+    ws.write_comment("H3", "Coupon = the bond's interest rate a year, paid on "
+                           "the Face Value.")
+    ws.write_comment("K3", _G_CURVAL)
+    ws.write_comment("L3", _G_NETCHG)
+    ws.write_comment("O3", "What you get back at maturity (Qty x Face Value). "
+                           "For bonds that pay everything at the end, set Face "
+                           "Value to that final amount and Coupon to 0.")
+    ws.write_comment("P3", "The interest still to come: a simple sum of the "
+                           "remaining yearly coupons until maturity.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.bonds)}
     for r in range(M.FIRST_DATA_ROW, M.BOND_LAST_ROW + 1):
@@ -1150,10 +1209,14 @@ def _write_gold_silver(wb, F, data: PortfolioData):
     ws.write("H2", "Rates as on", F["label"])
     if data.bullion_rate_asof:
         ws.write_datetime("I2", data.bullion_rate_asof, F["date_disp"])
-    ws.write_comment("I3", "Filled by the updater: SGBs get their exchange "
-                           "close; gold/silver get the daily benchmark ₹/gram "
-                           "(IBJA; market-implied fallback). Amber when the "
-                           "rate is over a week old.")
+    ws.write_comment("B3", "Gold / Silver / SGB. SGB = Sovereign Gold Bond - "
+                           "a government bond that prices like a share "
+                           "(fill its ISIN too).")
+    ws.write_comment("D3", _G_ISIN)
+    ws.write_comment("I3", "Filled by the updater: SGBs get their market "
+                           "price; gold and silver get the official daily "
+                           "rate per gram. Amber when the rate is over a "
+                           "week old.")
     ws.write_comment("J3", "Your own ₹/gram (e.g. the jeweller's board rate). "
                            "When set, it always wins over the auto rate.")
     ws.write_comment("C3", 'What is it? E.g. "Gold coins, 2 x 10 g (24K)", '
@@ -1230,9 +1293,14 @@ def _write_nps(wb, F, data: PortfolioData):
                         "Current NAV", "Cur. val", "Total contributed",
                         "First contribution", "XIRR"], F["header"])
     ws.write("K3", "Key", F["key"])
-    ws.write_comment("J3", "Approximate: one flow in (Total contributed at "
-                           "First contribution) vs today's value. A dated "
-                           "contribution ledger is on the roadmap.")
+    ws.write_comment("B3", "Your NPS account number - it's at the top of "
+                           "your NPS/CRA statement.")
+    ws.write_comment("D3", "Fills in by itself when you pick the Scheme.")
+    ws.write_comment("F3", "Today's NAV from NPS Trust. " + _G_NAV)
+    ws.write_comment("G3", _G_CURVAL)
+    ws.write_comment("J3", _G_XIRR + " Approximate here: it assumes everything "
+                           "went in at the First contribution date; a dated "
+                           "ledger is on the roadmap.")
     by_row = {M.FIRST_DATA_ROW + i: n for i, n in enumerate(data.nps)}
     for r in range(M.FIRST_DATA_ROW, M.NPS_LAST_ROW + 1):
         n = by_row.get(r)
@@ -1283,8 +1351,13 @@ def _write_epf(wb, F, data: PortfolioData):
                         "Current Balance", "Balance as-on", "Rate %", "Notes",
                         "Balance today"], F["header"])
     ws.write("J3", "Key", F["key"])
+    ws.write_comment("B3", "Your employer's name and your UAN - the "
+                           "12-digit number on your EPFO passbook.")
+    ws.write_comment("C3", "From your EPFO passbook.")
     ws.write_comment("D3", "The closing balance shown on your EPFO passbook "
                            "(employee + employer share).")
+    ws.write_comment("E3", "The date that balance was true - the passbook "
+                           "says.")
     ws.write_comment("F3", "The EPFO annual rate. Left blank, the updater "
                            "fills the current declared rate.")
     ws.write_comment("H3", "Passbook balance grown at Rate % from the as-on "
@@ -1343,7 +1416,8 @@ def _write_manual_assets(wb, F, data: PortfolioData):
                            "account balance, or the insurer's surrender "
                            "value. This is the number the Dashboard uses.")
     ws.write_comment("H3", "When you last checked the value. Amber after 90 "
-                           "days - hand-typed values rot silently.")
+                           "days - hand-typed values go stale silently.")
+    ws.write_comment("I3", _G_NETCHG)
     by_row = {M.FIRST_DATA_ROW + i: a for i, a in enumerate(data.manual_assets)}
     for r in range(M.FIRST_DATA_ROW, M.MA_LAST_ROW + 1):
         a = by_row.get(r)
@@ -1398,6 +1472,8 @@ def _write_by_scrip(wb, F, data: PortfolioData):
     curval_col = chr(ord("D") + len(data.persons))
     ws.write_row("A3", ["ISIN", "Scrip", "Total Qty"] + list(data.persons) + ["Cur. val"],
                  F["header"])
+    ws.write_comment("A3", _G_ISIN)
+    ws.write_comment(f"{curval_col}3", _G_CURVAL)
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.by_scrip)}
     for r in range(M.FIRST_DATA_ROW, M.BYSCRIP_LAST_ROW + 1):
@@ -1514,6 +1590,10 @@ def _write_dividends(wb, F, data: PortfolioData):
     ws.write_row("A3", ["FY", "Owner", "Scrip", "ISIN", "Type", "Ex-Date",
                         "Rate ₹/share", "Qty @ ex-date (est.)", "Est. amount",
                         "Source", "Details"], F["header"])
+    ws.write_comment("A3", "FY = financial year (April to March).")
+    ws.write_comment("D3", _G_ISIN)
+    ws.write_comment("F3", "The ex-date decides who gets the dividend: own "
+                           "the share before this date and it's yours.")
     ws.write_comment("H3", "Estimated shares held on the ex-date: your rows "
                            "bought before that date, adjusted for splits/bonuses. "
                            "If you sold in between: change the row's Source to "
@@ -1616,6 +1696,7 @@ def _write_guide(wb, F):
     ws.set_column("A:A", 2)                    # left margin
     ws.set_column("B:B", 4)                    # icon / badge / swatch
     ws.set_column("C:C", 96)                   # content
+    ws.freeze_panes(2, 0)                      # keep the title banner in view
 
     def fmt(**kw):
         return wb.add_format(kw)

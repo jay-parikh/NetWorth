@@ -185,6 +185,24 @@ threat model and leak-vector audit.
 Docs in-commit: SPEC §3.14 rows 20–22 + new §3.19 + §7; Guide privacy
 section; README; packaged README.txt. Suite: 181 tests.
 
+## v1.5.1 — "Everything explains itself" (2026-07-18)
+
+UX pass driven by Jay's design review: the workbook must be self-explanatory
+without renaming a single term. Policy is **keep + gloss** (SPEC §3 preamble):
+domain terms — compute, NAV, ISIN, XIRR, corpus, PRAN, UAN, SGB, coupon,
+ex-date — are correct and stay verbatim everywhere; hover comments lead with
+the term and explain it in plain words.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Guide redesign | 7 tighter sections (~69 rows, was 83), frozen title banner, "Words you'll see" glossary; every instruction of the old Guide retained (52-atom sweep) | glossary + reference-lists + gold how-to + "Your choice wins" probes pass; freeze at A3 |
+| Header glosses | Shared gloss strings (`_G_XIRR`, `_G_ISIN`, `_G_NAV`, `_G_CURVAL`, `_G_NETCHG`) + per-sheet comments on PRAN, UAN, SGB, FY, Ex-Date, Comp./yr, Coupon, Face Value, Drift, Real return, Corpus, # holdings — same term, same explanation, every sheet | test_v151_gloss: headers verbatim, comments lead with the term |
+| Obscure text rewritten | "IBJA; market-implied fallback", "LTCG grandfathering", "monthly-minimum-balance rule", "Alt+Down", "Yellow-ish" banner — all replaced by plain words (terms like XIRR/ISIN kept) | banished-phrase sweep in test_v151_gloss |
+| Privacy prompts simplified | Mask prompt is staged (one plain question; password only on "y", verified on the spot with 3 tries; RESET confirm separated); wrong password is never silent | test_mask_prompt_staged_flow + test_wrong_password_is_never_silent |
+
+Docs in-commit: SPEC §3 keep+gloss preamble + §3.11 Guide + §7 prompt flow;
+README (badge 185, R0→v1.5); release notes v1.5.1. Suite: 185 tests.
+
 ## Release artifact layout (from R4)
 
 ```
