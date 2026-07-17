@@ -1,0 +1,26 @@
+# Publishes docs/release-notes/<tag>.md onto the matching GitHub Releases.
+# Runs by itself whenever the notes (or this file) change on master, or by
+# hand from the Actions tab. Uses the workflow's own token — no secrets to set.
+name: publish-notes
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/release-notes/**"
+      - ".github/workflows/publish-notes.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # editing a release's title/notes needs this
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python scripts/publish_release_notes.py --repo "$GITHUB_REPOSITORY"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
