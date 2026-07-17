@@ -274,7 +274,7 @@ Header row 3, data rows 4…140. Columns:
 | v1: O | Qty today | computed | `=IF($D4="","",$D4*IF($S4="",1,$S4))` — post-split/bonus share count, the **demat view**; feeds By Scrip and the person sheets |
 | v1: P | Avg cost today | computed | `=IF(OR($D4="",$E4=""),"",$E4/IF($S4="",1,$S4))` — cost per share in today's share terms |
 | Q | Key | computed helper | `=IF($A4="","",$A4&"#"&COUNTIF($A$4:$A4,$A4))` stable per-owner sequence id |
-| v1: R | Flags | updater helper | `FMV` (§6.6 fallback), `MERGED→<name>` / `ISIN→<isin>` (row priced via a successor, §6.15), `DEMERGER:<old_isin>@<ex_date>` (an appended child row) — flags round-trip regeneration |
+| v1: R | Flags | updater helper | `FMV` (§6.6 fallback), `MERGED→<name>` / `ISIN→<isin>` (row priced via a successor, §6.15), `DEMERGER:<old_isin>@<ex_date>` (an appended child row) — flags round-trip regeneration. When a row carries both a restructure flag and `FMV` they are joined with `" | "`; neither may evict the other (the reader splits on the separator) |
 | v1: S | Adj factor | **updater-written** | split/bonus **and merger-ratio** multiplier since Cost date (§6.7/§6.15, chain-aware); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price` |
 | v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
 
@@ -446,8 +446,15 @@ header r3, data r4..203.
 in the **current FY** are rebuilt from the feed + current holdings; all other
 rows persist unchanged (prior-FY Auto rows therefore freeze on the first run
 after Apr 1 — multi-year record for free). Manual rows always persist and
-suppress an Auto row with the same `(isin, type, ex_date)` key. Re-runs are
-idempotent. If the feed is unreachable, the sheet is left as-is.
+suppress an Auto row with the same `(isin, ex_date)` key — the Type is
+deliberately NOT part of the key, because the exchanges word the same event
+differently (§5.4 dedupe rule). Current-FY Auto rows of an ISIN the feed
+could NOT verify this run are **kept, not rebuilt** — a one-symbol outage
+must never delete income already on the sheet. Re-runs are idempotent. If
+the feed is unreachable entirely, the sheet is left as-is. **Capacity:** the
+sheet holds 200 data rows; if an assembly exceeds it, the OLDEST prior-FY
+Auto rows give way (Manual and current-FY rows never do) and the run warns
+with the dropped count.
 
 **By-month chart.** Columns M/N rows 4..15 hold the current FY's months
 (Apr..Mar) and `SUMPRODUCT(rate × qty × month × FY)` sums; a column chart
@@ -565,7 +572,7 @@ are off. Title r1, hint r2, header r3, data r4..63, TOTAL r65.
 | Col | Header | Kind | Definition |
 |---|---|---|---|
 | A | Owner | input | |
-| B | Class | input | dropdown (non-blocking): Real Estate / Cash / Insurance / Other |
+| B | Class | input | dropdown (non-blocking): Real Estate / Cash / Insurance / Other. Matching is **case-insensitive** — Excel's SUMIFS already is, and the reader canonicalises a typed variant ("real estate") to the dropdown label so both sides agree. A value matching NO label counts in no class (only the sheet TOTAL sees it); the updater warns naming the row |
 | C | Description | input | "2BHK Baner", "HDFC savings", "LIC Jeevan…" |
 | D | Institution / Ref | input | bank, insurer, registrar |
 | E | Invested / Cost | input (optional) | RE: purchase cost; Insurance: premiums paid; enables Net chg. + XIRR |
@@ -588,12 +595,15 @@ Priya, Rahul) using **real ISINs** so the first updater run works end-to-end.
 MF samples must be real AMFI (Scheme Name, Fund House, ISIN) triples; equity
 samples real BSE scrips. **v1.4: EVERY asset class carries sample rows**
 (incl. a real SGB ISIN, gold jewellery with purity, an NPS scheme from the
-seeded master, an EPF passbook line, real estate / cash / insurance rows)
-and every class ships enabled, with targets on a few classes (summing to
-100) so the drift view demonstrates itself. Sample rows are ordinary input
-rows — **the onboarding step is deleting what you don't own**: a class whose
-rows are gone (its Settings toggle No) hides its sheets on the next run,
-and the workbook slims itself to the user's real life.
+seeded master, an EPF passbook line, real estate / cash / insurance / other
+rows), with targets on a few classes (summing to 100) so the drift view
+demonstrates itself. The classic five ship with Settings **Yes**; every
+newer class ships **No** — visible anyway while its sample rows exist
+(effective-enabled, §3.14), so the shipped file still demonstrates
+everything. Sample rows are ordinary input rows — **the onboarding step is
+deleting what you don't own**: because the toggle is already No, a class
+whose rows are gone hides its sheets on the very next run with no Settings
+edit needed, and the workbook slims itself to the user's real life.
 
 ---
 
@@ -656,7 +666,10 @@ gracefully, keeping old prices).
 `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_<yyyymmdd>_F_0000.csv.zip`
 — zip containing one CSV, same common format, parsed and merged per §5.2.
 NSE requires a browser-like `User-Agent` and a cookie warm-up GET on
-`https://www.nseindia.com/` first.
+`https://www.nseindia.com/` first. A 200 response whose body is NOT a valid
+zip (NSE serves bot-challenge HTML pages with status 200) is treated exactly
+like NSE-unavailable: the day proceeds single-source on BSE — it must never
+abort the fetch or discard already-parsed BSE data.
 
 ### 5.4 Corporate actions (v1, R7; dual-source since v1.0.0-rc)
 
@@ -678,14 +691,20 @@ A:B" → BONUS; "split"/"sub-division"/"Stock Split" with "From <face> To
 <face>" → SPLIT; "consolidation" → CONSOLIDATION. **Dividends (v1.2, R9):**
 a subject containing "dividend" with a rupee amount ("Rs 8 Per Share",
 "Rs. - 5.5000", "Re. 1/-", "₹2.50") yields a dividend record — type from
-`interim|final|special` (default Final), rate in ₹/share; percent-of-face
-wordings ("Dividend 250%") are skipped and **counted only when the ex-date
-falls in the current FY** — the feeds carry decades of history, and warning
-about a 2004 record is noise — and the updater reports the count so the user
-can add a Manual row. Dividend records dedupe
-on `(isin, type, ex_date)`, NSE wins — same rule as actions. Everything else
-(rights, AGMs, buybacks) is ignored. The normative contract is the record,
-not the URLs:
+`interim|final|special` (default Final), rate in ₹/share. Two guards keep
+garbage out of the rate: the currency token must not sit inside a word (the
+"re" ending "…Per Sha**re** 2024" is not `Re.`), and any "face value of
+Rs.N" phrase is masked BEFORE the rate search, so "Dividend - 300% on face
+value of Rs.2/- each" parses no rate at all. Percent-of-face wordings
+("Dividend 250%") are skipped and **counted only when the ex-date falls in
+the current FY** — the feeds carry decades of history, and warning about a
+2004 record is noise — and the updater reports the count so the user can
+add a Manual row. Dividend records dedupe on `(isin, ex_date, rate)`, NSE
+wins — deliberately NOT on the type: the exchanges word the same event
+differently ("Dividend" → Final on NSE vs "Interim Dividend" on BSE) and a
+type-keyed dedupe would double-count it; two genuinely distinct same-day
+payouts differ in rate and both survive. Everything else (rights, AGMs,
+buybacks) is ignored. The normative contract is the record, not the URLs:
 
 ```
 { symbol, isin, ex_date, type ∈ {SPLIT, BONUS, CONSOLIDATION},
@@ -700,14 +719,21 @@ BONUS ratio A:B = A new shares per B held (factor 1 + A/B).
 wins. Manual rows on the Corporate_Actions sheet take precedence over an
 Auto row with the same key.
 
-**Coverage rule (never skip silently):** the fetch reports which ISINs were
-successfully answered by at least one exchange. Any held ISIN answered by
-neither MUST surface as a user-visible warning naming the scrip ("corporate
-actions could NOT be verified for: …"), so an unverifiable holding is a known
-condition, not a silent gap. One security failing must not abort the sweep;
-only an all-security/all-source failure degrades (keep existing rows).
-Mergers/demergers/ISIN reassignments remain out of scope for auto-adjustment
-(no reliable free feed) — the Manual-row path covers them.
+**Coverage rule (never skip silently, never revert):** the fetch reports
+which ISINs were successfully answered by at least one exchange. Any held
+ISIN answered by neither MUST surface as a user-visible warning naming the
+scrip ("corporate actions could NOT be verified for: …"), so an unverifiable
+holding is a known condition, not a silent gap. One security failing must
+not abort the sweep, and — critically — must not REVERT that security: the
+Auto action rows (and current-FY Auto dividend rows, §3.13) of an unverified
+ISIN survive the rebuild untouched, so an already-applied split's quantities
+never snap back because one endpoint blocked one symbol on one day. Only an
+all-security/all-source failure degrades wholesale (keep every existing
+row). Since v1.4 (§6.15), merged holdings' SUCCESSOR symbols are queried
+too — the successor's dividends and later actions concern the old-ISIN
+rows. Mergers/demergers/ISIN reassignments remain out of scope for
+auto-adjustment from these feeds (no reliable free feed publishes ratios) —
+the Curated + Manual paths cover them.
 
 ### 5.5 Bundled static data (in `data/`, refreshed only by releases)
 
@@ -808,7 +834,7 @@ Per asset class (skip rows with missing required inputs):
 
 | Class | Outflows | Inflows |
 |---|---|---|
-| Equity | −Invested @ Cost date | +Cur. val @ today |
+| Equity | −Invested @ Cost date (× the §6.15 cost factor when set — **0 is a real value**, meaning the parent retained no cost; only blank means 1) | +Cur. val @ today |
 | Mutual Funds | one per MF_SIP row: −Amount @ Date (redemptions are +) | +Cur. val @ today per (owner, ISIN) |
 | Fixed Deposits | −Principal @ Start | +Value-as-on @ min(today, maturity) |
 | PPF | −(Balance discounted at Rate% back to as-on date)… in practice: −Balance @ as-on | +Balance·(1+Rate%)^(days/365) @ today |
@@ -920,9 +946,14 @@ quantities and the person-sheet Equity blocks read O/P (not raw D/E).
 
 The **Corporate_Actions sheet** is the audit trail: columns
 `Symbol, ISIN, Type (dropdown), Ex-Date, Ratio From, Ratio To, Factor
-(=IF(type="BONUS",1+E/F,E/F), computed), Source, Details`. Auto rows are
-rewritten from the feed each run; Manual rows are user inputs and persist
-(they also override an Auto row with the same isin/type/ex-date).
+(=IF(type="BONUS",1+E/F,E/F), computed), Source, Details` (+ the §6.15
+restructure columns), data rows 4..203. Auto rows are rewritten from the
+feed each run; Manual rows are user inputs and persist (they also override
+an Auto row with the same isin/type/ex-date). **Row order & capacity:**
+Manual and Curated rows are written FIRST — they carry user data and the
+§6.15 Applied stamps and must never fall past the last row. If the assembly
+still exceeds capacity, the OLDEST Auto rows (by ex-date) are dropped and
+the run warns with the count — never a silent truncation.
 
 ### 6.8 Expected value at FY-end (v1)
 
@@ -1004,14 +1035,17 @@ generator writes them back, so they survive regeneration.
 ```
 qty_est(owner, isin, ex) =
   Σ over Equity rows r where
-        resolved_isin(r) == isin AND r.owner == owner
+        (r.isin == isin OR resolve(r.isin) as of ex−1 == isin)   # §6.15
+        AND r.owner == owner
         AND (r.cost_date is blank OR r.cost_date < ex):
-    r.qty × adjustment_factor(isin, r.cost_date, ex − 1 day, actions)
+    r.qty × chained_adjustment_factor(r.isin, r.cost_date, ex − 1 day, actions)
 ```
 
 The CA factor is evaluated **as of the day before the ex-date**, so a
 split/bonus between purchase and dividend ex-date adjusts the count, while
-later actions do not. Blank cost-date lots count as held (consistent with the
+later actions do not. The chain-aware form (§6.15) makes a lot still keyed
+to a merged-away ISIN earn the SUCCESSOR's dividends at the merger-adjusted
+share count. Blank cost-date lots count as held (consistent with the
 FMV-era treatment, §6.6). **Known, documented limitation:** there is no sell
 ledger, so the estimate projects the *current* rows backwards — rows deleted
 or reduced after a sale make history wrong. Hence the amber "(est.)"
@@ -1057,8 +1091,14 @@ typing their jeweller's rate sees the value change instantly.
 ### 6.15 Restructure engine — mergers / demergers / ISIN changes (v1.4, R14)
 
 Events come from §5.8 (Curated) and Manual rows; a Manual row overrides a
-Curated one with the same `(old_isin, type, ex_date)` key. The engine runs
-**before pricing** and NEVER edits a user cell.
+Curated one with the same `(old_isin, type, ex_date, new_isin)` key —
+`new_isin` is part of the key because a demerger's retention row and child
+rows share the first three fields and must track their Applied dates
+independently. Curated events are surfaced when their old ISIN is held
+**directly or via a restructure chain** (a demerger announced on a
+merger-successor concerns the old-ISIN lots too). Routing/pricing runs
+**before pricing**; demerger child creation runs **after the §5.4
+corporate-actions refresh** (see below). The engine NEVER edits a user cell.
 
 **MERGER / ISIN_CHANGE — no new rows.**
 
@@ -1085,17 +1125,34 @@ their own `new_isin`, ratio and `cost_pct`):
      T = Π retention cost_pct/100 over such events (chain-aware)
    Invested = Quantity × Avg. cost × T          (the user's cells stay put)
 2. Append-once child rows (per owner-lot × child), on the FIRST run where
-   ex ≤ today and the event's Applied is blank:
-     qty       = lot qty × adjustment_factor(old, cost_date, ex−1) × A/B
-     avg cost  = lot raw invested × child cost_pct/100 ÷ qty   (per share)
+   ex ≤ today and the event's Applied is blank. Runs AFTER the §5.4
+   corporate-actions refresh — a fresh workbook's sheet holds no history
+   yet, and a child qty frozen from an incomplete table would be wrong
+   forever. Matching is chain-aware: a lot demerges when its own ISIN OR
+   resolve(its ISIN) as of ex−1 equals the event's old ISIN.
+     qty       = lot qty × chained_adjustment_factor(lot_isin, cost_date,
+                 ex−1) × A/B            (merger ratios fold into the count)
+     avg cost  = lot raw invested × Π(retention cost_pct/100 of every
+                 EARLIER demerger on the chain, i.e. cost_adjustment_factor
+                 as of ex−1) × child cost_pct/100 ÷ qty     (per share) —
+                 a second demerger apportions what REMAINED, not the
+                 original cost, or totals inflate past 100%
      cost date = the PARENT lot's cost date        (Indian CGT: demerged
                  shares inherit the holding period)
      flag      = "DEMERGER:<old_isin>@<ex_date>"
    The event's Applied date (persisted on its Corporate_Actions row) is the
    single idempotency token: re-runs skip applied events, so a user deleting
    a child row (e.g. after selling it) is respected.
+safety gates — an event that cannot apply SAFELY is skipped, warned about,
+and NOT stamped, so it retries on a later run:
+   · verification: on a live run, the parent ISIN must be among the ISINs
+     the §5.4 fetch successfully checked (injected/test data is trusted);
+   · capacity: all of an event's child rows must fit within the Equity
+     sheet's data rows — children land atomically per event (a partial
+     append that retried would duplicate its early rows).
 invariant: parent Invested×T + Σ child Invested = original Invested
-           (to the rupee; conservation is a test)
+           (to the rupee; conservation is a test), and this holds through
+           CHAINED events (merger→demerger, demerger→demerger)
 ```
 
 The successor's `(symbol, name, isin)` joins Stock_Master immediately
@@ -1122,8 +1179,12 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    case-insensitively; capped at the Dashboard's 10 people. v1.4: then offer
    to SHOW/HIDE asset classes — a numbered list of the registry classes with
    their current state; chosen numbers flip the Settings Yes/No (§3.14), the
-   easy alternative to editing the sheet. Prompting must never hang or break
-   a run — any error is swallowed.
+   easy alternative to editing the sheet. Toggling OFF a class that still
+   holds rows warns (in the summary too) that it stays visible until its
+   rows go; steady-state No-with-data stays quiet — it is the shipped
+   delete-to-hide state (§4), and the Settings Status column already
+   explains it. Prompting must never hang or break a run — any error is
+   swallowed.
 3. refuse politely if the file is locked/open (detect via exclusive-open probe)
 4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
 5. READ  — all input columns of all data sheets (hidden ones too) + persons
@@ -1132,13 +1193,16 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            names within rows 1–5, and dynamic Dashboard/History columns by
            header label, so user row edits/sorts never break it)
 6. FETCH — AMFI, bhavcopy (BSE+NSE same-day union merge, §5.2), corporate
-           actions + dividends (NSE+BSE, §5.4); per-source failure ⇒ keep
-           previous values, note in summary
-7. COMPUTE — masters merge (§6.4), prices/NAVs by ISIN, status flags (§6.5),
-           FMV fallbacks (§6.6), corp-action factors (§6.7), dividend rows
-           (§6.12: rebuild current-FY Auto, freeze the rest), PPF ledger
-           accrual (§6.10), XIRR (§6.1–6.3), FY-end estimates (§6.8),
-           net-worth snapshot (§6.11)
+           actions + dividends (NSE+BSE, §5.4; merged holdings' successor
+           symbols included); per-source failure ⇒ keep previous values,
+           note in summary
+7. COMPUTE — restructure routing before pricing and demerger children after
+           the CA refresh (§6.15), masters merge (§6.4), prices/NAVs by
+           ISIN, status flags (§6.5), FMV fallbacks (§6.6), corp-action
+           factors (§6.7), dividend rows (§6.12: rebuild current-FY Auto,
+           freeze the rest, keep unverified), PPF ledger accrual (§6.10),
+           XIRR (§6.1–6.3), FY-end estimates (§6.8), net-worth snapshot
+           (§6.11)
 8. REGENERATE — build the complete workbook (xlsxwriter): structure from this
            spec + user inputs + computed/updater values; sheets of
            non-effective classes hidden (§2.1); atomic replace
@@ -1169,6 +1233,11 @@ validations, charts, formats).
   Windows `Update Portfolio.exe`; macOS `networth-updater` binary + a
   `Update Portfolio.command` wrapper (`cd "$(dirname "$0")" && ./networth-updater; read -p "Done."`).
   First-run notes: Windows SmartScreen “Run anyway”; macOS right-click→Open.
+  The PyInstaller spec MUST bundle every `data/*.csv` the updater reads at
+  runtime (§5.5 — rates, FMV, bullion proxies, curated restructures): the
+  loaders degrade silently on a missing file, so an unbundled CSV disables
+  its feature only in the frozen build, invisible to dev-environment tests
+  (a test asserts the spec's datas list for exactly this reason).
 - Release zip layout: see [RELEASES.md](RELEASES.md).
 - The workbook itself must open correctly in desktop Excel (Windows & Mac)
   and LibreOffice ≥ 7.x (charts, dropdowns, conditional formats).

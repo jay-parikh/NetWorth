@@ -1,7 +1,8 @@
 # PyInstaller spec — one-file console updater for Windows and macOS.
 # Build from the repo root:  pyinstaller packaging/networth-update.spec
-# The updater reads masters from the workbook itself, so no data files
-# need to be bundled; certifi/truststore are picked up by the hooks.
+# Masters come from the workbook itself, but every data/*.csv the updater
+# loads at runtime (rates, FMV, curated restructures, bullion proxies) must
+# be bundled here; certifi/truststore are picked up by the hooks.
 
 import sys
 
@@ -11,7 +12,10 @@ a = Analysis(
     binaries=[],
     datas=[("../data/banks_in.csv", "data"),
            ("../data/fmv_2018-01-31.csv", "data"),
-           ("../data/ppf_rates.csv", "data")],
+           ("../data/ppf_rates.csv", "data"),
+           ("../data/epf_rates.csv", "data"),
+           ("../data/bullion_proxies.csv", "data"),
+           ("../data/restructures.csv", "data")],
     hiddenimports=["truststore"],
     hookspath=[],
     runtime_hooks=[],

@@ -60,9 +60,16 @@ def parse_subject(subject: str) -> tuple[str, float, float] | None:
 _DIV_HINT = re.compile(r"dividend", re.I)
 _DIV_TYPE = re.compile(r"\b(interim|final|special)\b", re.I)
 # "Rs 8 Per Share", "Rs. - 5.5000", "Re. 1/-", "₹2.50" — a rupee amount, never
-# a bare number (that would swallow "Dividend 250%" percent-of-face forms)
+# a bare number (that would swallow "Dividend 250%" percent-of-face forms).
+# The lookbehind keeps "re" from matching inside a word ("...Per Share 2024").
 _DIV_RATE = re.compile(
-    r"(?:rs\.?|re\.?|₹)\s*[-–]?\s*(\d+(?:\.\d+)?)\s*(?:/-)?", re.I)
+    r"(?<![a-z])(?:rs|re|₹)\s*\.?\s*[-–]?\s*(\d+(?:\.\d+)?)\s*(?:/-)?", re.I)
+# "...300% on face value of Rs.2/- each": the rupee amount is the FACE VALUE,
+# not the rate — masked out before the rate search so these hit the
+# skip-and-warn path instead of parsing garbage
+_FACE_VALUE = re.compile(
+    r"face\s*value\s*(?:of\s*)?(?:rs|re|₹)\s*\.?\s*\d+(?:\.\d+)?\s*(?:/-)?"
+    r"(?:\s*each)?", re.I)
 
 
 def parse_dividend(subject: str) -> tuple[str, float] | None:
@@ -73,7 +80,7 @@ def parse_dividend(subject: str) -> tuple[str, float] | None:
     (the updater counts and reports every skipped dividend subject)."""
     if not _DIV_HINT.search(subject):
         return None
-    m = _DIV_RATE.search(subject)
+    m = _DIV_RATE.search(_FACE_VALUE.sub(" ", subject))
     if not m:
         return None
     t = _DIV_TYPE.search(subject)
@@ -170,12 +177,17 @@ def parse_dividend_records(records: list[dict], isin: str, symbol: str,
 
 
 def dedupe_dividends(*div_lists: list[DividendRow]) -> list[DividendRow]:
-    """Merge sources on (isin, div_type, ex_date); earlier lists win."""
+    """Merge sources on (isin, ex_date, rate); earlier lists win.
+
+    Deliberately NOT keyed on div_type: the exchanges word the same event
+    differently ("Dividend" → Final on NSE, "Interim Dividend" on BSE) and
+    keying on the type would double-count it. Two genuinely distinct payouts
+    on one ex-date differ in rate, which stays in the key."""
     seen: set[tuple] = set()
     out: list[DividendRow] = []
     for divs in div_lists:
         for d in divs:
-            key = (d.isin, d.div_type, d.ex_date)
+            key = (d.isin, d.ex_date, d.rate)
             if key not in seen:
                 seen.add(key)
                 out.append(d)

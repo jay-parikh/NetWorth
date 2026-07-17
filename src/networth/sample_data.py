@@ -127,12 +127,19 @@ def sample_portfolio() -> PortfolioData:
             ManualAssetRow("Rahul", "Insurance", "LIC Jeevan Anand (surrender value)",
                            "LIC", 380000, date(2015, 5, 1), 520000,
                            date(2026, 6, 1)),
+            # "Other" is the hand-converted ₹ home for anything without a
+            # feed — e.g. foreign RSUs until multi-currency lands (ROADMAP)
+            ManualAssetRow("Priya", "Other", "US RSUs, vested (hand-converted ₹)",
+                           "Employer plan", 240000, date(2024, 1, 10), 300000,
+                           date(2026, 7, 1)),
         ],
         bullion_rate_asof=date(2026, 7, 16),
-        # everything on, so the shipped file demonstrates itself; targets on a
-        # few classes light up the Dashboard drift view (they sum to 100)
+        # new classes keep their registry default of No: they show anyway
+        # while their sample rows exist (effective_enabled), and DELETING the
+        # samples is what tidies the tabs away — the Guide's promised flow.
+        # Targets on a few classes light up the drift view (they sum to 100).
         class_settings={
-            c.key: ClassSetting(enabled=True, target_pct={
+            c.key: ClassSetting(enabled=c.default_enabled, target_pct={
                 "equity": 40, "mutual_funds": 10, "fixed_deposits": 15,
                 "ppf": 10, "gold_silver": 10, "real_estate": 15,
             }.get(c.key))
@@ -164,6 +171,7 @@ def sample_portfolio() -> PortfolioData:
             nps=0.0776,
             real_estate=0.0718,
             insurance=0.0284,
+            other_assets=0.0937,
         ),
         masters=masters,
     )

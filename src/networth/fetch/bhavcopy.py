@@ -123,10 +123,15 @@ def _get_nse(sess, d: date, timeout: int) -> str | None:
     resp = sess.get(NSE_URL.format(ymd=d.strftime("%Y%m%d")),
                     headers=_HEADERS, timeout=timeout)
     if resp.status_code == 200:
-        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-            inner = [n for n in z.namelist() if n.lower().endswith(".csv")]
-            if inner:
-                return z.read(inner[0]).decode("utf-8", errors="replace")
+        try:
+            with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+                inner = [n for n in z.namelist() if n.lower().endswith(".csv")]
+                if inner:
+                    return z.read(inner[0]).decode("utf-8", errors="replace")
+        except zipfile.BadZipFile:
+            # a 200 that isn't a zip (bot-challenge HTML page): treat as
+            # NSE-unavailable so the day degrades to BSE-only per SPEC §5.2
+            return None
     return None
 
 

@@ -17,11 +17,16 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    ASSET_CLASSES, BondRow, BullionRow, ClassSetting, ClassXirr,
-    CorporateAction, DividendRow, EPFRow, EquityRow, FDRow, HistorySnapshot,
-    ManualAssetRow, Masters, MFRow, NPSRow, PPFLedgerRow, PPFRow,
-    PortfolioData, ScripRef, SIPRow,
+    ASSET_CLASSES, MANUAL_CLASS_LABELS, BondRow, BullionRow, ClassSetting,
+    ClassXirr, CorporateAction, DividendRow, EPFRow, EquityRow, FDRow,
+    HistorySnapshot, ManualAssetRow, Masters, MFRow, NPSRow, PPFLedgerRow,
+    PPFRow, PortfolioData, ScripRef, SIPRow,
 )
+
+# the Class dropdown is non-blocking, so users can type any casing — Excel's
+# SUMIFS matches case-insensitively and the Python side must agree, so typed
+# variants are canonicalised on read ("real estate" → "Real Estate")
+_CANON_CLASS = {label.casefold(): label for label in MANUAL_CLASS_LABELS}
 
 
 def _as_date(v) -> date | None:
@@ -133,7 +138,9 @@ def read_workbook(path: str) -> PortfolioData:
         scrip = _manual(ws.cell(r, 3).value)
         if not owner and not scrip:
             continue
-        flag_text = _as_str(ws.cell(r, 18).value)                 # R = Flags
+        # R = Flags: "FMV", a restructure flag, or both joined with " | "
+        flag_parts = [p.strip()
+                      for p in _as_str(ws.cell(r, 18).value).split("|")]
         data.equity.append(EquityRow(
             owner=owner, scrip=scrip,
             qty=_as_float(ws.cell(r, 4).value),
@@ -143,8 +150,8 @@ def read_workbook(path: str) -> PortfolioData:
             close_date=_as_date(ws.cell(r, 8).value),
             cost_date=_as_date(ws.cell(r, 13).value),
             isin_override=_manual(ws.cell(r, 2).value),
-            fmv_used=flag_text == "FMV",
-            flag=flag_text if flag_text != "FMV" else "",
+            fmv_used="FMV" in flag_parts,
+            flag=" | ".join(p for p in flag_parts if p and p != "FMV"),
             ca_factor=_as_float(ws.cell(r, 19).value),            # S = Adj factor
             cost_factor=_as_float(ws.cell(r, 20).value),          # T = Cost factor
         ))
@@ -298,9 +305,10 @@ def read_workbook(path: str) -> PortfolioData:
             owner = _as_str(ws.cell(r, 1).value)
             if not owner:
                 continue
+            raw_class = _as_str(ws.cell(r, 2).value)
             data.manual_assets.append(ManualAssetRow(
                 owner=owner,
-                asset_class=_as_str(ws.cell(r, 2).value),
+                asset_class=_CANON_CLASS.get(raw_class.casefold(), raw_class),
                 description=_as_str(ws.cell(r, 3).value),
                 institution=_as_str(ws.cell(r, 4).value),
                 invested=_as_float(ws.cell(r, 5).value),

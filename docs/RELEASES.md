@@ -87,6 +87,43 @@ and the refreshed README.
 
 Post-v1.4: see [ROADMAP.md](ROADMAP.md).
 
+## v1.4.1 — "Review hardening"
+
+*For the user: the same features, with the sharp edges filed off — cost
+bases stay right through chained restructures, dividend income can't be
+double-counted or mis-parsed, and one flaky feed can no longer undo work
+already done.*
+
+**Shipped as v1.4.1 (2026-07-17)** — every confirmed finding of the
+2026-07-17 full-diff code review fixed, each with a regression test
+(`tests/test_review_fixes.py`, 16 tests; suite at 154). Highlights:
+
+- **Restructure engine edges** — a second demerger apportions what
+  *remained* (no more 112%-of-original cost); demergers on a
+  merger-successor reach lots held via the old ISIN; children are computed
+  AFTER the corporate-actions refresh, apply atomically, defer (unstamped)
+  when history can't be verified or the Equity sheet is full; merged
+  holdings' successor symbols are queried so their dividends arrive
+  (live-verified: the legacy HDFC Ltd lot now earns HDFC Bank's real
+  ₹13/share on 84 chained shares).
+- **Dividend parsing** — face-value wordings and word-tail "re" no longer
+  parse as rates; cross-exchange dedupe keys on `(isin, ex_date, rate)` so
+  differing type wordings can't double-count a payout.
+- **Feed resilience** — a one-symbol corporate-actions failure keeps that
+  stock's applied rows and current-FY dividends; an NSE 200-but-HTML
+  bot page degrades the day to BSE-only instead of aborting.
+- **Sheet safety** — Corporate_Actions capacity ×4 (200 rows) with
+  Manual/Curated rows written first and loud, oldest-first overflow;
+  Dividends overflow protects Manual/current-FY rows; restructure flags
+  and the FMV marker coexist in the Flags cell.
+- **Correctness odds & ends** — a 0.0 demerger cost factor is honoured in
+  XIRR; Manual_Assets class labels match case-insensitively (unknown labels
+  warn); the frozen exe bundles all six runtime CSVs.
+- **Onboarding** — new classes ship Settings **No** (visible while their
+  sample rows exist), so the Guide's "delete the samples and the tabs tidy
+  away" promise now actually works; the still-holds-rows warning fires at
+  toggle time instead of nagging every run.
+
 ## Release artifact layout (from R4)
 
 ```

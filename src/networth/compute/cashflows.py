@@ -26,8 +26,10 @@ def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
         if r.cost_date >= today:
             continue
         # cost_factor = demerger cost retention (§6.15); the spun-off share
-        # of the cost lives on the appended child row
-        flows.append((r.cost_date, -r.qty * r.avg_cost * (r.cost_factor or 1.0)))
+        # of the cost lives on the appended child row. 0.0 is legitimate
+        # (parent retains nothing) — only blank means "no demerger".
+        cf = r.cost_factor if r.cost_factor is not None else 1.0
+        flows.append((r.cost_date, -r.qty * r.avg_cost * cf))
         flows.append((today, r.qty * (r.ca_factor or 1.0) * r.close))
     return flows
 

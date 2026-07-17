@@ -615,7 +615,10 @@ def _write_equity(wb, F, data: PortfolioData):
                                               "find it.")
                 else:
                     ws.write_number(f"E{r}", row.avg_cost, F["in_price"])
-            flag_text = row.flag or ("FMV" if row.fmv_used else "")
+            # both markers can coexist (an FMV-costed holding later merges) —
+            # the reader splits on " | ", so neither may evict the other
+            flag_text = " | ".join(
+                t for t in (row.flag, "FMV" if row.fmv_used else "") if t)
             if flag_text:
                 ws.write(f"R{r}", flag_text, F["key"])
             if row.close is not None:

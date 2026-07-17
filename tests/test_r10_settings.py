@@ -28,9 +28,16 @@ def test_default_template_shows_everything(tmp_path):
     n = len(ASSET_CLASSES)
     labels = [st.cell(r, 1).value for r in range(4, 4 + n)]
     assert labels == [c.label for c in ASSET_CLASSES]
-    for i in range(n):
-        assert st.cell(4 + i, 2).value == "Yes"
-        assert st.cell(4 + i, 4).value == "On"
+    # classic five ship Yes; new classes ship No + sample rows, so their
+    # status reads "On (has data)" and DELETING the samples hides them —
+    # the Guide's delete-to-hide onboarding (v1.4 review fix)
+    for i, cls in enumerate(ASSET_CLASSES):
+        if cls.default_enabled:
+            assert st.cell(4 + i, 2).value == "Yes"
+            assert st.cell(4 + i, 4).value == "On"
+        else:
+            assert st.cell(4 + i, 2).value == "No"
+            assert st.cell(4 + i, 4).value == "On (has data)"
     assert st["B17"].value == 5                     # drift tolerance default
 
 
@@ -82,12 +89,20 @@ def test_disabled_class_with_data_stays_visible_and_warns(tmp_path):
     wb = load_workbook(path)
     assert wb["Bonds"].sheet_state == "visible"      # force-shown
     assert wb["Settings"].cell(9, 4).value == "On (has data)"
+    # No-with-data is the shipped delete-to-hide state, so a plain run stays
+    # quiet about it (the Settings Status column already explains it)...
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="T"),
                   amfi_data=AmfiData(), ca_data=[], div_data=[], today=TODAY)
-    assert any("Bonds is set to No" in w for w in summary["warnings"])
+    assert not any("stays visible" in w for w in summary["warnings"])
     # the user's No round-trips unchanged (it is their setting, not ours)
     back = read_workbook(str(path))
     assert back.class_settings["bonds"].enabled is False
+    # ...but the moment the user toggles OFF a class that holds rows, the
+    # updater says why nothing will disappear
+    summary = run(path, price_data=PriceData(trade_date=TODAY, source="T"),
+                  amfi_data=AmfiData(), ca_data=[], div_data=[],
+                  toggle_classes=["Equity"], today=TODAY)
+    assert any("Equity still holds rows" in w for w in summary["warnings"])
 
 
 def test_settings_round_trip_any_combination(tmp_path):
