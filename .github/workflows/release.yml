@@ -57,7 +57,27 @@ jobs:
             chmod +x "$STAGE/Update Portfolio.command" "$STAGE/networth-updater"
             zip -r "$STAGE.zip" "$STAGE"   # zip preserves the exec bits
           fi
+      - name: Pick release notes
+        id: notes
+        shell: bash
+        run: |
+          f="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then
+            echo "title=$(head -1 "$f" | sed 's/^# //')" >> "$GITHUB_OUTPUT"
+            tail -n +2 "$f" > release-body.md
+            echo "has=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v2
+        if: steps.notes.outputs.has == 'true'
+        with:
+          files: NetWorth-*.zip
+          name: ${{ steps.notes.outputs.title }}
+          body_path: release-body.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+      - uses: softprops/action-gh-release@v2
+        if: steps.notes.outputs.has != 'true'
         with:
           files: NetWorth-*.zip
           generate_release_notes: true

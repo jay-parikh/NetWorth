@@ -66,6 +66,22 @@ Repo: https://github.com/jay-parikh/NetWorth (owner decides when to push).
   dual-source days. See `legacy/UpdatePrices.ps1` `Get-Bhavcopy` for a
   working recipe of the headers.
 
+## Product principles (Jay, 2026-07-17)
+
+- **Docs follow code, always.** README, the workbook's Guide sheet and the
+  docs are updated in the same commit as the change they describe — the
+  SPEC-in-same-commit rule extends to every user-facing doc.
+- **Plain language for anything a user reads** (README, Guide, prompts,
+  warnings, release notes): simple words, short sentences, no jargon —
+  end users are not software people. Keep the meaning exact.
+- **Don't intimidate at first open.** New and advanced features default to
+  off/hidden (progressive disclosure); the workbook must look simple at
+  first glance even as features grow.
+- **Every release ships plain-English notes** on GitHub Releases, written in
+  `docs/release-notes/<tag>.md` (first line `# <title>`, rest = body). The
+  release workflow publishes the file when the tag is pushed;
+  `scripts/publish_release_notes.py` back-fills or edits published ones.
+
 ## Conventions
 
 - **Commits:** small, self-contained, one milestone (or sub-step) each, message
