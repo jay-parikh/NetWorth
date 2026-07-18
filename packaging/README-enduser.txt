@@ -33,6 +33,14 @@ GET STARTED (5 minutes)
 
 GOOD TO KNOW
   - The workbook must be CLOSED while the updater runs.
+  - Sold shares? Record the sale on the Equity_Sells tab (and reduce the
+    Equity quantity), then switch "Capital gains report" to Yes in Settings:
+    the Capital Gains tab shows STCG & LTCG per year, your tax-free
+    allowance, and when each holding turns long-term. Indicative - for
+    planning, not for filing. Dividends and recorded sales also count in
+    your return figure (XIRR) now. The tax rates themselves sit on the
+    editable Tax_Rules tab - a Budget change is an edit there, not a new
+    app download.
   - A dated backup of your previous file is kept in backups/ (last 10).
   - Rows you add, delete or sort are all fine. Only don't rearrange the
     column layout or rename the tabs.
@@ -57,6 +65,10 @@ PRIVACY
     - Lock file    : real encryption - Excel asks for the password just
       to open the file, and updates need it too. NO recovery if the
       password is forgotten: write it down somewhere safe.
+
+Want the full tour? The illustrated user guide walks through every
+feature with screenshots and worked examples:
+  https://github.com/jay-parikh/NetWorth/blob/main/docs/USER-GUIDE.md
 
 Project home, source code and new versions:
   https://github.com/jay-parikh/NetWorth

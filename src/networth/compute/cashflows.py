@@ -40,6 +40,32 @@ def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
         cf = r.cost_factor if r.cost_factor is not None else 1.0
         flows.append((r.cost_date, -r.qty * r.avg_cost * cf))
         flows.append((today, r.qty * (r.ca_factor or 1.0) * r.close))
+    # v1.6: dividends and recorded sales are real cash — they belong in the
+    # return. Appended AFTER the per-row pairs (tests pin flows[0]/[1] as the
+    # first row's outflow/inflow). Dividend rows are estimates (amber, §6.12);
+    # a future ex-date the feed already announced must not count yet.
+    for d in data.dividends:
+        if d.ex_date and d.rate and d.qty and d.ex_date <= today:
+            flows.append((d.ex_date, d.rate * d.qty))
+    for s in data.equity_sells:
+        # a typed 0 price is real data (write-off sale, bonus-share cost) —
+        # only None means "not entered", so the guards test is-not-None
+        if not (s.qty and s.buy_date and s.sell_date) or s.sell_price is None:
+            continue
+        if (s.qty < 0 or s.sell_price < 0
+                or (s.buy_price is not None and s.buy_price < 0)):
+            continue
+        # same-day (intraday) round trips stay out DELIBERATELY: they are
+        # speculative business income (shown in the tax view's Intraday
+        # bucket, §6.16), not investment return — and a zero-duration pair
+        # is a degenerate flow for a money-weighted rate anyway
+        if s.sell_date > today or s.sell_date <= s.buy_date:
+            continue
+        # blank buy price = pre-Feb-2018 grandfathering path (§6.16): the
+        # buy leg is unknown here, so only complete round trips enter XIRR
+        if s.buy_price is not None:
+            flows.append((s.buy_date, -s.qty * s.buy_price))
+            flows.append((s.sell_date, s.qty * s.sell_price))
     return flows
 
 

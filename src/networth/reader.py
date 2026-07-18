@@ -17,10 +17,12 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 from .model import (
-    ASSET_CLASSES, MANUAL_CLASS_LABELS, BondRow, BullionRow, ClassSetting,
-    ClassXirr, CorporateAction, DividendRow, EPFRow, EquityRow, FDRow,
+    ASSET_CLASSES, MANUAL_CLASS_LABELS, SETTINGS_LOCK_ROW, BondRow,
+    BullionRow, ClassSetting,
+    ClassXirr, CorporateAction, DividendRow, EPFRow, EquityRow, EquitySellRow,
+    FDRow,
     HistorySnapshot, ManualAssetRow, Masters, MFRow, NPSRow, PPFLedgerRow,
-    PPFRow, PortfolioData, ScripRef, SIPRow,
+    PPFRow, PortfolioData, ScripRef, SIPRow, TaxRule,
 )
 
 # the Class dropdown is non-blocking, so users can type any casing — Excel's
@@ -125,7 +127,8 @@ def read_workbook(source) -> PortfolioData:
 
     if "Settings" in wb.sheetnames:
         st = wb["Settings"]
-        label_rows = {_as_str(st.cell(r, 1).value): r for r in range(4, 24)}
+        label_rows = {_as_str(st.cell(r, 1).value): r
+                      for r in range(4, SETTINGS_LOCK_ROW + 1)}
         for cls in ASSET_CLASSES:
             r = label_rows.get(cls.label)
             if r is None and cls.key == "real_estate":
@@ -142,6 +145,10 @@ def read_workbook(source) -> PortfolioData:
         if ref_row:                                   # absent pre-v1.4.3 → No
             data.show_references = (
                 _as_str(st.cell(ref_row, 2).value).casefold() == "yes")
+        cg_row = label_rows.get("Capital gains report")
+        if cg_row:                                    # absent pre-v1.6 → No
+            data.show_capital_gains = (
+                _as_str(st.cell(cg_row, 2).value).casefold() == "yes")
         # privacy switches (SPEC §3.19) — absent pre-v1.5 → both off
         pr = label_rows.get("Privacy mask")
         if pr:
@@ -199,6 +206,7 @@ def read_workbook(source) -> PortfolioData:
             xirr=_as_float(ws.cell(r, 12).value),
             fund_house_override=_manual(ws.cell(r, 2).value),
             isin_override=_manual(ws.cell(r, 4).value),
+            tax_type=_as_str(ws.cell(r, 13).value),   # v1.6 col M, blank pre-v1.6
         ))
 
     ws = wb["MF_SIP"]
@@ -414,6 +422,43 @@ def read_workbook(source) -> PortfolioData:
                 qty=_as_float(ws.cell(r, 8).value),
                 source=_as_str(ws.cell(r, 10).value) or "Manual",
                 details=_as_str(ws.cell(r, 11).value),
+            ))
+
+    if "Equity_Sells" in wb.sheetnames:            # absent pre-v1.6 → no-op
+        ws = wb["Equity_Sells"]
+        h = _header_row(ws, "Owner")
+        for r in _data_rows(ws, h):
+            owner = _as_str(ws.cell(r, 1).value)
+            scrip = _manual(ws.cell(r, 3).value)
+            if not owner and not scrip:
+                continue
+            data.equity_sells.append(EquitySellRow(
+                owner=owner, scrip=scrip,
+                isin_override=_manual(ws.cell(r, 2).value),
+                qty=_as_float(ws.cell(r, 4).value),
+                buy_date=_as_date(ws.cell(r, 5).value),
+                buy_price=_as_float(ws.cell(r, 6).value),
+                sell_date=_as_date(ws.cell(r, 7).value),
+                sell_price=_as_float(ws.cell(r, 8).value),
+                notes=_as_str(ws.cell(r, 11).value),   # cols 9/10 are formulas
+            ))
+
+    if "Tax_Rules" in wb.sheetnames:               # absent pre-v1.6 → bundled
+        ws = wb["Tax_Rules"]
+        h = _header_row(ws, "Asset")
+        for r in _data_rows(ws, h):
+            asset = _as_str(ws.cell(r, 1).value)
+            if not asset:
+                continue
+            lt = _as_float(ws.cell(r, 3).value)
+            data.tax_rules.append(TaxRule(
+                asset=asset,
+                effective_from=_as_date(ws.cell(r, 2).value),
+                lt_days=int(lt) if lt else 365,
+                stcg_pct=_as_float(ws.cell(r, 4).value),
+                ltcg_pct=_as_float(ws.cell(r, 5).value),
+                ltcg_exempt=_as_float(ws.cell(r, 6).value) or 0.0,
+                notes=_as_str(ws.cell(r, 7).value),
             ))
 
     def master_rows(sheet: str, key_col: int = 3) -> list[tuple[str, str, str]]:

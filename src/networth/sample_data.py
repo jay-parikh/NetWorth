@@ -14,8 +14,9 @@ from datetime import date
 
 from .model import (
     ASSET_CLASSES, BondRow, BullionRow, ClassSetting, ClassXirr, DividendRow,
-    EPFRow, EquityRow, FDRow, ManualAssetRow, MFRow, NPSRow, PPFLedgerRow,
-    PPFRow, PortfolioData, SIPRow, ScripRef, load_masters,
+    EPFRow, EquityRow, EquitySellRow, FDRow, ManualAssetRow, MFRow, NPSRow,
+    PPFLedgerRow, PPFRow, PortfolioData, SIPRow, ScripRef, load_masters,
+    load_tax_rules,
 )
 
 PERSONS = ["Amit", "Priya", "Rahul"]
@@ -59,8 +60,24 @@ def sample_portfolio() -> PortfolioData:
             for o, s, q, c, cl, pv in _EQUITY
         ],
         mutual_funds=[
-            MFRow(owner="Amit", scheme=_PPFCF, current_nav=91.2, xirr=0.36695),
-            MFRow(owner="Priya", scheme=_SBI_LC, current_nav=96.4, xirr=0.073869),
+            MFRow(owner="Amit", scheme=_PPFCF, current_nav=91.2, xirr=0.36695,
+                  tax_type="Equity"),
+            MFRow(owner="Priya", scheme=_SBI_LC, current_nav=96.4,
+                  xirr=0.073869, tax_type="Equity"),
+        ],
+        # worked sale examples (v1.6 §3.20): one normal round trip, one
+        # pre-2018 purchase with the buy price left blank on purpose — the
+        # Capital Gains tab shows the 31-Jan-2018 grandfathering rule on it.
+        # (The Equity rows above are what's owned NOW, after these sales.)
+        equity_sells=[
+            EquitySellRow("Amit", "INFOSYS LTD.", "", 10,
+                          date(2024, 1, 10), 1400.0,
+                          date(2026, 5, 20), 1650.0,
+                          "Sold to rebalance"),
+            EquitySellRow("Priya", "STATE BANK OF INDIA", "", 50,
+                          date(2016, 6, 1), None,
+                          date(2026, 4, 15), 820.0,
+                          "Old purchase - buy price unknown"),
         ],
         sip=[
             SIPRow("Amit", _PPFCF, date(2026, 1, 15), 10000, 78.42),
@@ -172,13 +189,18 @@ def sample_portfolio() -> PortfolioData:
         # class XIRRs live in the Dashboard allocation table, which lists
         # only the SHOWN classes — hidden classes carry no stored figure
         # (the updater computes theirs the moment they're switched on)
+        # portfolio/equity re-captured 2026-07-18 under the v1.6 flow
+        # semantics (dividends + recorded sells count in the return)
         xirr=ClassXirr(
-            portfolio=0.0676209694,
-            equity=0.0664365522,
+            portfolio=0.0691672176,
+            equity=0.0666771890,
             mutual_funds=0.0876706058,
             fixed_deposits=0.0721401469,
             ppf=0.071,
             bonds=0.0059830784,
         ),
         masters=masters,
+        # the Tax_Rules sheet starts as the bundled law verbatim (§3.22) —
+        # from then on the workbook's rows are the source of truth
+        tax_rules=load_tax_rules(),
     )

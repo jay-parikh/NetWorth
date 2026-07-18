@@ -203,6 +203,62 @@ the term and explain it in plain words.
 Docs in-commit: SPEC §3 keep+gloss preamble + §3.11 Guide + §7 prompt flow;
 README (badge 185, R0→v1.5); release notes v1.5.1. Suite: 185 tests.
 
+## v1.6.0 — "Honest returns + the taxman's view" (2026-07-18)
+
+Two roadmap items Jay picked for the release: dividends (and now recorded
+sales) enter the equity XIRR, and a capital-gains tax report with the
+31-01-2018 grandfathering rule. Everything keep+gloss (STCG/LTCG stay
+verbatim, hover comments explain), everything default-off (Settings row 17),
+everything indicative — "for planning, not for filing" on the sheet itself.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Dividends + sells → equity XIRR (§6.2) | Dividend rows (all FYs, ex-date ≤ today) and complete Equity_Sells round trips append to the equity flows — the return is genuinely money-weighted; portfolio XIRR inherits; per-person "Dividends FY" SUMIFS on each person sheet row 4 | golden XIRR with a dividend > bare two-flow; future/incomplete rows excluded; all-sold ⇒ None; flow-order pins (test_r7/test_review_fixes) still green; Dashboard B17 untouched |
+| Equity_Sells input sheet (§3.20) | Self-contained sale records in sell-time units (contract-note view); ISIN lookup + type-ahead; Proceeds/Gain formulas; double-entry banner ("also reduce the Quantity on the Equity tab"); worked samples incl. a blank-buy-price grandfathering demo | round-trips byte-equal through build→read→build; guarded reader (pre-v1.6 = no-op); default hidden |
+| Capital-gains engine (§6.16) + tax_rules_in.csv | Grandfathering = max(cost, min(FMV, sale)) with FMV normalised across post-2018 corp actions; MF FIFO with oversell/nav-less warnings (never guess); Debt/slab split at 2023-04-01; equity + mf_equity share ONE §112A exemption; per-sale-date STCG rates across the 2024-07-23 mid-FY switch; `lt_on` sell-planning dates | 25 goldens in test_v160_capgains/test_v160_dividend_xirr incl. split-normalised FMV, mid-FY 15%/20% mix, shared-bucket headroom 0 at ₹1.4L LTCG |
+| Capital Gains sheet (§3.21) + Settings switch | Computed at BUILD time (round-trip identity untouched); FY summary first, realised detail, sell-planning; headroom headline with absolute deadline; Settings row 17 default No hides the pair together; MutualFunds M "Tax type" dropdown | sheets hidden by default, visible on Yes; masked build: protected, charts stay 10, no ₹ composed into text cells; self-explanatory sweep (banners, sample rows, gloss on every new jargon header) |
+
+Docs in-commit: SPEC §3.1/§3.5/§3.7/§3.14/§3.20/§3.21/§5.5/§6.2/§6.6/§6.16/§7;
+Guide "Selling & tax" section + STCG/LTCG/Grandfathering glossary; ROADMAP two
+items ✅ + curated-data cadence recorded (refresh restructures.csv +
+bullion_proxies.csv every release); release notes v1.6.0.
+
+Pre-release hardening (2026-07-18): a full multi-angle code review of the
+release produced 15 confirmed findings — all fixed in-release (engine gated
++ degrades to warnings instead of crashing on a bad bundled CSV; typed-0
+prices honoured; STCG tax netted; scheme-level Tax-type consensus; FIFO ₹1
+dust threshold; pre-2024 debt-fund 1095-day rule row; FY labels + relock
+pinned to the run date; overflow/no-Owner warnings; honest same-day-sale
+wording; sample XIRR re-captured) — plus 12 regression tests (suite: 222).
+
+Also in v1.6.0: **docs/USER-GUIDE.md** — the complete illustrated user
+guide (19 screenshots rendered from the shipped sample workbook via the
+reproducible scripts/guide_screenshots/ pipeline, worked examples per
+feature), linked from the README and the release notes.
+
+Also (Jay, 2026-07-18): **charts never sit on data** — the Dashboard charts
+now anchor right of the person × class grid (grid-width-derived column, so
+enabling more classes slides them right instead of hiding columns) and the
+person-sheet pie moved right of the holding blocks (§3.3/§3.5); screenshots
+re-rendered.
+
+Also (Jay, 2026-07-18): **intraday sales surface as speculative income** —
+a same-day buy/sell is no longer warned-and-skipped: it becomes a realised
+row (bucket "speculative", term "Intraday") plus an "Intraday gains ₹" FY
+column, slab-taxed business income shown but never mixed into STCG/LTCG or
+XIRR (§6.16). Plus edge-case hardening from a systematic sweep: negative
+qty/price rows warn ("check the row") in both the engine and XIRR;
+Tax_Rules rejects typo numbers (rates outside 0–100, negative allowance,
+non-positive holding days) and warns on duplicate (asset, date) rows;
+negative NAVs count as "no NAV" in the MF FIFO. Suite: 229.
+
+And (Jay, 2026-07-18): **Tax_Rules in the workbook (§3.22)** — the
+capital-gains rate table (rates, holding periods, the ₹1.25L allowance) is
+no longer release-bound: an editable Tax_Rules sheet ships prefilled with
+the bundled law and is upserted over the CSV defaults by (asset,
+applies-from date). A Budget change is an Excel edit; invalid rows warn and
+are preserved, never guessed at or dropped.
+
 ## Release artifact layout (from R4)
 
 ```

@@ -299,7 +299,8 @@ def test_pyinstaller_spec_bundles_all_runtime_csvs():
     spec = (Path(__file__).resolve().parents[1]
             / "packaging" / "networth-update.spec").read_text()
     for name in ("banks_in.csv", "fmv_2018-01-31.csv", "ppf_rates.csv",
-                 "epf_rates.csv", "bullion_proxies.csv", "restructures.csv"):
+                 "epf_rates.csv", "bullion_proxies.csv", "restructures.csv",
+                 "tax_rules_in.csv"):
         assert name in spec, f"{name} missing from the PyInstaller datas"
 
 

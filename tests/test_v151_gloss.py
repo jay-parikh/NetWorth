@@ -58,9 +58,11 @@ def test_obscure_phrases_are_gone_from_user_text(tmp_path):
         blobs += [c.comment.text for r in ws.iter_rows(max_row=4)
                   for c in r if c.comment]
     text = " ".join(blobs)
-    for banished in ("Alt+Down", "IBJA", "grandfathering", "LTCG",
-                     "Yellow-ish", "monthly-minimum-balance",
-                     "market-implied"):
+    # v1.5.1 banished these as UNEXPLAINED jargon. v1.6 deliberately brought
+    # "LTCG" and "grandfathering" back as first-class, glossed terms (the
+    # Capital Gains feature explains them in place) — so they left this list.
+    for banished in ("Alt+Down", "IBJA", "Yellow-ish",
+                     "monthly-minimum-balance", "market-implied"):
         assert banished not in text, banished
     # banners kept their precise terms
     assert "compute themselves" in text                    # FD banner

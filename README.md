@@ -16,7 +16,8 @@ All on **your own computer**. Nothing ever uploaded.
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
-![Tests](https://img.shields.io/badge/tests-185%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-229%20passing-brightgreen)
+![Release](https://img.shields.io/badge/release-v1.6.0-blue)
 
 </div>
 
@@ -31,7 +32,8 @@ worth** — today's prices, fund NAVs, gold rate, NPS NAV — and answers the
 questions that actually matter:
 
 > *What are we worth? Is it growing faster than inflation? Is the mix what we
-> planned? What did our shares pay us this year?*
+> planned? What did our shares pay us this year? And if I sell — what will
+> the taxman say?*
 
 No account. No app. No cloud. A spreadsheet you fully own, forever.
 
@@ -76,6 +78,9 @@ You need Excel (or the free LibreOffice) and zero technical skills.
 > arrived. HDFC merges into HDFC Bank and your old shares quietly become the
 > new ones — at the right ratio, with your costs intact. That's the product.
 
+Want the full tour? The **[illustrated user guide](docs/USER-GUIDE.md)**
+walks through every feature with screenshots and worked examples.
+
 *First run only:* Windows may show SmartScreen (**More info → Run anyway**),
 macOS a Gatekeeper prompt (**right‑click → Open**) — the apps aren't
 code‑signed yet. Nothing is installed; nothing leaves your machine.
@@ -104,7 +109,10 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 | **NPS** | Units × daily NAV from NPS Trust, scheme picked from a dropdown |
 | **Bonds** | Value, maturity amount, coupon‑aware returns |
 | **Manual Assets** | Property, cash, insurance surrender value, anything else — you type today's value, it joins the family total |
-| **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart |
+| **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart — and counted in your return |
+| **Equity Sells** *(v1.6, optional)* | One row per share sale, straight from your contract note — feeds the tax view and your true return (a sale with its old buy price left blank counts in the tax view only) |
+| **Capital Gains** *(v1.6, optional)* | STCG & LTCG per year, the ₹1.25L tax‑free allowance you've used, an indicative tax figure, and the date each holding turns long‑term — with the pre‑2018 **grandfathering** rule applied for you. Intraday (same‑day) trades show separately as speculative income, never mixed in |
+| **Tax Rules** *(v1.6, optional)* | The capital‑gains rates, holding periods and allowance the report uses — editable in your workbook, so a Budget change needs no new app version |
 | **History** | A dated net‑worth snapshot per update — feeds the trend charts |
 | **Guide** | The 2‑minute manual, right inside the file |
 
@@ -139,7 +147,14 @@ Settings.
   the tax grandfathering value, **delisted stocks** flagged instead of
   silently going stale.
 - **Honest returns everywhere** — XIRR from real dated cashflows: portfolio,
-  per class, per fund, per stock.
+  per class, per fund, per stock. Since v1.6, dividends and recorded sales
+  count in it too — the return you see is the return you got.
+- **The taxman's view** *(v1.6, optional)* — record your sales and the
+  Capital Gains tab shows STCG/LTCG per year, your ₹1.25L allowance
+  headroom, and when each holding turns long‑term. Indicative — for
+  planning, not for filing (it says so itself). And the rates aren't
+  locked in code: they live on an editable **Tax_Rules** tab in your own
+  workbook, so a Budget change is a 30‑second edit, not a new download.
 
 ---
 
@@ -184,7 +199,7 @@ code generates it; the updater reads your inputs, fetches, recomputes, and
 regenerates it. End users never need Python.
 
 ```
-┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: 26 sheets, 10 charts, formulas)
+┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: 29 sheets, 10 charts, formulas)
 │                            │
 │                     you edit inputs
 │                            ▼
@@ -213,7 +228,7 @@ Needs **Python 3.10+**. No compilers, no Excel, no admin rights.
 ```bash
 python -m networth.generate            # build the workbook from code (sample data)
 python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
-pytest                                 # 185 tests — golden values, parsers, scenario
+pytest                                 # 229 tests — golden values, parsers, scenario
                                        #   suites per milestone, round-trip identity
 ```
 
@@ -242,8 +257,9 @@ three OSes, builds the apps and attaches them to the GitHub Release.
 
 | Document | What it's for |
 |---|---|
+| [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | **For users** — every feature walked through with screenshots and worked examples |
 | [docs/SPEC.md](docs/SPEC.md) | **The product** — every sheet, data contract and algorithm, platform‑agnostic |
-| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.5) |
+| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.6) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Everything else, with ✅ / 🚧 / ⬜ status |
 | [docs/PLAN.md](docs/PLAN.md) · [docs/PLAN-v1.2.md](docs/PLAN-v1.2.md) | The approved architecture & design decisions |
 | [CLAUDE.md](CLAUDE.md) | Working notes & conventions for contributors |

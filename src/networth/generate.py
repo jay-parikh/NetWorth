@@ -16,7 +16,7 @@ import xlsxwriter
 from . import model as M
 from .guide_text import GUIDE_ROWS
 from .model import (ASSET_CLASSES, PortfolioData, class_has_data,
-                    effective_enabled, enabled_classes)
+                    effective_enabled, enabled_classes, fy_label)
 
 
 # ---------------------------------------------------------------- formats ---
@@ -145,6 +145,11 @@ _G_ISIN = ("ISIN = the code that identifies it, on your statement. It fills "
 _G_NAV = "NAV = the price of one unit of the fund."
 _G_CURVAL = "Current value - what this is worth right now."
 _G_NETCHG = "Net change - your gain (green) or loss (red) since you bought."
+_G_STCG = ("STCG = short-term capital gains - profit on shares or equity "
+           "funds sold within a year of buying. Taxed at a flat rate.")
+_G_LTCG = ("LTCG = long-term capital gains - profit on shares or equity "
+           "funds held longer than a year. The first slice each year "
+           "(the tax-free allowance) costs nothing.")
 
 
 def _add_dropdown(ws, rng: str, source: str, title: str) -> None:
@@ -177,10 +182,8 @@ def _master_lookup(scheme_cell: str, master_col: str) -> str:
 
 # ----------------------------------------------------------------- sheets ---
 
-def _fy_end_label() -> str:
-    from datetime import date as _date
-    today = _date.today()
-    fy_year = today.year if today <= _date(today.year, 3, 31) else today.year + 1
+def _fy_end_label(today: date) -> str:
+    fy_year = today.year if today <= date(today.year, 3, 31) else today.year + 1
     return f"Expected @ 31-Mar-{fy_year}"
 
 
@@ -248,8 +251,17 @@ def _write_settings(wb, F, data: PortfolioData):
              F["c_text"])
     ws.write(f"E{ref}", "The stock, fund, bank and pension name lists, plus "
                         "the actions history tab.", F["hint"])
+    cg = M.SETTINGS_CG_ROW
+    ws.write(f"A{cg}", "Capital gains report")
+    ws.write(f"B{cg}", "Yes" if data.show_capital_gains else "No", F["in_text"])
+    ws.write(f"D{cg}", "Shown" if data.show_capital_gains else "Hidden",
+             F["c_text"])
+    ws.write(f"E{cg}", "A tax view of your sales: STCG & LTCG per year, what "
+                       "is still tax-free, and when a holding turns "
+                       "long-term. Type sales on the Equity_Sells tab.",
+             F["hint"])
     ws.data_validation(
-        f"B{M.SETTINGS_FIRST_ROW}:B{M.SETTINGS_REF_ROW}",
+        f"B{M.SETTINGS_FIRST_ROW}:B{M.SETTINGS_CG_ROW}",
         {"validate": "list", "source": ["Yes", "No"], "show_error": False,
          "input_title": "Show this?",
          "input_message": "Yes shows the tab(s), No hides them. "
@@ -298,7 +310,7 @@ def _write_settings(wb, F, data: PortfolioData):
     return ws
 
 
-def _write_dashboard(wb, F, data: PortfolioData):
+def _write_dashboard(wb, F, data: PortfolioData, today: date):
     ws = wb.add_worksheet("Dashboard")
     _widths(ws, {"A": 16, "B": 15, "C": 15, "D": 15, "E": 14, "F": 15, "G": 16, "H": 18})
     ws.write("A1", "FAMILY PORTFOLIO — NET WORTH TRACKER", F["title"])
@@ -324,7 +336,9 @@ def _write_dashboard(wb, F, data: PortfolioData):
         "B3", f'={chr(ord("B") + len(enabled_classes(data)))}{M.DASH_TOTAL_ROW}',
         F["money_bold"])
     ws.write("A4", "Portfolio XIRR", F["label"])
-    ws.write_comment("A4", "The whole family together: " + _G_XIRR)
+    ws.write_comment("A4", "The whole family together: " + _G_XIRR
+                     + " Dividends and recorded sales (Equity_Sells) count "
+                       "in it.")
     if data.xirr.portfolio is not None:
         ws.write_number("B4", data.xirr.portfolio, F["u_pct_bold"])
     else:
@@ -345,7 +359,7 @@ def _write_dashboard(wb, F, data: PortfolioData):
     fy_col = chr(ord("B") + n + 1)
 
     ws.write_row("A5", ["Person"] + [c.label for c in enabled]
-                 + ["Total", _fy_end_label()], F["header"])
+                 + ["Total", _fy_end_label(today)], F["header"])
     ws.write_comment(f"{fy_col}5",
                      "Estimate of each person's total at the financial-year end: "
                      "FDs/PPF/Bonds accrue at their own rates; Equity and Mutual "
@@ -377,14 +391,18 @@ def _write_dashboard(wb, F, data: PortfolioData):
                      F["total"])
 
     if "equity" in col_of:
-        fy_now = _fy_label_today()
+        fy_now = fy_label(today)
         ws.write("A17", f"Dividends FY {fy_now}", F["label"])
         ws.write_formula(
             "B17", f'=SUMIFS(Dividends!$I:$I,Dividends!$A:$A,"{fy_now}")',
             F["money_bold"])
         ws.write_comment("B17", "Cash your shares declared this financial year - "
                                 "details and a month-by-month chart on the "
-                                "Dividends tab. Estimated from your current rows.")
+                                "Dividends tab. Estimated from your current rows. "
+                                "Announced payouts with a future ex-date count "
+                                "here; your return (XIRR) counts them once the "
+                                "ex-date passes. Rows without an Owner count "
+                                "here but in no one's per-person figure.")
 
     ws.write("A18", "Allocation by asset class", F["section"])
     ws.write_row("A19", ["Asset class", "Value", "XIRR", "Actual %",
@@ -423,6 +441,10 @@ def _write_dashboard(wb, F, data: PortfolioData):
             f'"Move ₹"&TEXT(ABS($F{r})*{total_cell},"#,##0")'
             f'&IF($F{r}>0," out"," in")))',
             F["c_text"])
+    # charts sit RIGHT of the widest data column, never over it: the person
+    # grid spans A..(n classes + Total + Expected), so the anchor column is
+    # derived from n — switch on more classes and the charts slide right
+    chart_col = chr(ord("A") + n + 4)
     if n:
         ws.conditional_format(f"B20:B{alloc_last}", {
             "type": "data_bar", "bar_color": "#9DB9E3",
@@ -448,7 +470,8 @@ def _write_dashboard(wb, F, data: PortfolioData):
             "values": f"=Dashboard!$E$20:$E${alloc_last}",
         })
         target_chart.set_title({"name": "Actual vs Target %"})
-        ws.insert_chart("Q4", target_chart, {"x_scale": 1.1, "y_scale": 1.1})
+        ws.insert_chart(f"{chr(ord(chart_col) + 8)}4", target_chart,
+                        {"x_scale": 1.1, "y_scale": 1.1})
 
     if n:
         pie = wb.add_chart({"type": "pie"})
@@ -458,7 +481,8 @@ def _write_dashboard(wb, F, data: PortfolioData):
             "data_labels": {"percentage": True},
         })
         pie.set_title({"name": "Allocation by asset class"})
-        ws.insert_chart("I4", pie, {"x_scale": 1.1, "y_scale": 1.1})
+        ws.insert_chart(f"{chart_col}4", pie,
+                        {"x_scale": 1.1, "y_scale": 1.1})
 
     bar = wb.add_chart({"type": "column"})
     bar.add_series({
@@ -468,7 +492,7 @@ def _write_dashboard(wb, F, data: PortfolioData):
     })
     bar.set_title({"name": "Net worth by person"})
     bar.set_legend({"none": True})
-    ws.insert_chart("I21", bar, {"x_scale": 1.1, "y_scale": 1.1})
+    ws.insert_chart(f"{chart_col}21", bar, {"x_scale": 1.1, "y_scale": 1.1})
 
     hist_classes = _history_classes(data)
     hist_total_col = chr(ord("B") + len(hist_classes))
@@ -481,7 +505,7 @@ def _write_dashboard(wb, F, data: PortfolioData):
     trend.set_title({"name": "Net worth over time"})
     trend.set_legend({"none": True})
     trend.set_x_axis({"num_format": "dd-mmm-yy"})
-    ws.insert_chart("I38", trend, {"x_scale": 1.6, "y_scale": 1.2})
+    ws.insert_chart(f"{chart_col}38", trend, {"x_scale": 1.6, "y_scale": 1.2})
 
     # chart series only for classes currently shown — a switched-off class's
     # past History rows stay recorded on the sheet but aren't displayed
@@ -498,7 +522,8 @@ def _write_dashboard(wb, F, data: PortfolioData):
             })
         area.set_title({"name": "Net worth by class over time"})
         area.set_x_axis({"num_format": "dd-mmm-yy"})
-        ws.insert_chart("I56", area, {"x_scale": 1.6, "y_scale": 1.2})
+        ws.insert_chart(f"{chart_col}56", area,
+                        {"x_scale": 1.6, "y_scale": 1.2})
 
     _redgreen(ws, F, "B4")
     _redgreen(ws, F, "E4")
@@ -591,7 +616,7 @@ _PERSON_BLOCK_SPECS = {
 }
 
 
-def _write_person(wb, F, name: str, data: PortfolioData):
+def _write_person(wb, F, name: str, data: PortfolioData, today: date):
     ws = wb.add_worksheet(name)
     _widths(ws, {"A": 26, "B": 30, "C": 12, "D": 12, "E": 14, "F": 13, "G": 10})
     ws.write("A1", f"{name} — PORTFOLIO", F["title"])
@@ -604,6 +629,21 @@ def _write_person(wb, F, name: str, data: PortfolioData):
     total_row = 6 + n
     ws.write("A3", "Net worth", F["label"])
     ws.write_formula("B3", f"=B{total_row}", F["money_bold"])
+    if any(c.key == "equity" for c in enabled):
+        # v1.6: this person's share of the family FY dividend total (§3.5) —
+        # a live formula over the Dividends sheet, same column the Dashboard
+        # family total (B17) sums. FY from the build's `today`, never the
+        # wall clock — the rows are tagged with the same date (§6.12)
+        fy_now = fy_label(today)
+        ws.write("A4", f"Dividends FY {fy_now}", F["label"])
+        ws.write_formula(
+            "B4",
+            f'=SUMIFS(Dividends!$I:$I,Dividends!$A:$A,"{fy_now}",'
+            f'Dividends!$B:$B,$B$2)', F["c_money"])
+        ws.write_comment("B4", "Cash this person's shares declared this "
+                               "financial year - the family total is on the "
+                               "Dashboard, details on the Dividends tab. "
+                               "Estimated from your current rows.")
 
     ws.write_row("A5", ["Asset class", "Value", "# holdings"], F["header"])
     ws.write_comment("C5", "How many rows (holdings) of that class this "
@@ -625,7 +665,8 @@ def _write_person(wb, F, name: str, data: PortfolioData):
             "data_labels": {"percentage": True},
         })
         pie.set_title({"name": f"{name} — allocation"})
-        ws.insert_chart("E4", pie)
+        # right of the holding blocks (they occupy A..G and only grow DOWN)
+        ws.insert_chart("I4", pie)
 
     title_row = max(M.PERSON_BLOCKS_START, total_row + 3)
     for cls in enabled:
@@ -810,16 +851,90 @@ def _write_equity(wb, F, data: PortfolioData):
     return ws
 
 
+def _write_equity_sells(wb, F, data: PortfolioData):
+    """Realised-sales ledger (v1.6, SPEC §3.20): self-contained sale records
+    in SELL-TIME share units — the Equity sheet stays the what-you-own-now
+    snapshot. Feeds the Capital Gains report and the equity XIRR."""
+    ws = wb.add_worksheet("Equity_Sells")
+    _widths(ws, {"A": 12, "B": 15, "C": 34, "D": 10, "E": 12, "F": 16,
+                 "G": 12, "H": 16, "I": 14, "J": 13, "K": 26})
+    _sheet_head(ws, F, "SHARES YOU SOLD",
+                "One row per sale — copy the numbers from your contract note. "
+                "Also reduce the Quantity on the Equity tab: that tab is what "
+                "you own now; this one is the record of what you sold.")
+    ws.write_row("A3", ["Owner", "ISIN", "Scrip", "Qty sold", "Buy date",
+                        "Buy price ₹/share", "Sell date",
+                        "Sell price ₹/share", "Proceeds", "Gain ₹", "Notes"],
+                 F["header"])
+    ws.write_comment("B3", _G_ISIN)
+    ws.write_comment("D3", "Shares sold, as the contract note shows them "
+                           "(today's share count, after any splits).")
+    ws.write_comment("E3", "When you bought them. Shares from a demerger? "
+                           "Keep the original company's buy date - the "
+                           "holding period carries over.")
+    ws.write_comment("F3", "Per share, as your broker's P&L shows it. Bought "
+                           "before Feb 2018 and don't know it? Leave it "
+                           "blank - the official 31-Jan-2018 value applies "
+                           "(the tax rule for old shares). One catch: a "
+                           "blank-price sale still shows on the Capital "
+                           "Gains tab, but your return (XIRR) leaves it "
+                           "out - a return needs both sides of the trade.")
+    ws.write_comment("I3", "Qty sold x Sell price.")
+    ws.write_comment("J3", "Simple gain, before tax: Qty x (Sell - Buy). "
+                           "The Capital Gains tab can show a smaller taxable "
+                           "gain for old shares - the grandfathering rule "
+                           "prices them at their 31-Jan-2018 value instead.")
+
+    by_row = {M.FIRST_DATA_ROW + i: s for i, s in enumerate(data.equity_sells)}
+    for r in range(M.FIRST_DATA_ROW, M.EQSELL_LAST_ROW + 1):
+        s = by_row.get(r)
+        if s and s.isin_override:
+            ws.write(f"B{r}", s.isin_override, F["in_text"])
+        else:
+            ws.write_formula(
+                f"B{r}",
+                f'=IF($C{r}="","",IFERROR(INDEX(Stock_Master!$C:$C,'
+                f'MATCH($C{r},Stock_Master!$B:$B,0)),""))', F["c_text"])
+        if s:
+            ws.write(f"A{r}", s.owner, F["in_text"])
+            ws.write(f"C{r}", s.scrip, F["in_text"])
+            if s.qty is not None:
+                ws.write_number(f"D{r}", s.qty, F["in_num"])
+            if s.buy_date:
+                ws.write_datetime(f"E{r}", s.buy_date, F["in_date"])
+            if s.buy_price is not None:
+                ws.write_number(f"F{r}", s.buy_price, F["in_price"])
+            if s.sell_date:
+                ws.write_datetime(f"G{r}", s.sell_date, F["in_date"])
+            if s.sell_price is not None:
+                ws.write_number(f"H{r}", s.sell_price, F["in_price"])
+            if s.notes:
+                ws.write(f"K{r}", s.notes, F["in_text"])
+        ws.write_formula(f"I{r}",
+                         f'=IF(OR($D{r}="",$H{r}=""),"",$D{r}*$H{r})',
+                         F["c_money"])
+        ws.write_formula(f"J{r}",
+                         f'=IF(OR($D{r}="",$F{r}="",$H{r}=""),"",'
+                         f'$D{r}*($H{r}-$F{r}))', F["c_money"])
+
+    _add_dropdown(ws, f"C4:C{M.EQSELL_LAST_ROW}",
+                  _typeahead("Stock_Master", "Stock_NameList"), "Scrip")
+    _redgreen(ws, F, f"J4:J{M.EQSELL_LAST_ROW}")
+    ws.freeze_panes("A4")
+    return ws
+
+
 def _write_mutualfunds(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("MutualFunds")
     _widths(ws, {"A": 12, "B": 26, "C": 46, "D": 15, "E": 12, "F": 13, "G": 12,
-                 "H": 14, "I": 14, "J": 13, "K": 10, "L": 9, "N": 13})
+                 "H": 14, "I": 14, "J": 13, "K": 10, "L": 9, "M": 10, "N": 13})
     _sheet_head(ws, F, "MUTUAL FUNDS",
                 "One row per fund. Units and Invested come from the MF_SIP ledger — "
                 "enter purchases there. Pick the Scheme from the dropdown.")
     ws.write_row("A3", ["Owner", "Fund House", "Scheme Name", "ISIN", "Units",
                         "Avg cost NAV", "Current NAV", "Invested", "Cur. val",
-                        "Net chg.", "Return %", "XIRR"], F["header"])
+                        "Net chg.", "Return %", "XIRR", "Tax type"],
+                 F["header"])
     ws.write("N3", "Key", F["header"])
     ws.write_comment("D3", _G_ISIN)
     ws.write_comment("F3", "The average price you paid for one unit. " + _G_NAV)
@@ -827,6 +942,9 @@ def _write_mutualfunds(wb, F, data: PortfolioData):
     ws.write_comment("I3", _G_CURVAL)
     ws.write_comment("J3", _G_NETCHG)
     ws.write_comment("L3", _G_XIRR)
+    ws.write_comment("M3", "For the Capital Gains tab. Equity = most share "
+                           "funds (incl. ELSS and index funds). Debt = bond, "
+                           "liquid and gilt funds. Blank counts as Equity.")
 
     by_row = {M.FIRST_DATA_ROW + i: row for i, row in enumerate(data.mutual_funds)}
     for r in range(M.FIRST_DATA_ROW, M.MF_LAST_ROW + 1):
@@ -846,6 +964,8 @@ def _write_mutualfunds(wb, F, data: PortfolioData):
                 ws.write_number(f"G{r}", row.current_nav, F["u_price"])
             if row.xirr is not None:
                 ws.write_number(f"L{r}", row.xirr, F["u_pct"])
+            if row.tax_type:
+                ws.write(f"M{r}", row.tax_type, F["in_text"])
         ws.write_formula(f"E{r}",
                          f'=IF($A{r}="","",SUMIFS(MF_SIP!$H:$H,MF_SIP!$A:$A,$A{r},'
                          f'MF_SIP!$D:$D,$D{r}))', F["c_units"])
@@ -875,6 +995,10 @@ def _write_mutualfunds(wb, F, data: PortfolioData):
 
     _add_dropdown(ws, f"C4:C{M.MF_LAST_ROW}",
                   _typeahead("MF_Master", "MF_SchemeList"), "Scheme Name")
+    ws.data_validation(f"M4:M{M.MF_LAST_ROW}", {
+        "validate": "list", "source": ["Equity", "Debt"], "show_error": False,
+        "input_title": "Tax type",
+        "input_message": "For the Capital Gains tab. Blank counts as Equity."})
     _redgreen(ws, F, f"J4:L{M.MF_LAST_ROW}")
     _redgreen(ws, F, f"J{tr}:L{tr}")
     ws.freeze_panes("A4")
@@ -1566,22 +1690,16 @@ def _write_corporate_actions(wb, F, data: PortfolioData):
     return ws
 
 
-def _fy_label_today() -> str:
-    from .model import fy_label
-    from datetime import date as _date
-    return fy_label(_date.today())
-
-
 _FY_MONTHS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3]
 _FY_MONTH_NAMES = ["Apr", "May", "Jun", "Jul", "Aug", "Sep",
                    "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
 
 
-def _write_dividends(wb, F, data: PortfolioData):
+def _write_dividends(wb, F, data: PortfolioData, today: date):
     ws = wb.add_worksheet("Dividends")
     _widths(ws, {"A": 9, "B": 10, "C": 30, "D": 14, "E": 9, "F": 12, "G": 11,
                  "H": 14, "I": 12, "J": 8, "K": 46, "L": 2, "M": 7, "N": 12})
-    fy_now = _fy_label_today()
+    fy_now = fy_label(today)
     _sheet_head(ws, F, "DIVIDENDS — YOUR SHARES' CASH INCOME",
                 "Filled in for you on every update: one row per dividend your "
                 "stocks declared this financial year. Older years stay as a "
@@ -1658,6 +1776,234 @@ def _write_dividends(wb, F, data: PortfolioData):
     chart.set_title({"name": f"Dividends by month — FY {fy_now}"})
     chart.set_legend({"none": True})
     ws.insert_chart("M18", chart, {"x_scale": 1.2, "y_scale": 1.1})
+    ws.freeze_panes("A4")
+    return ws
+
+
+def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
+    """The tax view (v1.6, SPEC §3.21) — computed fresh at build time from
+    Equity_Sells + MF_SIP (§6.16), never stored, so regeneration always
+    reproduces it. Reads top-down like a story: the FY answer first, then
+    what was sold, then what's still held (the sell-planning helper).
+
+    The engine runs only when the user is using the feature (a sale recorded
+    or the Settings switch on) — every other build gets the empty sheet and
+    skips the compute entirely; the updater passes its own `rep` so the
+    figures it printed and the sheet can never differ.
+
+    Masked-build rule: every figure lives in a NUMERIC cell (text renders
+    verbatim through the mask's @ section — a ₹ amount inside a sentence
+    would leak); text columns carry words only."""
+    if rep is None and (data.equity_sells or data.show_capital_gains):
+        from .compute.capital_gains import capital_gains_report
+        rep = capital_gains_report(data, today)
+
+    ws = wb.add_worksheet("Capital Gains")
+    _widths(ws, {"A": 10, "B": 12, "C": 40, "D": 11, "E": 10, "F": 12,
+                 "G": 12, "H": 10, "I": 12, "J": 14, "K": 14, "L": 14,
+                 "M": 46})
+    _sheet_head(ws, F, "CAPITAL GAINS — THE TAX VIEW OF YOUR SALES",
+                "Worked out for you from Equity_Sells and MF_SIP on every "
+                "update. Indicative only - for planning, not for filing. "
+                "Losses simply net within a bucket; carry-forward is not "
+                "modelled.")
+    if rep is None:
+        ws.write("A3", "Nothing recorded yet - sales you add on the "
+                       "Equity_Sells tab appear here after an update.",
+                 F["hint"])
+        ws.freeze_panes("A4")
+        return ws
+    fy_end = f"31-03-{int(rep.fy_now.split('-')[0]) + 1}"
+    ws.write("A3", f"LTCG still tax-free this year (sell before {fy_end})",
+             F["label"])
+    ws.write_comment("A3", _G_LTCG)
+    if rep.headroom_now is not None:
+        ws.write_number("D3", rep.headroom_now, F["money_bold"])
+
+    r = 5
+    ws.write(f"A{r}", "By financial year", F["section"]); r += 1
+    ws.write_row(f"A{r}", ["FY", "STCG ₹", "LTCG ₹", "Tax-free allowance",
+                           "Allowance used", "Still tax-free",
+                           "Indicative tax (STCG)", "Indicative tax (LTCG)",
+                           "At-your-slab gains ₹", "Debt fund gains ₹",
+                           "Intraday gains ₹"],
+                 F["header"])
+    ws.write_comment(f"B{r}", _G_STCG)
+    ws.write_comment(f"C{r}", _G_LTCG)
+    ws.write_comment(f"G{r}", "At the rate in force on each sale's date, "
+                              "after this year's short-term losses are set "
+                              "off - indicative, not a filing figure.")
+    ws.write_comment(f"I{r}", "Gains taxed at your income-tax slab (newer "
+                              "debt funds) - the rate depends on you, so no "
+                              "amount is computed.")
+    ws.write_comment(f"K{r}", "Bought and sold the same day = speculative "
+                              "income, taxed at your slab as business "
+                              "income - shown here so nothing is hidden, "
+                              "but it is not a capital gain and never mixes "
+                              "into STCG / LTCG.")
+    r += 1
+    if not rep.summaries:
+        ws.write(f"A{r}", "Nothing sold yet - record sales on the "
+                          "Equity_Sells tab and run the update.", F["hint"])
+        r += 1
+    for s in rep.summaries:
+        ws.write(f"A{r}", s.fy, F["c_text"])
+        ws.write_number(f"B{r}", s.stcg, F["c_money"])
+        ws.write_number(f"C{r}", s.ltcg, F["c_money"])
+        ws.write_number(f"D{r}", s.exemption, F["c_money"])
+        ws.write_number(f"E{r}", s.exemption_used, F["c_money"])
+        ws.write_number(f"F{r}", s.headroom, F["c_money"])
+        if s.tax_stcg is not None:
+            ws.write_number(f"G{r}", s.tax_stcg, F["c_money"])
+        else:
+            ws.write(f"G{r}", "—", F["c_text"])
+        if s.tax_ltcg is not None:
+            ws.write_number(f"H{r}", s.tax_ltcg, F["c_money"])
+        else:
+            ws.write(f"H{r}", "—", F["c_text"])
+        ws.write_number(f"I{r}", s.slab_gain, F["c_money"])
+        ws.write_number(f"J{r}", s.debt_gain, F["c_money"])
+        ws.write_number(f"K{r}", s.spec_gain, F["c_money"])
+        r += 1
+
+    r += 1
+    ws.write(f"A{r}", "What you sold (realised)", F["section"]); r += 1
+    hdr = r
+    ws.write_row(f"A{r}", ["FY", "Owner", "What", "Tax bucket", "Qty",
+                           "Buy date", "Sell date", "Days held", "Term",
+                           "Proceeds ₹", "Taxable cost ₹", "Gain ₹", "Note"],
+                 F["header"])
+    ws.write_comment(f"D{r}", "Which tax rules apply: equity, equity fund, "
+                              "debt fund, at-your-slab, or speculative "
+                              "(intraday).")
+    ws.write_comment(f"I{r}", "Short-term or Long-term - decided by how "
+                              "long you held it.")
+    ws.write_comment(f"K{r}", "The cost the taxman counts. For shares "
+                              "bought before Feb 2018 this uses the official "
+                              "31-Jan-2018 value (the grandfathering rule), "
+                              "so it can differ from what you paid.")
+    r += 1
+    if not rep.realised:
+        ws.write(f"A{r}", "No sales recorded yet.", F["hint"])
+        r += 1
+    for row in rep.realised:
+        ws.write(f"A{r}", row.fy, F["c_text"])
+        ws.write(f"B{r}", row.owner, F["c_text"])
+        ws.write(f"C{r}", row.name, F["c_text"])
+        ws.write(f"D{r}", row.bucket, F["c_text"])
+        if row.qty is not None:
+            ws.write_number(f"E{r}", row.qty, F["c_units"])
+        if row.buy_date:
+            ws.write_datetime(f"F{r}", row.buy_date, F["date_disp"])
+        if row.sell_date:
+            ws.write_datetime(f"G{r}", row.sell_date, F["date_disp"])
+        ws.write_number(f"H{r}", row.held_days, F["c_text"])
+        ws.write(f"I{r}", row.term, F["c_text"])
+        ws.write_number(f"J{r}", row.proceeds, F["c_money"])
+        ws.write_number(f"K{r}", row.taxable_cost, F["c_money"])
+        ws.write_number(f"L{r}", row.gain, F["c_money"])
+        ws.write(f"M{r}", row.note, F["hint"])
+        r += 1
+    if rep.realised:
+        _redgreen(ws, F, f"L{hdr + 1}:L{r - 1}")
+
+    r += 1
+    ws.write(f"A{r}", "What you still hold (if sold today)", F["section"])
+    r += 1
+    hdr = r
+    ws.write_row(f"A{r}", ["Owner", "What", "Tax bucket", "Qty / Units",
+                           "Value today ₹", "Gain if sold today ₹", "Term",
+                           "Long-term on", "Note"], F["header"])
+    ws.write_comment(f"F{r}", "Against the taxable (grandfathered) cost - "
+                              "the gain the taxman would see, which can "
+                              "differ from the Equity tab's Net chg.")
+    ws.write_comment(f"H{r}", "The date this holding turns long-term - "
+                              "from then on the lower LTCG rules apply. "
+                              "Blank = already long-term.")
+    r += 1
+    for row in rep.unrealised:
+        ws.write(f"A{r}", row.owner, F["c_text"])
+        ws.write(f"B{r}", row.name, F["c_text"])
+        ws.write(f"C{r}", row.bucket, F["c_text"])
+        if row.qty is not None:
+            ws.write_number(f"D{r}", row.qty, F["c_units"])
+        ws.write_number(f"E{r}", row.value_today, F["c_money"])
+        ws.write_number(f"F{r}", row.gain_today, F["c_money"])
+        ws.write(f"G{r}", row.term, F["c_text"])
+        if row.lt_on:
+            ws.write_datetime(f"H{r}", row.lt_on, F["date_disp"])
+        ws.write(f"I{r}", row.note, F["hint"])
+        r += 1
+    if rep.unrealised:
+        _redgreen(ws, F, f"F{hdr + 1}:F{r - 1}")
+
+    for w in rep.warnings:
+        ws.write(f"A{r}", "⚠ " + w, F["hint"])
+        r += 1
+    ws.freeze_panes("A4")
+    return ws
+
+
+def _write_tax_rules(wb, F, data: PortfolioData):
+    """The capital-gains rate table, IN the workbook (v1.6, SPEC §3.22) —
+    bundled defaults merged with the user's rows, so a Budget change is an
+    Excel edit, not an app release. Editable like any input sheet; invalid
+    rows are kept visible (the engine warns instead of silently dropping)."""
+    from .model import effective_tax_rules
+    valid, invalid, _w = effective_tax_rules(data.tax_rules)
+
+    ws = wb.add_worksheet("Tax_Rules")
+    _widths(ws, {"A": 11, "B": 13, "C": 20, "D": 9, "E": 9, "F": 20,
+                 "G": 60})
+    _sheet_head(ws, F, "TAX RULES — WHAT THE CAPITAL GAINS TAB USES",
+                "Ships filled in with the current law. When the government "
+                "changes a rate or the allowance, edit the number here - or "
+                "add a row from the date the change applies - then run the "
+                "update. No new app version needed. Blank STCG % = taxed at "
+                "your slab; rows the app ships come back if deleted, so "
+                "edit them instead.")
+    ws.write_row("A3", ["Asset", "Applies from", "Long-term after (days)",
+                        "STCG %", "LTCG %", "Tax-free allowance ₹/yr",
+                        "Notes"], F["header"])
+    ws.write_comment("A3", "equity = listed shares; mf_equity = equity "
+                           "mutual funds; mf_debt = debt funds. Separate "
+                           "rows because the law taxes them differently.")
+    ws.write_comment("B3", "The row applies to sales ON or AFTER this date "
+                           "- for each sale, the newest row on or before "
+                           "its sell date wins. That is how a mid-year "
+                           "change (like 23-07-2024) is handled.")
+    ws.write_comment("C3", "Held longer than this many days = long-term "
+                           "(LTCG); otherwise short-term (STCG).")
+    ws.write_comment("D3", _G_STCG + " Leave blank for 'taxed at your "
+                           "slab' (no amount is computed).")
+    ws.write_comment("E3", _G_LTCG)
+    ws.write_comment("F3", "The yearly tax-free slice of long-term gains "
+                           "(Sec 112A). Shares and equity funds share ONE "
+                           "allowance.")
+
+    rows = valid + invalid
+    by_row = {M.FIRST_DATA_ROW + i: t for i, t in enumerate(rows)}
+    for r in range(M.FIRST_DATA_ROW, M.TAXRULES_LAST_ROW + 1):
+        t = by_row.get(r)
+        if t:
+            ws.write(f"A{r}", t.asset, F["in_text"])
+            if t.effective_from:
+                ws.write_datetime(f"B{r}", t.effective_from, F["in_date"])
+            ws.write_number(f"C{r}", t.lt_days, F["in_num"])
+            if t.stcg_pct is not None:
+                ws.write_number(f"D{r}", t.stcg_pct, F["in_num"])
+            if t.ltcg_pct is not None:
+                ws.write_number(f"E{r}", t.ltcg_pct, F["in_num"])
+            ws.write_number(f"F{r}", t.ltcg_exempt, F["in_money"])
+            if t.notes:
+                ws.write(f"G{r}", t.notes, F["in_text"])
+    ws.data_validation(f"A4:A{M.TAXRULES_LAST_ROW}", {
+        "validate": "list",
+        "source": ["equity", "mf_equity", "mf_debt"],
+        "show_error": False,
+        "input_title": "Asset",
+        "input_message": "equity / mf_equity / mf_debt",
+    })
     ws.freeze_panes("A4")
     return ws
 
@@ -1773,10 +2119,18 @@ def _write_guide(wb, F):
 
 # ------------------------------------------------------------------ build ---
 
-def build_workbook(data: PortfolioData, out_path, *, masked: bool = False) -> None:
+def build_workbook(data: PortfolioData, out_path, *, masked: bool = False,
+                   today: date | None = None, capgains=None) -> None:
     """Build the workbook to a path or a BytesIO (the Lock path builds in
     memory so plaintext never touches disk — SPEC §3.19). `masked` is a
-    render-time decision, never stored on `data`."""
+    render-time decision, never stored on `data`. `today` pins every
+    build-time date: the Capital-Gains computation (§6.16) AND all FY
+    labels (Dashboard B17, person B4, the Dividends sheet) — one date,
+    resolved once, so builds are deterministic and the FY the SUMIFS
+    filter is always the FY the dividend rows are tagged with. The updater
+    passes its run date (and its already-computed `capgains` report so
+    console and sheet can never differ); direct callers get date.today()."""
+    today = today or date.today()
     options: dict = {"default_date_format": DATE_FMT}
     if masked:
         # the default xf catches cells written with no explicit format —
@@ -1813,12 +2167,13 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False) -> No
         "=NPS_Master!$B$4:INDEX(NPS_Master!$B:$B,COUNTA(NPS_Master!$B:$B)+2)")
 
     # tab order = SPEC §3.1
-    _write_dashboard(wb, F, data)
+    _write_dashboard(wb, F, data, today)
     _write_projection(wb, F)
     _write_settings(wb, F, data)
     for person in data.persons:
-        _write_person(wb, F, person, data)
+        _write_person(wb, F, person, data, today)
     _write_equity(wb, F, data)
+    _write_equity_sells(wb, F, data)
     _write_mutualfunds(wb, F, data)
     _write_mf_sip(wb, F, data)
     _write_master(wb, F, "MF_Master", "MUTUAL FUND MASTER (AMFI)",
@@ -1851,7 +2206,9 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False) -> No
     _write_manual_assets(wb, F, data)
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)
-    _write_dividends(wb, F, data)
+    _write_dividends(wb, F, data, today)
+    _write_capital_gains(wb, F, data, today, rep=capgains)
+    _write_tax_rules(wb, F, data)
     _write_history(wb, F, data)
     _write_guide(wb, F)
 
@@ -1869,6 +2226,11 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False) -> No
     hidden = off - on
     if not data.show_references:
         hidden |= set(M.REFERENCE_SHEETS)
+    # the Capital-gains trio follows its own Settings switch (v1.6
+    # §3.21/§3.22) — deliberately independent of the Equity class toggle
+    # (don't-intimidate: default off even for equity users)
+    if not data.show_capital_gains:
+        hidden |= {"Equity_Sells", "Capital Gains", "Tax_Rules"}
 
     # tab colours (SPEC §3.1): the strip explains itself at a glance —
     # navy = overview, teal = family members, blue = you type here,
@@ -1879,10 +2241,12 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False) -> No
                  "Settings": TAB_NAVY, "Guide": TAB_GOLD}
     tab_color.update({p: TAB_TEAL for p in data.persons})
     tab_color.update({s: TAB_BLUE for s in (
-        "Equity", "MutualFunds", "MF_SIP", "FixedDeposits", "PPF",
-        "PPF_Ledger", "EPF", "Bonds", "Gold_Silver", "NPS", "Manual_Assets")})
+        "Equity", "Equity_Sells", "MutualFunds", "MF_SIP", "FixedDeposits",
+        "PPF", "PPF_Ledger", "EPF", "Bonds", "Gold_Silver", "NPS",
+        "Manual_Assets", "Tax_Rules")})
     tab_color.update({s: TAB_GREY for s in
-                      ("By Scrip", "Dividends", "History") + M.REFERENCE_SHEETS})
+                      ("By Scrip", "Dividends", "Capital Gains", "History")
+                      + M.REFERENCE_SHEETS})
 
     if masked:
         # the mask can't be casually cleared: every sheet protected, no

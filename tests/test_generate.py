@@ -11,10 +11,11 @@ from networth.sample_data import sample_portfolio
 
 EXPECTED_SHEETS = [
     "Dashboard", "Projection", "Settings", "Amit", "Priya", "Rahul", "Equity",
-    "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master", "Bank_Master",
-    "FixedDeposits", "PPF", "PPF_Ledger", "EPF", "Bonds", "Gold_Silver",
-    "NPS", "NPS_Master", "Manual_Assets", "By Scrip", "Corporate_Actions",
-    "Dividends", "History", "Guide",
+    "Equity_Sells", "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master",
+    "Bank_Master", "FixedDeposits", "PPF", "PPF_Ledger", "EPF", "Bonds",
+    "Gold_Silver", "NPS", "NPS_Master", "Manual_Assets", "By Scrip",
+    "Corporate_Actions", "Dividends", "Capital Gains", "Tax_Rules",
+    "History", "Guide",
 ]
 
 
@@ -79,7 +80,7 @@ def test_dashboard_formulas(wb):
     assert d["G16"].value == "=SUM(G6:G15)"
     assert d["E4"].value.startswith('=IF(B4="","",(1+B4)/(1+E3/100)-1)')
     assert d["E3"].value == 7          # inflation input
-    assert d["B4"].value == pytest.approx(0.0676209694)
+    assert d["B4"].value == pytest.approx(0.0691672176)
 
 
 def test_equity_sheet(wb):
@@ -89,7 +90,7 @@ def test_equity_sheet(wb):
     assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4*IF($T4="",1,$T4)/IF($S4="",1,$S4))'
     assert e["O3"].value == "Qty today" and e["P3"].value == "Avg cost today"
     assert "MATCH($C4,Stock_Master!$B:$B,0)" in e["B4"].value
-    assert e["N142"].value == pytest.approx(0.0664365522)
+    assert e["N142"].value == pytest.approx(0.0666771890)
     assert e["C142"].value == "TOTAL"
     assert e["I142"].value == "=SUM(I4:I140)"
     assert e["M4"].value.date().isoformat() == "2018-01-31"

@@ -159,6 +159,7 @@ banner help-text changed, nothing the reader matches on moves.
 | v1.3 | Settings | input (§3.14) | per-class Yes/No + Target % + drift tolerance |
 | 3… | one per person (e.g. Amit) | computed | that person's allocation + pie chart |
 | … | Equity | data entry | stock holdings |
+| v1.6 | Equity_Sells | data entry (§3.20) | one row per realised share sale (default off, CG switch §3.14) |
 | … | MutualFunds | computed summary | one row per (owner, scheme), derived from MF_SIP |
 | … | MF_SIP | data entry | one row per MF purchase/redemption |
 | … | MF_Master | reference (hidden) | AMFI scheme list (~14k rows); Reference-lists switch §3.14 |
@@ -176,6 +177,8 @@ banner help-text changed, nothing the reader matches on moves.
 | … | By Scrip | computed | family-wide exposure per stock |
 | v1 | Corporate_Actions | reference (hidden, §6.7) | fetched + manual corporate actions and their effect; Reference-lists switch |
 | v1.2 | Dividends | mixed (§3.13) | FY dividend ledger — auto + manual rows, by-month chart |
+| v1.6 | Capital Gains | computed at build (§3.21) | STCG/LTCG per FY, grandfathering, sell-planning (default off, CG switch) |
+| v1.6 | Tax_Rules | input (§3.22) | the capital-gains rate table, editable in the workbook — a Budget change is an Excel edit, not a release (default off, CG switch) |
 | v1.1 | History | updater data | one net-worth snapshot per day (§6.11) |
 | … | Guide | static text | 2-minute manual |
 
@@ -258,6 +261,14 @@ vs Target %" (series D and E over the class labels; v1.3/R11), **bar** "Net
 worth by person", **line** "Net worth over time" and **stacked area** "Net
 worth by class over time" (both over History, §6.11).
 
+**Chart placement (normative, all sheets):** floating charts must never sit
+over a data column. Dashboard charts anchor at the first column AFTER the
+person × class grid plus one spacer — derived from the number of shown
+classes (`chr(ord("A") + n + 4)`), so switching on more classes slides the
+charts right instead of hiding grid columns; the Actual-vs-Target chart
+sits 8 columns further right. Charts below the tables keep the same left
+edge.
+
 ### 3.4 Projection
 
 Row 4 to row 24 (n = 0…20), columns:
@@ -280,13 +291,16 @@ sheet is live formulas — no updater involvement.
 | A1 | `<Name> — PORTFOLIO` |
 | A2/B2 | `Owner` / the person's name (single source for this sheet's formulas) |
 | A3/B3 | `Net worth` / `=B11` |
+| A4/B4 | *(v1.6, only when equity is enabled)* `Dividends FY <fy>` / `=SUMIFS(Dividends!$I:$I, Dividends!$A:$A,"<fy>", Dividends!$B:$B,$B$2)` — this person's share of the Dashboard B17 family total. `<fy>` comes from the build's `today` (§6.16), never the wall clock, so the SUMIFS filters the same FY the dividend rows are tagged with. A Manual dividend row with a blank Owner counts in B17 but in no person's B4 — the updater warns and the B17 gloss says so |
 | A5:C5 | headers `Asset class, Value, # holdings` |
 | A6:A10 | Equity, Mutual Funds, Fixed Deposits, PPF, Bonds |
 | B6:B10 | `=SUMIFS(<class value col>, <class owner col>, $B$2)` (same column map as Dashboard) |
 | C6:C10 | `=COUNTIF(<class owner col>, $B$2)` |
 | A11:C11 | `Total` + sums |
 
-Chart: **pie** “<Name> — allocation” over A6:B10.
+Chart: **pie** “<Name> — allocation” over A6:B10, anchored at I4 — right of
+the holding blocks, which occupy columns A–G and only grow downward (the
+§3.3 charts-never-over-data rule).
 
 ### 3.6 Equity
 
@@ -337,7 +351,9 @@ FMV-fallback marking on E (§6.6), adjustment columns (§6.7).
 
 J1/J2: label `Portfolio MF XIRR` + **updater-written** value.
 
-**MutualFunds** — one row per (owner, scheme); the user enters only A and C:
+**MutualFunds** — one row per (owner, scheme); the user enters only A and C
+(and, since v1.6, optionally M `Tax type`: an Equity/Debt dropdown feeding
+§6.16 — blank counts as Equity; the M3 comment says so in plain words):
 
 | Col | Header | Kind | Definition |
 |---|---|---|---|
@@ -352,6 +368,7 @@ J1/J2: label `Portfolio MF XIRR` + **updater-written** value.
 | J | Net chg. | computed | `=I−H` |
 | K | Return % | computed | `=J/H` guarded |
 | L | XIRR | **updater-written** | true XIRR from that (owner, ISIN)'s MF_SIP cashflows + current value |
+| M | Tax type | input | Equity/Debt dropdown (non-blocking) feeding §6.16; blank counts as Equity |
 | N | Key | helper | as in Equity |
 
 ### 3.8 FixedDeposits
@@ -527,17 +544,20 @@ from r4 (rows 4–15 reserved), then:
 | D4:D15 | `Shown` / `Hidden` / `Hidden - has data (not counted)` | generator-written |
 | E4:E15 | note (for the has-data case: rows are saved but not counted; switch to Yes to include) | generator-written |
 | A16/B16 | `Reference lists` — Yes/No for the REFERENCE sheets (§2.1); default **No** | **input** |
-| A17 | `Balance targets (optional)` section label | static |
-| A18/B18 | `Drift tolerance (± % points)`, default **5** | **input** |
-| A19/B19 | `Targets total` = `SUM(C4:C15)`, **amber** when non-zero and ≠ 100 | computed |
-| A20 | `Privacy (optional)` section label (v1.5) | static |
-| A21/B21 | `Privacy mask` — Yes/No for the ••• Mask (§3.19); default **No** | **input** |
-| A22/B22 | `Lock file (encryption)` — Yes/No for the at-rest Lock (§3.19); default **No** | **input** |
+| A17/B17 | `Capital gains report` — Yes/No for Equity_Sells + Capital Gains + Tax_Rules (§3.20–§3.22, v1.6); default **No** | **input** |
+| A18 | `Balance targets (optional)` section label | static |
+| A19/B19 | `Drift tolerance (± % points)`, default **5** | **input** |
+| A20/B20 | `Targets total` = `SUM(C4:C15)`, **amber** when non-zero and ≠ 100 | computed |
+| A21 | `Privacy (optional)` section label (v1.5) | static |
+| A22/B22 | `Privacy mask` — Yes/No for the ••• Mask (§3.19); default **No** | **input** |
+| A23/B23 | `Lock file (encryption)` — Yes/No for the at-rest Lock (§3.19); default **No** | **input** |
 
-Reader rules: match class rows by label anywhere in rows 4–20 (tolerant;
+Reader rules: match class rows by label anywhere in rows 4–23 (tolerant;
 "Real Estate" accepted for Property); a missing `Reference lists` row
-(pre-v1.4.3 workbook) ⇒ No; missing sheet (pre-v1.3) ⇒ registry defaults;
-the user's No always round-trips unchanged. Real form-control checkboxes
+(pre-v1.4.3 workbook) ⇒ No; a missing `Capital gains report` row (pre-v1.6)
+⇒ No; missing sheet (pre-v1.3) ⇒ registry defaults; the user's No always
+round-trips unchanged. Label-driven matching is what makes the v1.6 one-row
+shift invisible to older workbooks. Real form-control checkboxes
 are deliberately not used (xlsxwriter cannot write them; LibreOffice
 renders them poorly) — the Yes/No validation dropdown is the normative
 control.
@@ -716,6 +736,109 @@ on, a backup taken of an unmasked-at-rest file is named
 `*.unmasked-backup-*` and purged on the next masked/locked run (one
 warning line says so) — readable copies never linger in backups/.
 
+### 3.20 Equity_Sells (v1.6; default off — CG switch §3.14)
+
+A self-contained realised-sales ledger. The Equity sheet stays the NET
+what-you-own-now snapshot, so a sale is its own record here; the r2 hint
+carries the double-entry contract verbatim: *"One row per sale — copy the
+numbers from your contract note. Also reduce the Quantity on the Equity tab:
+that tab is what you own now; this one is the record of what you sold."*
+
+Layout: title r1 / hint r2 / header r3 / data rows 4..EQSELL_LAST_ROW (203).
+Columns: A Owner (input; the reader's anchor header) · B ISIN (Stock_Master
+INDEX/MATCH lookup, user-overridable) · C Scrip (type-ahead dropdown) ·
+D Qty sold · E Buy date · F Buy price ₹/share · G Sell date · H Sell price
+₹/share · I Proceeds `=D·H` (computed) · J Gain ₹ `=D·(H−F)` (computed,
+red/green) · K Notes. No TOTAL row. More rows than the sheet holds → the
+§6.16 overflow warning (the extras would be silently lost otherwise). The
+J3 gloss explains why this simple gain can exceed the Capital Gains tab's
+taxable gain (grandfathering); the F3 gloss says a blank-price sale shows
+in the tax view but stays out of XIRR (§6.2).
+
+**Units convention (normative):** every figure on a sell row is in SELL-TIME
+share units — exactly what the contract note / broker P&L shows — and the
+engine never CA-adjusts these inputs. A blank Buy price on a pre-2018-02-01
+purchase means "apply the §6.6 grandfathering value" (§6.16); the FMV
+substitution happens in the report only and is NEVER written back into the
+input cell (the cell stays blank and round-trips blank). Demerger-child
+sales keep the original company's buy date (holding period inheritance,
+§6.15) — the E3 header comment says so in plain words.
+
+Reader: guarded (`if "Equity_Sells" in wb.sheetnames` — pre-v1.6 workbooks
+are a no-op), anchor "Owner", columns 1–8 + 11 by position (9/10 are
+formulas and never read).
+
+### 3.21 Capital Gains (v1.6; default off — CG switch §3.14)
+
+The tax view, **computed at build time** from persisted inputs (Equity_Sells
++ MF_SIP + the bundled FMV/tax tables + Corporate_Actions) by §6.16 and
+written as plain values — never stored on the data model, so regeneration
+always reproduces it and round-trip identity is untouched. `build_workbook`
+takes an optional `today` (the updater passes its run date; direct callers
+get the wall clock) and an optional precomputed report (`capgains=`) so the
+updater's console figures and the sheet come from ONE computation. When no
+sale is recorded and the switch is off, the engine is skipped entirely and
+the sheet carries only its head plus a one-line "nothing recorded yet" hint.
+
+Reads top-down like a story: r2 hint *"Worked out for you from Equity_Sells
+and MF_SIP on every update. Indicative only - for planning, not for
+filing."*; r3 headline = current-FY LTCG headroom with the absolute deadline
+(e.g. "sell before 31-03-2027") beside a numeric cell; then three stacked
+blocks — **By financial year** (newest first: STCG ₹, LTCG ₹, allowance,
+allowance used, still tax-free, indicative tax STCG/LTCG, at-your-slab
+gains, debt-fund gains, intraday/speculative gains — the K3 gloss says
+they're slab-taxed business income, not capital gains),
+**What you sold (realised)** (FY, owner, what, tax
+bucket, qty, dates, days held, term, proceeds, taxable cost, gain,
+plain-words note), **What you still hold (if sold today)** (the
+sell-planning helper: gain vs the taxable/grandfathered cost, term, and the
+exact date each holding turns long-term). Engine warnings render as ⚠ hint
+lines at the bottom; every caveat (assumed-equity fund, FMV est.,
+at-your-slab) lives in the row's Note column, on the sheet.
+
+Masked-build rules: no charts or data bars anywhere on the pair (the
+workbook chart count stays at 10), and **no ₹ amount is ever composed into a
+text cell** — the mask's `@` section renders text verbatim, so figures live
+only in numeric cells.
+
+The Settings row 17 "Capital gains report" (Yes/No, default No) shows/hides
+Equity_Sells + Capital Gains + Tax_Rules together, independent of the Equity
+class toggle (progressive disclosure). Absent row (pre-v1.6 workbook) reads
+as No.
+
+### 3.22 Tax_Rules (v1.6; default off — CG switch §3.14)
+
+The capital-gains rate table lives IN the workbook, so a Budget change is an
+Excel edit, not an app release. An input sheet (blue tab), prefilled with the
+bundled law on first build; from then on the workbook's rows are the source
+of truth.
+
+Layout: title r1 / hint r2 (says exactly that: edit a number or add a row
+from the date the change applies, then run the update; blank STCG % = at
+your slab; deleted shipped rows come back — edit them instead) / header r3 /
+data rows 4..TAXRULES_LAST_ROW (33). Columns: A Asset (non-blocking dropdown
+equity | mf_equity | mf_debt; the reader's anchor header) · B Applies from
+(date; the newest row ≤ the sale date wins — that's how mid-year changes
+work) · C Long-term after (days) · D STCG % · E LTCG % · F Tax-free
+allowance ₹/yr · G Notes. Every header carries a plain-words gloss.
+
+**Resolution (normative):** the engine uses the bundled `tax_rules_in.csv`
+as DEFAULTS, upserted with the workbook rows by key `(asset casefolded,
+Applies-from date)` — an edited row overrides its bundled twin, a new row
+joins the set, and bundled rows the workbook doesn't mention stay in force
+(so a future release's refreshed CSV still reaches users who never edited).
+A row with an unknown Asset or no Applies-from date is **never computed
+with and never silently dropped**: it stays on the sheet, and every run
+warns until it is fixed. The same treatment applies to numbers that can
+only be typos — a rate outside 0–100, a negative allowance, a non-positive
+holding period. Two workbook rows with the same (asset, date) warn and the
+lower row wins. Deleting a shipped row is a no-op (the merge restores it).
+
+Reader: guarded (`if "Tax_Rules" in wb.sheetnames` — pre-v1.6 workbooks fall
+back to the bundled CSV alone), anchor "Asset", columns 1–7 by position.
+Sample data ships `tax_rules = load_tax_rules()` so build→read→build is
+byte-stable (round-trip identity).
+
 ---
 
 ## 4. Sample data
@@ -876,6 +999,7 @@ the Curated + Manual paths cover them.
 | `ppf_rates.csv` *(roadmap — ships with the PPF contribution ledger)* | `from_date, to_date, rate_pct` | MoF quarterly notifications, historical to present (no official API exists) |
 | `epf_rates.csv` *(v1.3, R12)* | `fy_start, rate_pct` | EPFO annual declared rates, historical to present (no official API — refreshed via releases); the updater fills a blank EPF Rate % with the latest row |
 | `bullion_proxies.csv` *(v1.3, R13)* | `metal, match ∈ {symbol_prefix, isin}, key, grams_per_unit, note` | exchange-traded ₹/gram proxies for the §5.7 fallback (SGB prefix for gold, SilverBeES for silver; GoldBeES was dropped 2026-07-17 — its live grams-per-unit had drifted ~17 % from the nominal 0.01 g, exactly the expense-ratio decay this column warns about); release-refreshed |
+| `tax_rules_in.csv` *(v1.6)* | `asset, effective_from, lt_days, stcg_pct, ltcg_pct, ltcg_exempt_inr, notes` | Indian capital-gains regimes for §6.16, keyed by effective **date** (Budget 2024 changed rates mid-FY on 2024-07-23); blank stcg_pct = at the user's slab. **DEFAULTS only**: the workbook's Tax_Rules sheet (§3.22) is upserted over these, so users can apply a Budget change themselves in Excel — releases refresh the CSV for everyone else |
 
 ### 5.6 NPS daily NAVs + scheme master (v1.3, R13)
 
@@ -970,7 +1094,7 @@ Per asset class (skip rows with missing required inputs):
 
 | Class | Outflows | Inflows |
 |---|---|---|
-| Equity | −Invested @ Cost date (× the §6.15 cost factor when set — **0 is a real value**, meaning the parent retained no cost; only blank means 1) | +Cur. val @ today |
+| Equity | −Invested @ Cost date (× the §6.15 cost factor when set — **0 is a real value**, meaning the parent retained no cost; only blank means 1); **v1.6:** plus −Qty·BuyPrice @ Buy date per *complete* Equity_Sells row (§3.20; a blank buy price = the grandfathering path and stays out) | +Cur. val @ today; **v1.6:** plus +Rate·Qty @ ex-date per Dividends row (all FYs, Auto + Manual, ex-date ≤ today — estimates, §6.12), and +Qty·SellPrice @ Sell date per complete Equity_Sells row. New flows are APPENDED after the per-row pairs (flow order is part of the observable contract) |
 | Mutual Funds | one per MF_SIP row: −Amount @ Date (redemptions are +) | +Cur. val @ today per (owner, ISIN) |
 | Fixed Deposits | −Principal @ Start | +Value-as-on @ min(today, maturity) |
 | PPF | −(Balance discounted at Rate% back to as-on date)… in practice: −Balance @ as-on | +Balance·(1+Rate%)^(days/365) @ today |
@@ -988,6 +1112,19 @@ still be computed (harmless, and ready when re-enabled) but is written
 nowhere while hidden. Written as plain values to: Dashboard B4, the
 allocation table's XIRR column, Equity class cell, MutualFunds L column +
 MF_SIP J2.
+
+v1.6 note: because dividends and recorded sales now enter the equity flows,
+every user's equity/portfolio XIRR shifts once on the first v1.6 update —
+said plainly in the release notes and in the Portfolio XIRR hover gloss
+(Dashboard A4, the label cell beside B4). A typed **0** buy price is a real
+cost (bonus/ESOP shares) and its round trip counts; only a BLANK buy price
+(the grandfathering path) stays out of XIRR — that sale still appears in
+the tax view, and the Equity_Sells Buy-price gloss says so (the one place
+the two surfaces deliberately differ). Likewise a typed 0 sell price (a
+write-off) is a real, counted flow.
+Known limitation (documented, accepted): frozen prior-FY dividend rows of a
+holding that was later sold and deleted contribute inflows without their buy
+outflow; recording the sale on Equity_Sells supplies the missing round trip.
 
 ### 6.3 Coupon schedule (v1)
 
@@ -1051,9 +1188,9 @@ else: row stays without Invested/XIRR (as today)
 ```
 
 The Q flag makes the fallback round-trip regeneration (the cell keeps its
-amber + comment and is never mistaken for a user-typed cost), and lets a
-future capital-gains report apply the true grandfathering rule (higher of
-cost vs min(FMV, sale price)).
+amber + comment and is never mistaken for a user-typed cost), and lets the
+capital-gains report apply the true grandfathering rule — higher of cost vs
+min(FMV, sale price) — **shipped in v1.6, §6.16**.
 
 ### 6.7 Corporate-action adjustment (v1)
 
@@ -1310,6 +1447,105 @@ old name until the user re-keys it — values are unaffected.
 
 ---
 
+### 6.16 Capital-gains engine (v1.6)
+
+All figures INDICATIVE (planning, not filing); when something can't be
+computed correctly it is skipped with a warning — never guessed. Constants:
+`GRANDFATHER_DATE = 2018-01-31`, `GRANDFATHER_CUTOFF = 2018-02-01`,
+`DEBT_MF_SLAB_FROM = 2023-04-01` (purchase-date rules live in code, not the
+rate table), `DUST_INR = 1.0` (FIFO residuals worth less than ₹1 are float
+rounding — amounts are paise-rounded, units NAV-derived — never treated as
+holdings or oversells).
+
+The engine runs only when the user is using the feature (a sale recorded or
+the §3.14 switch on); every other build writes the empty Capital Gains sheet
+and skips the compute. The updater computes the report ONCE and passes it to
+the build, so console line and sheet can never differ. A typed **0** price is
+real data (a delisted write-off, a bonus-share cost) — only an empty cell
+means "not entered", so completeness guards test for None, never falsiness.
+If more sale rows exist than the sheet holds (§3.20), the extras still count
+in this run's figures but are dropped from the saved file — warned loudly.
+
+Tax rates come from the **workbook's Tax_Rules sheet merged over the
+bundled `data/tax_rules_in.csv` defaults** (§3.22 — nothing, including the
+₹1.25L exemption, is hard-coded; a Budget change is an Excel edit). Rows
+are keyed by `asset` (equity | mf_equity | mf_debt) + `effective_from`
+**date** — NOT by FY, because Budget 2024 changed the equity rates mid-year
+on 2024-07-23 (STCG 15→20 %, LTCG 10→12.5 %, exemption ₹1L→₹1.25L).
+mf_debt carries TWO rows: the old regime from 2018-04-01 (lt_days 1095;
+both rates blank — STCG at slab, LTCG 20 % with indexation is not modelled
+so no amount is shown) and the Budget-2024 regime from 2024-07-23 (lt_days
+730) — without the old row, pre-2024 debt-fund sales would mislabel Term
+via the 365-day fallback. The rule in force is resolved per SALE date
+(newest effective_from ≤ sale date); a date no rule covers (pre-FY-2018-19,
+the §10(38) era) shows tax "—". `stcg_pct` blank = taxed at the user's slab
+(words, never an amount). Malformed CSV rows raise loudly in the LOADER (a
+wrong tax table is worse than none) but the ENGINE degrades that to a
+warning and falls back to the workbook's rows alone — one bad bundled row
+must never crash every user's update. Invalid WORKBOOK rows warn and are
+excluded per §3.22.
+
+```
+fmv_per_share(isin, at):                       # §6.6 value in `at`-day units
+    raw = FMV by ISIN, else by exchange symbol
+    return raw / chained_adjustment_factor(isin, 2018-01-31, at, actions)
+
+EQUITY realised — per complete Equity_Sells row (else warn + skip; a
+negative qty or price warns "check the row"; a future sell date warns;
+sell < buy warns "check the two dates"). buy = sell (same day) is
+**speculative income** (Sec 43(5)): a realised row with bucket
+"speculative", term "Intraday", gain = Qty·(Sell − Buy) — slab-taxed
+business income shown so nothing is hidden, NEVER mixed into STCG/LTCG,
+no tax amount computed, and kept out of XIRR (§6.2: not investment
+return, and a zero-duration pair is degenerate for a money-weighted
+rate). An intraday row with no buy price warns + skips.
+    cost/sh = Buy price                        # 0 is a real cost; None skips
+    if Buy date < CUTOFF and fmv found:
+        cost/sh = max(Buy price or 0, min(fmv_per_share(isin, Sell date),
+                                          Sell price))       # grandfathering
+        note "grandfathered"; blank Buy price → note says the 31-Jan-2018
+        market value (FMV) was used, an estimate
+    term = Long-term iff (Sell − Buy).days > rule.lt_days (365)
+    gain = Qty · (Sell price − cost/sh)
+
+MF realised — FIFO per (owner, scheme) over MF_SIP in txn-date order:
+    purchases (+amount) push lots {date, units, cost/unit};
+    each redemption (−amount) consumes lots front-first at its NAV
+      (no NAV and no units override → warn + skip;
+       residuals — leftover lot or unfilled redemption — worth ≤ DUST_INR
+       at the sale NAV vanish silently as rounding, anything larger left
+       unfilled → match what exists, warn the shortfall)
+    bucket: MutualFunds "Tax type" column. Tax type is a property of the
+      SCHEME (a fund is equity or debt for everyone): the first non-blank
+      row wins and conflicting rows warn — never last-writer-wins. No
+      non-blank row anywhere → mf_equity + note "assumed Equity". Debt lots
+      bought ≥ DEBT_MF_SLAB_FROM → bucket "slab" (term "At your slab", no
+      amount); equity-MF grandfathering is NOT computable (no 2018 NAV data
+      bundled) → actual cost + note "gain may be overstated"; indexation
+      unsupported.
+
+FY summaries (fy_label; newest first): the equity bucket = equity +
+mf_equity, sharing ONE §112A exemption. STCG tax is computed on the NETTED
+short-term figure shown beside it: same-FY short-term losses are set off
+against the highest-taxed gains first (the taxpayer-favourable order), each
+remaining gain at the rate on its own sell date (handles the mid-FY switch;
+any uncovered gain ⇒ whole figure "—"). LTCG: sum, subtract the FY-end
+rule's exemption once, residual at the FY-end LTCG rate. Losses net within
+the bucket; set-off across heads and carry-forward are NOT modelled (stated
+on the sheet).
+headroom = max(0, exemption − max(LTCG, 0)); the current-FY headroom is
+also computed when nothing was sold yet (the r3 headline).
+
+UNREALISED (sell-planning): per current Equity row — value/cost arithmetic
+IDENTICAL to §6.2 (qty·ca_factor·close vs qty·avg_cost·cost_factor) so the
+two surfaces can never drift; grandfathered cost in today-units when
+applicable; `lt_on = cost_date + (lt_days + 1)` gives the exact date the
+holding turns long-term. Per open MF lot (the FIFO remainder) at the fund's
+current NAV — carrying the SAME caveat notes as the realised rows
+("assumed Equity", pre-2018 "gain may be overstated"): a planning figure
+must not hide its guesses.
+```
+
 ## 7. Updater behaviour
 
 One entry point (`Update Portfolio`), replacing the legacy three scripts:
@@ -1330,7 +1566,12 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    the separate mask-off confirmation); locked+masked → the same
    see-them-this-time question (the password already unlocked the file).
    A --lock run skips fetching entirely and just re-masks/re-encrypts
-   (offline).
+   (offline). "No computing" means reproducing the LAST update's view: the
+   relock build takes its `today` from the newest History snapshot's date
+   (fresh file with no history → wall clock), so date-derived content
+   (Capital-Gains terms/FY, the FY labels) cannot shift under a relock that
+   promised to change nothing. run() and relock() share one
+   regenerate-atomically implementation so the two paths can never drift.
 2. INTERACTIVE (console runs only, i.e. stdin.isatty(); skipped when headless
    or --no-prompt): show the current people and offer to add new person
    sheet(s). Names entered here (or via repeatable --add-person NAME) are
@@ -1363,12 +1604,19 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            ISIN, status flags (§6.5), FMV fallbacks (§6.6), corp-action
            factors (§6.7), dividend rows (§6.12: rebuild current-FY Auto,
            freeze the rest, keep unverified), PPF ledger accrual (§6.10),
-           XIRR (§6.1–6.3), FY-end estimates (§6.8), net-worth snapshot
-           (§6.11)
+           XIRR (§6.1–6.3; equity flows include dividends + Equity_Sells
+           round trips since v1.6), FY-end estimates (§6.8), net-worth
+           snapshot (§6.11). v1.6: when sells exist or the CG switch is on,
+           run §6.16 once for the console (🧾 line: current-FY STCG/LTCG +
+           headroom) and surface its warnings; the sheet itself recomputes
+           at build time
 8. REGENERATE — build the complete workbook (xlsxwriter): structure from this
-           spec + user inputs + computed/updater values; sheets of
+           spec + user inputs + computed/updater values (`today` passed in
+           so the §6.16/§3.21 build is deterministic); sheets of
            switched-off classes hidden, reference sheets per the
-           Reference-lists switch, tab colours applied (§2.1/§3.2);
+           Reference-lists switch, the Equity_Sells + Capital Gains + Tax_Rules trio
+           per the CG switch (§3.14 row 17), tab colours applied
+           (§2.1/§3.2);
            masked and/or encrypted per the privacy state (§3.19 — the
            Lock path builds in memory and writes only self-verified
            ciphertext); atomic replace (write temp file, then swap)

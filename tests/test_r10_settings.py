@@ -29,7 +29,9 @@ def test_default_template_shows_core_only(tmp_path):
     wb = load_workbook(path)
     assert "Settings" in wb.sheetnames
     hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
-    assert hidden == {"EPF", "Gold_Silver", "NPS", "Manual_Assets"} | REFERENCE
+    assert hidden == ({"EPF", "Gold_Silver", "NPS", "Manual_Assets"}
+                      | {"Equity_Sells", "Capital Gains", "Tax_Rules"}   # v1.6
+                      | REFERENCE)
     st = wb["Settings"]
     n = len(ASSET_CLASSES)
     labels = [st.cell(r, 1).value for r in range(4, 4 + n)]
@@ -42,7 +44,8 @@ def test_default_template_shows_core_only(tmp_path):
             assert st.cell(4 + i, 2).value == "No"
             assert st.cell(4 + i, 4).value == "Hidden - has data (not counted)"
     assert st["A16"].value == "Reference lists" and st["B16"].value == "No"
-    assert st["B18"].value == 5                     # drift tolerance default
+    assert st["A17"].value == "Capital gains report" and st["B17"].value == "No"
+    assert st["B19"].value == 5                     # drift tolerance default
     # the Dashboard carries the one-line awareness note for the hidden money
     notice = wb["Dashboard"]["I1"].value or ""
     assert "Hidden, not counted" in notice and "EPF" in notice
@@ -71,7 +74,9 @@ def test_registry_defaults_hide_new_classes(tmp_path):
     build_workbook(classic(), str(path))
     wb = load_workbook(path)
     hidden = {ws.title for ws in wb.worksheets if ws.sheet_state != "visible"}
-    assert hidden == {"EPF", "Manual_Assets", "Gold_Silver", "NPS"} | REFERENCE
+    assert hidden == ({"EPF", "Manual_Assets", "Gold_Silver", "NPS"}
+                      | {"Equity_Sells", "Capital Gains", "Tax_Rules"}   # v1.6
+                      | REFERENCE)
 
 
 def test_disabled_empty_class_hides_sheets_and_columns(tmp_path):

@@ -29,7 +29,7 @@ def test_allocation_table_columns(tmp_path):
     assert d["E20"].value == '=IF(Settings!$C$4="","",Settings!$C$4/100)'
     assert d["F20"].value == '=IF($E20="","",$D20-$E20)'
     g = d["G20"].value
-    assert '"On target"' in g and "Settings!$B$18" in g
+    assert '"On target"' in g and "Settings!$B$19" in g   # tol row, v1.6 layout
     assert '"Move ₹"&TEXT(ABS($F20)*$G$16,"#,##0")' in g
     assert '" out"' in g and '" in"' in g
 
@@ -62,7 +62,7 @@ def test_drift_band_and_target_chart_present(tmp_path):
             z.read(c).decode() for c in z.namelist()
             if re.fullmatch(r"xl/charts/chart\d+\.xml", c))
     # two formula CFs referencing the Settings tolerance band the Drift column
-    assert dash.count("Settings!$B$18/100") >= 2
+    assert dash.count("Settings!$B$19/100") >= 2          # tol row, v1.6 layout
     assert "Actual vs Target %" in charts
 
 

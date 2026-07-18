@@ -610,6 +610,14 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     summary["dividends_fy_total"] = round(sum(
         (d.rate or 0) * (d.qty or 0)
         for d in data.dividends if d.fy == fy_now), 2)
+    orphan_div = sum(1 for d in data.dividends
+                     if d.fy == fy_now and not d.owner
+                     and (d.rate or 0) and (d.qty or 0))
+    if orphan_div:
+        summary["warnings"].append(
+            f"{orphan_div} dividend row(s) this year have no Owner - they "
+            "count in the family total but in no one's per-person figure "
+            "(add the Owner on the Dividends sheet)")
 
     # ---- FMV 31-01-2018 fallback for unknown old costs (SPEC §6.6) ----
     fmv_filled = 0
@@ -635,6 +643,28 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 row.fmv_used = True
                 fmv_filled += 1
     summary["fmv_filled"] = fmv_filled
+
+    # ---- capital gains (v1.6, SPEC §6.16): computed ONCE here — the console
+    # line reads it and the build below reuses it (capgains=), so the two can
+    # never differ — and only when the user is actually using the feature ----
+    capgains_rep = None
+    if data.equity_sells or data.show_capital_gains:
+        from .compute.capital_gains import capital_gains_report
+        capgains_rep = rep = capital_gains_report(data, today)
+        summary["warnings"].extend(rep.warnings)
+        now = next((s for s in rep.summaries if s.fy == rep.fy_now), None)
+        bits = []
+        if now:
+            bits.append(f"FY {now.fy}: STCG ₹{now.stcg:,.0f} · "
+                        f"LTCG ₹{now.ltcg:,.0f}")
+        if now and now.spec_gain:
+            bits.append(f"intraday ₹{now.spec_gain:,.0f} (speculative, "
+                        f"at your slab)")
+        if rep.headroom_now is not None:
+            bits.append(f"₹{rep.headroom_now:,.0f} LTCG still tax-free "
+                        f"this year")
+        if bits:
+            summary["capgains"] = " — ".join(bits)
 
     # ---- gold & silver (SPEC §5.7): SGBs from the bhavcopy; physical metal
     # from IBJA, falling back to the bhavcopy-implied median, else kept as-is
@@ -766,17 +796,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     summary["net_worth"] = round(snap.total, 2)
     summary["history_points"] = len(data.history)
 
-    # ---- regenerate, atomically (SPEC §3.19: on the Lock path the plain
-    # workbook exists only in memory — the disk only ever sees ciphertext,
-    # and encrypt_workbook self-verifies before anything is replaced) ----
-    tmp = path.with_name(path.stem + ".new" + path.suffix)
-    if lock_active:
-        buf = io.BytesIO()
-        build_workbook(data, buf, masked=masked_build)
-        tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
-    else:
-        build_workbook(data, str(tmp), masked=masked_build)
-    os.replace(tmp, path)
+    # ---- regenerate, atomically ----
+    _regenerate_atomic(path, data, masked_build=masked_build,
+                       lock_active=lock_active, password=password,
+                       today=today, capgains=capgains_rep)
     if masked_build or lock_active:
         gone = _purge_unmasked_backups(path)
         if gone:
@@ -789,6 +812,26 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                           else "open (viewing)" if mask_active else "")
     summary["workbook"] = str(path)
     return summary
+
+
+def _regenerate_atomic(path: Path, data, *, masked_build: bool,
+                       lock_active: bool, password: str | None,
+                       today: date | None = None, capgains=None) -> None:
+    """The one regenerate-and-replace implementation, shared by run() and
+    relock() so the two can never drift (SPEC §3.19: on the Lock path the
+    plain workbook exists only in memory — the disk only ever sees
+    ciphertext, and encrypt_workbook self-verifies before anything is
+    replaced)."""
+    tmp = path.with_name(path.stem + ".new" + path.suffix)
+    if lock_active:
+        buf = io.BytesIO()
+        build_workbook(data, buf, masked=masked_build, today=today,
+                       capgains=capgains)
+        tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
+    else:
+        build_workbook(data, str(tmp), masked=masked_build, today=today,
+                       capgains=capgains)
+    os.replace(tmp, path)
 
 
 def relock(path: Path, password: str | None = None) -> dict:
@@ -817,14 +860,15 @@ def relock(path: Path, password: str | None = None) -> dict:
         raise _fail("type your password to lock the file (run by "
                     "double-click, choose --lock)")
     masked_build = data.privacy_enabled
-    tmp = path.with_name(path.stem + ".new" + path.suffix)
-    if lock_active:
-        buf = io.BytesIO()
-        build_workbook(data, buf, masked=masked_build)
-        tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
-    else:
-        build_workbook(data, str(tmp), masked=masked_build)
-    os.replace(tmp, path)
+    # "no computing" means reproducing the LAST update's view, not today's:
+    # the newest History snapshot carries that run's date, so date-derived
+    # content (Capital Gains terms/FY, the FY labels) can't shift under a
+    # relock that promised to change nothing. Fresh file with no history →
+    # date.today() fallback inside build_workbook.
+    asof = max((s.snap_date for s in data.history if s.snap_date),
+               default=None)
+    _regenerate_atomic(path, data, masked_build=masked_build,
+                       lock_active=lock_active, password=password, today=asof)
     gone = _purge_unmasked_backups(path)
     return {"privacy": ("locked + masked" if lock_active and masked_build
                         else "locked" if lock_active else "masked"),
@@ -879,6 +923,8 @@ def _print_summary(s: dict) -> None:
         _row("👥", "Added", f"sheet(s) for {', '.join(s['persons_added'])}")
     if s.get("classes_toggled"):
         _row("🗂️", "Classes", "; ".join(s["classes_toggled"]))
+    if s.get("capgains"):
+        _row("🧾", "Cap. gains", s["capgains"] + " (Capital Gains tab)")
     if s.get("privacy"):
         _row("🔒", "Privacy", {
             "masked": "numbers masked (•••)",

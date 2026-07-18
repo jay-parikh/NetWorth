@@ -1,0 +1,7 @@
+asset,effective_from,lt_days,stcg_pct,ltcg_pct,ltcg_exempt_inr,notes
+equity,2018-04-01,365,15,10,100000,Sec 111A/112A - STT-paid listed shares
+equity,2024-07-23,365,20,12.5,125000,Budget 2024 (transfers on/after 23-07-2024)
+mf_equity,2018-04-01,365,15,10,100000,equity funds share the Sec 112A exemption bucket
+mf_equity,2024-07-23,365,20,12.5,125000,Budget 2024
+mf_debt,2018-04-01,1095,,,0,old regime: STCG at slab; LTCG 20% with indexation (not modelled - no amount shown)
+mf_debt,2024-07-23,730,,12.5,0,lots bought before 2023-04-01 only; later lots taxed at slab

@@ -22,13 +22,18 @@ into RELEASES.md with acceptance criteria.
   every dividend paid on held stocks per financial year, filled automatically
   from both exchanges' announcements, with a Dashboard "Dividends this FY"
   total and a dividends-by-month chart.
-- ⬜ **Capital-gains tax report** — realised/unrealised STCG & LTCG per FY,
-  with 31-01-2018 grandfathering applied properly (reuses the bundled FMV
-  data), ₹1.25L LTCG exemption tracking, and a sell-planning helper.
-- ⬜ **Dividends → true equity XIRR** — feed the Dividends sheet rows into
-  the equity cashflow model, plus a per-person split of the FY dividend
-  total. Kept separate from R9 deliberately: changing return semantics
-  deserves its own release.
+- ✅ **Capital-gains tax report** *(shipped v1.6.0)* — realised/unrealised
+  STCG & LTCG per FY on the Capital Gains tab, fed by the new Equity_Sells
+  ledger + MF_SIP FIFO; 31-01-2018 grandfathering applied properly (bundled
+  FMV, corp-action-normalised), ₹1.25L LTCG exemption tracking with a
+  live headroom headline, per-sale-date rates (Budget 2024 mid-FY switch),
+  and a sell-planning section (gain-if-sold-today + the date each holding
+  turns long-term). Indicative, for planning — the sheet says so.
+- ✅ **Dividends → true equity XIRR** *(shipped v1.6.0)* — Dividends rows
+  (all FYs, ex-date ≤ today) and recorded Equity_Sells round trips now feed
+  the equity cashflow model, plus a per-person "Dividends FY" split on each
+  person sheet. Residual idea: `_dividend_qty` could add back sold lots
+  (needs ex-date-unit conversion; deferred).
 - ⬜ **Interest tracking** — FD interest payout mode (payout vs cumulative),
   bond coupon receipts ledger.
 
@@ -46,10 +51,10 @@ into RELEASES.md with acceptance criteria.
   to auto-fill the MF_SIP ledger.
 - ⬜ **Broker import** — Zerodha (tradebook/holdings CSV) first; then generic
   contract-note CSV mapping.
-- ⬜ **Curated-data refresh cadence** — `restructures.csv` (R14) and
-  `bullion_proxies.csv` (R13) are release-refreshed curated files; decide a
-  rhythm (e.g. every release, plus an out-of-band release for a major
-  index-stock merger) once R14 ships.
+- ✅ **Curated-data refresh cadence** *(decided 2026-07-18)* —
+  `restructures.csv` (R14) and `bullion_proxies.csv` (R13) are refreshed as
+  part of **every release** (a standing item in the RELEASES.md checklist),
+  plus an out-of-band release whenever a major index stock restructures.
 
 ## More of the balance sheet
 
@@ -101,7 +106,10 @@ into RELEASES.md with acceptance criteria.
   to remove the right-click→Open / SmartScreen friction.
 - ⬜ **Multi-currency** — foreign stocks/funds, FX rates, INR-consolidated
   view (unblocks ESOPs/RSUs above).
-- ⬜ **Workbook protection guidance** — password/encryption how-to; locked
-  computed columns to prevent accidental formula damage.
+- ✅ **Workbook protection** *(shipped v1.5.0, exceeded the original idea)* —
+  two opt-in layers sharing one password: the ••• privacy mask (display
+  curtain + full sheet protection) and the Lock (real OOXML AES encryption,
+  Excel's own password-to-open). Residual idea: locked computed columns in
+  the *unmasked* workbook to prevent accidental formula damage.
 - ⬜ **Google Sheets port** — a second implementation of docs/SPEC.md (Apps
   Script), proving the spec's portability promise.

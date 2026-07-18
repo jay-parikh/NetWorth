@@ -34,6 +34,8 @@ BOND_TOTAL_ROW = 55
 BYSCRIP_LAST_ROW = 29
 CA_LAST_ROW = 203               # Corporate_Actions data rows 4..203
 DIV_LAST_ROW = 203              # Dividends data rows 4..203 (SPEC §3.13)
+EQSELL_LAST_ROW = 203           # Equity_Sells data rows 4..203 (SPEC §3.20)
+TAXRULES_LAST_ROW = 33          # Tax_Rules data rows 4..33 (SPEC §3.22)
 MA_LAST_ROW = 63                # Manual_Assets data rows 4..63 (SPEC §3.18)
 EPF_LAST_ROW = 43               # EPF data rows 4..43 (SPEC §3.17)
 GS_LAST_ROW = 53                # Gold_Silver data rows 4..53 (SPEC §3.15)
@@ -51,14 +53,17 @@ PROJECTION_YEARS = 20          # Projection rows 4..24 (n = 0..20)
 PERSON_BLOCKS_START = 14
 
 # Settings sheet (SPEC §3.14): class rows 4..15, the Reference-lists row,
-# the optional balance-targets cells, then the privacy block (§3.19).
+# the Capital-gains-report row (v1.6), the optional balance-targets cells,
+# then the privacy block (§3.19). Readers are label-driven, so the v1.6
+# one-row shift is invisible to older workbooks.
 SETTINGS_FIRST_ROW = 4
 SETTINGS_LAST_ROW = 15
 SETTINGS_REF_ROW = 16          # "Reference lists" Yes/No (masters + actions tab)
-SETTINGS_TOL_ROW = 18
-SETTINGS_SUM_ROW = 19
-SETTINGS_PRIVACY_ROW = 21      # "Privacy mask" Yes/No (••• curtain)
-SETTINGS_LOCK_ROW = 22         # "Lock file (encryption)" Yes/No
+SETTINGS_CG_ROW = 17           # "Capital gains report" Yes/No (v1.6, §3.21)
+SETTINGS_TOL_ROW = 19
+SETTINGS_SUM_ROW = 20
+SETTINGS_PRIVACY_ROW = 22      # "Privacy mask" Yes/No (••• curtain)
+SETTINGS_LOCK_ROW = 23         # "Lock file (encryption)" Yes/No
 
 TEMPLATE_FILENAME = "Family_Portfolio_Tracker.xlsx"
 
@@ -213,6 +218,29 @@ class EquityRow:
 
 
 @dataclass
+class EquitySellRow:
+    """One realised sale, self-contained (v1.6, SPEC §3.20/§6.16).
+
+    The Equity sheet stays a NET current-holdings snapshot, so a sale is its
+    own record here — the user copies the contract note and also reduces the
+    Equity quantity. All prices/quantities are in SELL-TIME share units (what
+    the broker's P&L shows); the engine never CA-adjusts these inputs. A blank
+    buy_price on a pre-2018-02-01 purchase means "apply the 31-01-2018
+    grandfathering value" (§6.6/§6.16) — computed in the report, never written
+    back into the input cell.
+    """
+    owner: str = ""
+    scrip: str = ""                    # dropdown pick from Stock_Master
+    isin_override: str = ""            # user typed an ISIN over the lookup
+    qty: float | None = None           # shares sold
+    buy_date: date | None = None
+    buy_price: float | None = None     # ₹/share; blank + pre-Feb-2018 → FMV path
+    sell_date: date | None = None
+    sell_price: float | None = None    # ₹/share
+    notes: str = ""
+
+
+@dataclass
 class MFRow:
     owner: str = ""
     scheme: str = ""                   # dropdown pick from MF_Master
@@ -220,6 +248,8 @@ class MFRow:
     xirr: float | None = None          # updater-written
     fund_house_override: str = ""
     isin_override: str = ""
+    # v1.6 (§6.16): Equity / Debt for the Capital Gains tab; blank = Equity
+    tax_type: str = ""
 
 
 @dataclass
@@ -607,6 +637,8 @@ class PortfolioData:
     by_scrip: list[ScripRef] = field(default_factory=list)
     corporate_actions: list["CorporateAction"] = field(default_factory=list)
     dividends: list["DividendRow"] = field(default_factory=list)
+    equity_sells: list["EquitySellRow"] = field(default_factory=list)  # v1.6 §3.20
+    tax_rules: list["TaxRule"] = field(default_factory=list)           # v1.6 §3.22
     history: list["HistorySnapshot"] = field(default_factory=list)
     inflation_pct: float = 7
     expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)
@@ -615,6 +647,9 @@ class PortfolioData:
         default_factory=default_class_settings)
     # Settings "Reference lists" switch: shows/hides REFERENCE_SHEETS
     show_references: bool = False
+    # Settings "Capital gains report" switch (v1.6 §3.21): shows/hides the
+    # Equity_Sells input sheet + the Capital Gains report sheet together
+    show_capital_gains: bool = False
     # privacy (SPEC §3.19): the user's two switches + the stored password
     # fingerprint (never the password). masked_at_rest mirrors the NW_Masked
     # defined name — what state the file on disk was in when read.
@@ -643,6 +678,122 @@ def load_fmv(data_dir: Path = DATA_DIR) -> tuple[dict[str, float], dict[str, flo
             by_isin[r["isin"]] = fmv
             by_symbol[r["symbol"]] = fmv
     return by_isin, by_symbol
+
+
+@dataclass
+class TaxRule:
+    """One capital-gains regime row (SPEC §6.16), bundled in tax_rules_in.csv.
+
+    Keyed by asset + effective_from DATE (not FY): Budget 2024 changed the
+    equity rates mid-year on 2024-07-23, so the rule in force is resolved per
+    SALE date. stcg_pct None = taxed at the user's slab (shown as words, no
+    amount computed).
+    """
+    asset: str = ""                    # equity | mf_equity | mf_debt
+    effective_from: date | None = None
+    lt_days: int = 365                 # held longer than this = long-term
+    stcg_pct: float | None = None      # None = at your slab
+    ltcg_pct: float | None = None
+    ltcg_exempt: float = 0.0           # §112A yearly exemption (₹)
+    notes: str = ""
+
+
+def load_tax_rules(data_dir: Path = DATA_DIR) -> list[TaxRule]:
+    """Bundled Indian capital-gains rules (SPEC §5.5/§6.16), refreshed via app
+    releases when a Budget changes them. Malformed rows raise loudly — a wrong
+    tax table is worse than no tax table (load_restructures precedent)."""
+    import csv
+
+    rules: list[TaxRule] = []
+    with open(data_dir / "tax_rules_in.csv", newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try:
+                rules.append(TaxRule(
+                    asset=r["asset"].strip(),
+                    effective_from=date.fromisoformat(r["effective_from"].strip()),
+                    lt_days=int(r["lt_days"]),
+                    stcg_pct=float(r["stcg_pct"]) if r["stcg_pct"].strip() else None,
+                    ltcg_pct=float(r["ltcg_pct"]) if r["ltcg_pct"].strip() else None,
+                    ltcg_exempt=float(r["ltcg_exempt_inr"] or 0),
+                    notes=(r.get("notes") or "").strip(),
+                ))
+            except (KeyError, ValueError) as e:
+                raise ValueError(f"tax_rules_in.csv: bad row {r!r}: {e}") from e
+    rules.sort(key=lambda t: (t.asset, t.effective_from))
+    return rules
+
+
+def tax_rule_for(rules: list[TaxRule], asset: str, on: date) -> TaxRule | None:
+    """The rule in force for `asset` on a given (sale) date — the newest
+    effective_from that is <= the date. None if no rule covers it (e.g. a
+    pre-FY-2018-19 sale: §10(38) era, tax shown as '—')."""
+    best = None
+    for t in rules:
+        if t.asset == asset and t.effective_from and t.effective_from <= on:
+            best = t
+    return best
+
+
+TAXRULE_ASSETS = ("equity", "mf_equity", "mf_debt")
+
+
+def effective_tax_rules(user_rows: list[TaxRule]
+                        ) -> tuple[list[TaxRule], list[TaxRule], list[str]]:
+    """The rules the engine actually uses (SPEC §3.22): the bundled CSV is
+    only the DEFAULT — the workbook's Tax_Rules rows are upserted over it by
+    (asset, applies-from date), so a Budget change is an Excel edit, not an
+    app release. Returns (valid rules sorted, invalid workbook rows kept for
+    display, warnings). An invalid row (unknown asset / missing date) is
+    never computed with and never silently dropped: it stays on the sheet
+    with a warning until the user fixes it."""
+    warnings: list[str] = []
+    try:
+        rules = load_tax_rules()
+    except OSError:
+        warnings.append("tax_rules_in.csv missing - using the workbook's "
+                        "Tax_Rules rows alone")
+        rules = []
+    except ValueError:
+        warnings.append("tax_rules_in.csv has a bad row - using the "
+                        "workbook's Tax_Rules rows alone")
+        rules = []
+    by_key = {(t.asset, t.effective_from): t for t in rules}
+    invalid: list[TaxRule] = []
+    user_keys: set = set()
+    for t in user_rows:
+        asset = (t.asset or "").strip().casefold()
+        if not (asset in TAXRULE_ASSETS and t.effective_from):
+            invalid.append(t)
+            warnings.append(
+                f"Tax_Rules: the row '{t.asset or '(no asset)'} / "
+                f"{t.effective_from or 'no date'}' needs an Asset of "
+                "equity, mf_equity or mf_debt AND an Applies-from date - "
+                "ignored for now, fix it on the Tax_Rules tab")
+            continue
+        # a rate outside 0-100, a negative allowance or a non-positive
+        # holding period can only be a typo — never compute with it
+        if (t.lt_days <= 0 or t.ltcg_exempt < 0
+                or not 0 <= (t.stcg_pct or 0) <= 100
+                or not 0 <= (t.ltcg_pct or 0) <= 100):
+            invalid.append(t)
+            warnings.append(
+                f"Tax_Rules: the {asset} row from {t.effective_from} has a "
+                "number that can't be right (rates are 0-100, days and "
+                "allowance can't be negative) - ignored for now, fix it on "
+                "the Tax_Rules tab")
+            continue
+        key = (asset, t.effective_from)
+        if key in user_keys:
+            warnings.append(
+                f"Tax_Rules: two rows for {asset} / {t.effective_from} - "
+                "the lower row wins; remove one")
+        user_keys.add(key)
+        by_key[key] = TaxRule(
+            asset=asset, effective_from=t.effective_from,
+            lt_days=t.lt_days, stcg_pct=t.stcg_pct, ltcg_pct=t.ltcg_pct,
+            ltcg_exempt=t.ltcg_exempt, notes=t.notes)
+    valid = sorted(by_key.values(), key=lambda t: (t.asset, t.effective_from))
+    return valid, invalid, warnings
 
 
 def load_epf_rates(data_dir: Path = DATA_DIR) -> list[tuple[int, float]]:
