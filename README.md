@@ -16,8 +16,8 @@ All on **your own computer**. Nothing ever uploaded.
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
-![Tests](https://img.shields.io/badge/tests-229%20passing-brightgreen)
-![Release](https://img.shields.io/badge/release-v1.6.0-blue)
+![Tests](https://img.shields.io/badge/tests-236%20passing-brightgreen)
+![Release](https://img.shields.io/badge/release-v1.6.1-blue)
 
 </div>
 
@@ -111,7 +111,7 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 | **Manual Assets** | Property, cash, insurance surrender value, anything else — you type today's value, it joins the family total |
 | **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart — and counted in your return |
 | **Equity Sells** *(v1.6, optional)* | One row per share sale, straight from your contract note — feeds the tax view and your true return (a sale with its old buy price left blank counts in the tax view only) |
-| **Capital Gains** *(v1.6, optional)* | STCG & LTCG per year, the ₹1.25L tax‑free allowance you've used, an indicative tax figure, and the date each holding turns long‑term — with the pre‑2018 **grandfathering** rule applied for you. Intraday (same‑day) trades show separately as speculative income, never mixed in |
+| **Capital Gains** *(v1.6, optional)* | STCG & LTCG per year, the ₹1.25L tax‑free allowance you've used, an indicative tax figure, and the date each holding turns long‑term — with the pre‑2018 **grandfathering** rule applied for you. Intraday (same‑day) trades show separately as speculative income, never mixed in. A leftover short‑term loss reduces the same year's long‑term gains (v1.6.1) |
 | **Tax Rules** *(v1.6, optional)* | The capital‑gains rates, holding periods and allowance the report uses — editable in your workbook, so a Budget change needs no new app version |
 | **History** | A dated net‑worth snapshot per update — feeds the trend charts |
 | **Guide** | The 2‑minute manual, right inside the file |
@@ -228,7 +228,7 @@ Needs **Python 3.10+**. No compilers, no Excel, no admin rights.
 ```bash
 python -m networth.generate            # build the workbook from code (sample data)
 python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
-pytest                                 # 229 tests — golden values, parsers, scenario
+pytest                                 # 236 tests — golden values, parsers, scenario
                                        #   suites per milestone, round-trip identity
 ```
 
@@ -259,7 +259,7 @@ three OSes, builds the apps and attaches them to the GitHub Release.
 |---|---|
 | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | **For users** — every feature walked through with screenshots and worked examples |
 | [docs/SPEC.md](docs/SPEC.md) | **The product** — every sheet, data contract and algorithm, platform‑agnostic |
-| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.6) |
+| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.6.1) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Everything else, with ✅ / 🚧 / ⬜ status |
 | [docs/PLAN.md](docs/PLAN.md) · [docs/PLAN-v1.2.md](docs/PLAN-v1.2.md) | The approved architecture & design decisions |
 | [CLAUDE.md](CLAUDE.md) | Working notes & conventions for contributors |

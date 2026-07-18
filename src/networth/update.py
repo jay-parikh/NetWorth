@@ -660,6 +660,11 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         if now and now.spec_gain:
             bits.append(f"intraday ₹{now.spec_gain:,.0f} (speculative, "
                         f"at your slab)")
+        if now and now.st_setoff:
+            # without this, the raw LTCG and the post-set-off headroom
+            # printed beside it look mutually impossible in a harvest year
+            bits.append(f"ST loss ₹{now.st_setoff:,.0f} set off vs LTCG "
+                        f"(Sec 70)")
         if rep.headroom_now is not None:
             bits.append(f"₹{rep.headroom_now:,.0f} LTCG still tax-free "
                         f"this year")

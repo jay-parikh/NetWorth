@@ -1780,7 +1780,8 @@ def _write_dividends(wb, F, data: PortfolioData, today: date):
     return ws
 
 
-def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
+def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None,
+                         masked=False):
     """The tax view (v1.6, SPEC §3.21) — computed fresh at build time from
     Equity_Sells + MF_SIP (§6.16), never stored, so regeneration always
     reproduces it. Reads top-down like a story: the FY answer first, then
@@ -1805,8 +1806,11 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
     _sheet_head(ws, F, "CAPITAL GAINS — THE TAX VIEW OF YOUR SALES",
                 "Worked out for you from Equity_Sells and MF_SIP on every "
                 "update. Indicative only - for planning, not for filing. "
-                "Losses simply net within a bucket; carry-forward is not "
-                "modelled.")
+                "Losses net against gains of the same kind this year, and a "
+                "leftover short-term loss also reduces long-term gains "
+                "(Sec 70) - but equity and debt-fund figures never net "
+                "against each other here, other income is never touched, "
+                "and carry-forward to later years is not modelled.")
     if rep is None:
         ws.write("A3", "Nothing recorded yet - sales you add on the "
                        "Equity_Sells tab appear here after an update.",
@@ -1816,7 +1820,9 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
     fy_end = f"31-03-{int(rep.fy_now.split('-')[0]) + 1}"
     ws.write("A3", f"LTCG still tax-free this year (sell before {fy_end})",
              F["label"])
-    ws.write_comment("A3", _G_LTCG)
+    ws.write_comment("A3", _G_LTCG + " Counted after any short-term-loss "
+                           "set-off this year; unused losses are not added "
+                           "to this figure, so it never overpromises.")
     if rep.headroom_now is not None:
         ws.write_number("D3", rep.headroom_now, F["money_bold"])
 
@@ -1826,13 +1832,23 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
                            "Allowance used", "Still tax-free",
                            "Indicative tax (STCG)", "Indicative tax (LTCG)",
                            "At-your-slab gains ₹", "Debt fund gains ₹",
-                           "Intraday gains ₹"],
+                           "Intraday gains ₹", "ST loss used vs LTCG ₹"],
                  F["header"])
     ws.write_comment(f"B{r}", _G_STCG)
     ws.write_comment(f"C{r}", _G_LTCG)
+    ws.write_comment(f"E{r}", "How much of the year's tax-free allowance "
+                              "your long-term gains used - counted after "
+                              "any short-term-loss set-off.")
+    ws.write_comment(f"F{r}", "Long-term gains you could still take "
+                              "tax-free that year - after any "
+                              "short-term-loss set-off (losses beyond your "
+                              "long-term gains are not added here).")
     ws.write_comment(f"G{r}", "At the rate in force on each sale's date, "
                               "after this year's short-term losses are set "
                               "off - indicative, not a filing figure.")
+    ws.write_comment(f"H{r}", "After the short-term-loss set-off and the "
+                              "tax-free allowance, at the year-end rate - "
+                              "indicative, not a filing figure.")
     ws.write_comment(f"I{r}", "Gains taxed at your income-tax slab (newer "
                               "debt funds) - the rate depends on you, so no "
                               "amount is computed.")
@@ -1841,6 +1857,11 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
                               "income - shown here so nothing is hidden, "
                               "but it is not a capital gain and never mixes "
                               "into STCG / LTCG.")
+    ws.write_comment(f"L{r}", "Short-term losses left over after netting "
+                              "reduce the year's long-term gains first - "
+                              "the law (Sec 70) allows it; only then is the "
+                              "tax-free allowance applied. Blank when there "
+                              "was nothing to set off.")
     r += 1
     if not rep.summaries:
         ws.write(f"A{r}", "Nothing sold yet - record sales on the "
@@ -1864,6 +1885,12 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None):
         ws.write_number(f"I{r}", s.slab_gain, F["c_money"])
         ws.write_number(f"J{r}", s.debt_gain, F["c_money"])
         ws.write_number(f"K{r}", s.spec_gain, F["c_money"])
+        # blank when nothing was set off (engine clamps float dust to 0) —
+        # EXCEPT in masked builds, where the cell is written on every row:
+        # a ••• appearing only in loss-harvest years would leak that fact
+        # through the mask by its mere presence
+        if masked or s.st_setoff:
+            ws.write_number(f"L{r}", s.st_setoff, F["c_money"])
         r += 1
 
     r += 1
@@ -2207,7 +2234,7 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False,
     _write_by_scrip(wb, F, data)
     _write_corporate_actions(wb, F, data)
     _write_dividends(wb, F, data, today)
-    _write_capital_gains(wb, F, data, today, rep=capgains)
+    _write_capital_gains(wb, F, data, today, rep=capgains, masked=masked)
     _write_tax_rules(wb, F, data)
     _write_history(wb, F, data)
     _write_guide(wb, F)

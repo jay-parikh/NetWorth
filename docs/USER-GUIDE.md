@@ -330,7 +330,9 @@ The **Capital Gains** tab then reads top-down like a story:
   is taxed less and gets a tax-free slice each year), the ₹1.25L tax-free
   allowance, how much of it you've used, and an **indicative tax** figure
   at the rates in force on each sale's date — after your same-year losses
-  are set off.
+  are set off. A last column, "ST loss used vs LTCG ₹", shows the amount
+  when a leftover short-term loss reduced that year's long-term gains — it
+  stays blank in a normal year.
 - **What you sold (realised):** every sale with its holding period, term,
   taxable cost and gain. Every caveat is written in that row's Note —
   nothing is hidden in a manual.
@@ -375,8 +377,17 @@ edits always win for the rows you touched.
 
 Honesty rules the report lives by (each is also written on the sheet):
 
-- **Indicative only — for planning, not for filing.** Loss carry-forward
-  and set-off across income heads are not modelled.
+- **Indicative only — for planning, not for filing.** Carrying a loss
+  forward to a later year, and set-off against other kinds of income, are
+  not modelled.
+- **Sold at a loss? It counts.** Losses first reduce gains of the same
+  kind in the same year; a short-term loss left over then reduces that
+  year's long-term gains too (Sec 70), *before* the tax-free allowance.
+  When that happens you see the amount in its own "ST loss used vs LTCG ₹"
+  column — the column stays blank in a normal year. Two honest limits:
+  shares/equity funds and debt funds never net against each other here,
+  and losses bigger than your long-term gains are not added to the "still
+  tax-free" figure — it never overpromises.
 - A sale with its old buy price left blank counts in the **tax view
   only** — your return figure (XIRR) needs both sides of the trade.
 - Same-day (intraday) trades are **speculative income** — profit taxed at
@@ -519,6 +530,6 @@ Still stuck? Open an issue:
 
 ---
 
-*Guide for NetWorth v1.6.0, written 2026-07-18. Screenshots are renders of
+*Guide for NetWorth v1.6.1, written 2026-07-18. Screenshots are renders of
 the shipped sample workbook. Project home:
 [github.com/jay-parikh/NetWorth](https://github.com/jay-parikh/NetWorth).*

@@ -33,7 +33,25 @@ into RELEASES.md with acceptance criteria.
   (all FYs, ex-date ≤ today) and recorded Equity_Sells round trips now feed
   the equity cashflow model, plus a per-person "Dividends FY" split on each
   person sheet. Residual idea: `_dividend_qty` could add back sold lots
-  (needs ex-date-unit conversion; deferred).
+  (needs ex-date-unit conversion) — deferred until **broker import** lands,
+  which brings the sale data needed to do it honestly (verdict 2026-07-18).
+- ✅ **Same-FY loss set-off, Sec 70(2)** *(shipped v1.6.1)* — a short-term
+  loss left over after netting now reduces the same year's LTCG before the
+  §112A allowance, shown in its own By-FY column (equity family only, in
+  FYs whose rules are known; debt↔equity cross-bucket netting is NOT
+  modelled and the sheet says so). The following related ideas were
+  deliberately excluded, with reasons (verdicts 2026-07-18 — settled,
+  please don't re-open as "pending"):
+  - *Carry-forward across years* — can't be honest: needs loss history from
+    before the user started the ledger plus proof of timely ITR filing.
+  - *Debt-fund indexation* — obsolete: sales on/after 23-07-2024 are 12.5%
+    **without** indexation (already in `tax_rules_in.csv`); the old 20%+
+    indexation regime only covers back-dated sales whose filing windows have
+    closed.
+  - *Short selling* — same-day shorts already land in speculative income
+    (the branch tests date equality, order-agnostic); cross-day delivery
+    shorting doesn't exist in the Indian cash segment (T+1), and F&O is out
+    of scope — the "sold before bought" warning is the intended typo-catcher.
 - ⬜ **Interest tracking** — FD interest payout mode (payout vs cumulative),
   bond coupon receipts ledger.
 

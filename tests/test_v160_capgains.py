@@ -374,6 +374,7 @@ def test_stcg_tax_netted_against_losses():
     s = rep.summaries[0]
     assert s.stcg == pytest.approx(2000)                     # netted display
     assert s.tax_stcg == pytest.approx(2000 * 0.20)          # tax matches it
+    assert s.st_setoff == 0                # losses < gains: nothing spills over
 
 
 def test_pre_2024_debt_sale_term_uses_old_1095_days():
@@ -431,6 +432,142 @@ def test_negative_qty_or_price_warns_everywhere():
               sell_date=date(2026, 1, 1), sell_price=60.0)
     rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
     assert not rep.realised and equity_flows(d, TODAY) == []
+
+
+# ---- Sec 70(2): excess ST loss sets off same-FY LTCG (v1.6.1) ---------------
+
+def _mk_sell(qty, buy, sell, bd, sd):
+    return EquitySellRow(owner="A", scrip="ACME LTD.",
+                         isin_override="INE000A01010", qty=qty,
+                         buy_date=bd, buy_price=buy, sell_date=sd,
+                         sell_price=sell)
+
+
+def test_st_loss_excess_sets_off_ltcg_before_exemption():
+    # a loss-harvesting year: net ST loss 2L + LT gain 3L, all in fy_now
+    d = PortfolioData(persons=["A"])
+    d.equity_sells = [
+        _mk_sell(100, 3000.0, 1000.0, date(2026, 1, 10), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 4000.0, date(2024, 4, 1), date(2026, 5, 1)),
+    ]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.stcg == pytest.approx(-200000)
+    assert s.ltcg == pytest.approx(300000)      # RAW — set-off never folded in
+    assert s.st_setoff == pytest.approx(200000)
+    # exemption applies to the post-set-off 1L, so tax is zero
+    assert s.exemption_used == pytest.approx(100000)
+    assert s.headroom == pytest.approx(25000)
+    assert s.tax_stcg == pytest.approx(0)
+    assert s.tax_ltcg == pytest.approx(0)
+    assert rep.headroom_now == pytest.approx(25000)
+
+
+def test_st_setoff_capped_at_ltcg_and_never_carried_forward():
+    d = PortfolioData(persons=["A"])
+    d.equity_sells = [
+        # fy_now: ST loss 4L swamps the 1L LT gain
+        _mk_sell(100, 5000.0, 1000.0, date(2026, 1, 10), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 2000.0, date(2024, 4, 1), date(2026, 5, 1)),
+        # the PREVIOUS FY had a plain 2L LT gain — must stay untouched
+        _mk_sell(100, 1000.0, 3000.0, date(2023, 1, 1), date(2025, 6, 1)),
+    ]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    now, prev = rep.summaries[0], rep.summaries[1]
+    assert now.st_setoff == pytest.approx(100000)   # capped at the LTCG
+    assert now.exemption_used == pytest.approx(0, abs=1e-9)
+    assert now.tax_ltcg == pytest.approx(0, abs=1e-9)
+    # unused 3L of loss is NOT added to headroom (conservative), and
+    # carry-forward to other FYs is not modelled
+    assert now.headroom == pytest.approx(125000)
+    assert prev.fy == "2025-26"
+    assert prev.st_setoff == pytest.approx(0, abs=1e-9)
+    assert prev.exemption_used == pytest.approx(125000)
+    assert prev.tax_ltcg == pytest.approx(75000 * 0.125)
+
+
+def test_setoff_era_gated_no_rule_no_setoff():
+    # pre-2018 §10(38) years: LTCG was exempt, an ST loss could only carry
+    # forward — a rule-less FY must show NO set-off, like its blank taxes
+    d = PortfolioData(persons=["A"])
+    d.equity_sells = [
+        _mk_sell(10, 600.0, 500.0, date(2017, 5, 1), date(2017, 6, 1)),
+        _mk_sell(10, 100.0, 600.0, date(2015, 1, 1), date(2017, 6, 1)),
+    ]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.fy == "2017-18" and s.ltcg > 0 and s.stcg < 0
+    assert s.st_setoff == 0
+    assert s.tax_ltcg is None and s.exemption == 0
+
+
+def test_st_rows_taxed_at_their_own_assets_rate():
+    # Tax_Rules lets equity and mf_equity diverge — an MF short-term gain
+    # must then use mf_equity's rate, not equity's
+    diverged = RULES + [TaxRule("mf_equity", date(2025, 4, 1), 365, 25, 12.5,
+                                125000)]
+    d = _mf([SIPRow("Amit", "FUND X", date(2026, 1, 10), 10000, 10.0),
+             SIPRow("Amit", "FUND X", date(2026, 5, 1), -15000, 15.0)])
+    d.equity_sells = [_mk_sell(100, 100.0, 150.0,
+                               date(2026, 1, 10), date(2026, 5, 1))]
+    d.equity_sells[0].owner = "Amit"
+    rep = capital_gains_report(d, TODAY, rules=diverged, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.stcg == pytest.approx(10000)         # 5k equity + 5k MF
+    assert s.tax_stcg == pytest.approx(5000 * 0.20 + 5000 * 0.25)
+
+
+def test_setoff_dust_clamped_to_keep_blank_when_zero():
+    # a sub-half-paisa ST "loss" is float noise, not a set-off
+    d = PortfolioData(persons=["A"])
+    d.equity_sells = [
+        _mk_sell(1, 1000.004, 1000.0, date(2026, 1, 10), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 4000.0, date(2024, 4, 1), date(2026, 5, 1)),
+    ]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.stcg < 0                              # a real (tiny) net loss
+    assert s.st_setoff == 0.0                      # clamped: column stays blank
+
+
+def test_setoff_column_on_sheet_and_masked_presence(tmp_path):
+    # the sheet-side contract: header present, L filled in a harvest year,
+    # blank otherwise — and in a MASKED build the cell exists on EVERY row
+    # so its presence can't leak a loss-harvest year through the mask
+    d = PortfolioData(persons=["A"])
+    d.equity_sells = [
+        _mk_sell(100, 3000.0, 1000.0, date(2026, 1, 10), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 4000.0, date(2024, 4, 1), date(2026, 5, 1)),
+        # previous FY: plain LT gain, no set-off → its L cell stays blank
+        _mk_sell(100, 1000.0, 3000.0, date(2023, 1, 1), date(2025, 6, 1)),
+    ]
+    out = tmp_path / "setoff.xlsx"
+    build_workbook(d, out, today=TODAY)
+    ws = load_workbook(out)["Capital Gains"]
+    assert ws["L6"].value == "ST loss used vs LTCG ₹"
+    assert ws["L7"].value == pytest.approx(200000)   # newest FY first
+    assert ws["L8"].value is None                    # normal year: blank
+    m = tmp_path / "setoff-masked.xlsx"
+    build_workbook(d, m, masked=True, today=TODAY)
+    wm = load_workbook(m)["Capital Gains"]
+    assert wm["L7"].value == pytest.approx(200000)
+    assert wm["L8"].value == pytest.approx(0)        # written, masked, no leak
+
+
+def test_speculative_loss_never_feeds_the_setoff():
+    # Sec 73: an intraday LOSS stays in its own bucket — it must not reduce
+    # capital gains
+    d = PortfolioData(persons=["A"])
+    d.equity_sells = [
+        _mk_sell(100, 2000.0, 1000.0, date(2026, 5, 1), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 4000.0, date(2024, 4, 1), date(2026, 5, 1)),
+    ]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.spec_gain == pytest.approx(-100000)
+    assert s.st_setoff == 0
+    assert s.exemption_used == pytest.approx(125000)
+    assert s.tax_ltcg == pytest.approx(175000 * 0.125)
 
 
 def test_tax_rules_range_and_duplicate_validation():

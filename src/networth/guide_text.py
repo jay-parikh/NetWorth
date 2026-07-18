@@ -87,6 +87,7 @@ GUIDE_ROWS: list[tuple] = [
     ("text", "Indicative only — for planning, not for filing. Recorded sales also count in your return figure (XIRR)."),
     ("text", "Government changed a rate or the tax-free allowance? Edit the Tax_Rules tab (it ships filled in with the current law) — no new app version needed."),
     ("text", "Bought and sold the same day? That is speculative income — shown separately at your slab, never mixed into STCG / LTCG."),
+    ("text", "Sold shares or equity funds at a loss? It reduces that year's taxable gains — a leftover short-term loss even counts against long-term gains."),
     ("space",),
 
     ("section", "🔤", "Words you'll see"),

@@ -259,6 +259,32 @@ the bundled law and is upserted over the CSV defaults by (asset,
 applies-from date). A Budget change is an Excel edit; invalid rows warn and
 are preserved, never guessed at or dropped.
 
+## v1.6.1 — "Losses count, the way the law allows" (2026-07-18)
+
+Stability patch — exactly one correctness fix, found by re-verifying the
+items deferred during v1.6.0 (Jay: simple and stable, no new features).
+A wrong tax number is a stability bug in a tax report.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Sec 70(2) same-FY set-off (§6.16) | A short-term loss left over after the short-term netting reduces the same year's LTCG **before** the §112A allowance — previously the excess was silently discarded and the sheet overstated tax in a loss-harvesting year. Shown in its own By-FY column "ST loss used vs LTCG ₹" (blank when zero); the LTCG column stays raw; `headroom_now` uses the post-set-off figure | net ST loss 2L + LT gain 3L ⇒ set-off 2L, allowance used 1L, headroom 25k, both taxes 0; excess loss capped at the FY's LTCG, never carried to another FY; speculative losses never feed it (Sec 73); losses < gains ⇒ nothing changes |
+
+The other three deferrals were closed as won't-do — verdicts and reasons
+live in ROADMAP.md (the one place; don't restate them elsewhere).
+
+Pre-commit hardening (2026-07-18): a full multi-angle review of this patch
+produced 15 findings, all addressed in-release — the set-off is era-gated
+(no set-off shown for pre-2018 §10(38) FYs, whose LTCG was exempt), float
+dust clamps to zero so "blank when zero" holds, each short-term row is
+taxed at its own asset's Tax_Rules rate (an mf_equity row no longer
+inherits equity's rate if a user diverges them), masked builds write the
+set-off cell on every row so its presence can't leak a loss-harvest year
+through the mask, the updater console prints the set-off beside the raw
+figures, one shared `ltcg_eff` derivation feeds both the FY row and the
+headline, the Sec 70(3) citation was corrected, and every user-facing
+sentence was narrowed to claim exactly what the engine does (no
+cross-bucket equity↔debt netting — now stated on the sheet). Suite: 236.
+
 ## Release artifact layout (from R4)
 
 ```

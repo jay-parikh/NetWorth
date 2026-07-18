@@ -7,8 +7,13 @@ round-trip identity invariant is untouched.
 
 Honesty rules: figures are INDICATIVE (planning, not filing); when something
 can't be computed correctly (nav-less redemption, oversold fund, unknown
-scrip) it is skipped with a warning — never guessed. Loss set-off across
-heads and carry-forward are not modelled; losses simply net within a bucket.
+scrip) it is skipped with a warning — never guessed. Same-FY set-off follows
+Sec 70 within the equity family (shares + equity funds, in FYs whose rules
+are known): losses net inside each figure, and an excess short-term loss
+then reduces the FY's long-term gains before the §112A exemption (shown in
+its own column, never folded in silently). Debt-fund figures never net
+against the equity ones, other income heads are never touched, and
+carry-forward across years is not modelled — all stated on the sheet.
 
 Units: an Equity_Sells row is in SELL-TIME share units (the contract note's
 view) and is never CA-adjusted. Only the bundled per-share FMV of 31-01-2018
@@ -77,6 +82,16 @@ class FYSummary:
     tax_ltcg: float | None = None
     slab_gain: float = 0.0             # gains taxed at the user's slab (no amount)
     debt_gain: float = 0.0             # old-regime debt gains (rate era dependent)
+    st_setoff: float = 0.0             # Sec 70(2): excess short-term loss set
+                                       # off against this FY's LTCG (before
+                                       # the §112A exemption)
+
+    @property
+    def ltcg_eff(self) -> float:
+        """The long-term figure the exemption and tax apply to: raw LTCG
+        after the Sec 70(2) set-off, floored at 0. ONE derivation shared by
+        the FY row and headroom_now so the two surfaces can never drift."""
+        return max(self.ltcg - self.st_setoff, 0.0)
     spec_gain: float = 0.0             # intraday = speculative income (Sec 43(5)),
                                        # slab-taxed business income, NOT capital
                                        # gains — shown so nothing is hidden
@@ -385,14 +400,28 @@ def capital_gains_report(data: PortfolioData, today: date,
         fy_end = date(fy_end_year[fy], 3, 31)
         rule_end = tax_rule_for(rules, "equity", fy_end)
         if rule_end:
+            # Sec 70(2): the short-term loss left over after netting reduces
+            # this FY's LTCG before the §112A exemption; s.ltcg stays RAW
+            # (the set-off shows in its own column). Derived from the netted
+            # s.stcg, NOT the tax loop's st_loss (that loop skips
+            # unknown-rate rows, so its leftover would overstate the
+            # excess). Speculative rows never reach s.stcg (Sec 73), an
+            # excess long-term loss never touches STCG (Sec 70(3)), nothing
+            # carries forward. Era-gated on purpose: rule-less FYs
+            # (pre-2018 §10(38) — LTCG exempt, losses carry-forward only)
+            # keep st_setoff 0 like their blank tax cells. Sub-paisa float
+            # dust clamps to 0 so "blank when zero" stays true.
+            s.st_setoff = min(max(0.0, -s.stcg), max(s.ltcg, 0.0))
+            if s.st_setoff < 0.005:
+                s.st_setoff = 0.0
             s.exemption = rule_end.ltcg_exempt
-            s.exemption_used = min(max(s.ltcg, 0.0), s.exemption)
-            s.headroom = max(0.0, s.exemption - max(s.ltcg, 0.0))
+            s.exemption_used = min(s.ltcg_eff, s.exemption)
+            s.headroom = max(0.0, s.exemption - s.ltcg_eff)
             # STCG per sale-date rule (the 2024-07-23 mid-FY switch), on the
             # NETTED short-term figure shown beside it: same-FY short-term
             # losses are set off against the highest-taxed gains first (the
-            # taxpayer-favourable order). LTCG: exemption off first,
-            # remainder at the FY-end rate.
+            # taxpayer-favourable order). LTCG: Sec 70(2) set-off first, then
+            # the exemption, remainder at the FY-end rate.
             st_rows = [r for r in eq_rows if r.term == "Short-term"]
             st_loss = -sum(r.gain for r in st_rows if r.gain < 0)
             gains: list[tuple[float, float]] = []      # (gain, rate %)
@@ -400,7 +429,11 @@ def capital_gains_report(data: PortfolioData, today: date,
             for r in st_rows:
                 if r.gain <= 0:
                     continue
-                rr = tax_rule_for(rules, "equity", r.sell_date)
+                # each row at ITS OWN asset's rate — equity and mf_equity
+                # ship identical bundled rates, but Tax_Rules lets a user
+                # diverge them, and then an MF gain must not tax at the
+                # share rate (only the §112A exemption bucket is shared)
+                rr = tax_rule_for(rules, r.bucket, r.sell_date)
                 if rr is None or rr.stcg_pct is None:
                     computable = False
                     continue
@@ -412,14 +445,14 @@ def capital_gains_report(data: PortfolioData, today: date,
                 tax_st += (gain - offset) * pct / 100
             s.tax_stcg = tax_st if computable else None
             if rule_end.ltcg_pct is not None:
-                s.tax_ltcg = (max(0.0, s.ltcg - s.exemption)
+                s.tax_ltcg = (max(0.0, s.ltcg_eff - s.exemption)
                               * rule_end.ltcg_pct / 100)
         rep.summaries.append(s)
 
     # current-FY headroom even when nothing was sold this year yet
     rule_now = tax_rule_for(rules, "equity", today)
     if rule_now:
-        ltcg_now = next((s.ltcg for s in rep.summaries if s.fy == rep.fy_now),
-                        0.0)
-        rep.headroom_now = max(0.0, rule_now.ltcg_exempt - max(ltcg_now, 0.0))
+        ltcg_now = next((s.ltcg_eff for s in rep.summaries
+                         if s.fy == rep.fy_now), 0.0)
+        rep.headroom_now = max(0.0, rule_now.ltcg_exempt - ltcg_now)
     return rep

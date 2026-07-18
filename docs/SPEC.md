@@ -786,8 +786,13 @@ filing."*; r3 headline = current-FY LTCG headroom with the absolute deadline
 (e.g. "sell before 31-03-2027") beside a numeric cell; then three stacked
 blocks — **By financial year** (newest first: STCG ₹, LTCG ₹, allowance,
 allowance used, still tax-free, indicative tax STCG/LTCG, at-your-slab
-gains, debt-fund gains, intraday/speculative gains — the K3 gloss says
-they're slab-taxed business income, not capital gains),
+gains, debt-fund gains, intraday/speculative gains — the K gloss says
+they're slab-taxed business income, not capital gains — and "ST loss used
+vs LTCG ₹" (v1.6.1): the Sec 70(2) set-off amount (§6.16), written ONLY
+when non-zero (blank otherwise — don't-intimidate; the engine clamps float
+dust so a normal year truly stays blank) — EXCEPT in masked builds, where
+the cell is written on every row: a ••• appearing only in loss-harvest
+years would leak that fact through the mask by its mere presence),
 **What you sold (realised)** (FY, owner, what, tax
 bucket, qty, dates, days held, term, proceeds, taxable cost, gain,
 plain-words note), **What you still hold (if sold today)** (the
@@ -1528,13 +1533,35 @@ FY summaries (fy_label; newest first): the equity bucket = equity +
 mf_equity, sharing ONE §112A exemption. STCG tax is computed on the NETTED
 short-term figure shown beside it: same-FY short-term losses are set off
 against the highest-taxed gains first (the taxpayer-favourable order), each
-remaining gain at the rate on its own sell date (handles the mid-FY switch;
-any uncovered gain ⇒ whole figure "—"). LTCG: sum, subtract the FY-end
-rule's exemption once, residual at the FY-end LTCG rate. Losses net within
-the bucket; set-off across heads and carry-forward are NOT modelled (stated
-on the sheet).
-headroom = max(0, exemption − max(LTCG, 0)); the current-FY headroom is
-also computed when nothing was sold yet (the r3 headline).
+remaining gain at ITS OWN asset's rate — equity vs mf_equity per the row's
+bucket, only the §112A exemption bucket is shared — on its own sell date
+(handles the mid-FY switch; any uncovered gain ⇒ whole figure "—").
+Sec 70(2) set-off (v1.6.1): computed ONLY inside the FY-end-rule guard
+(rule-less pre-2018 §10(38) FYs — LTCG then exempt, losses carry-forward
+only — keep st_setoff 0, like their blank tax cells):
+st_setoff = min(max(0, −STCG_netted), max(LTCG, 0)), then clamped to 0
+when below ₹0.005 (float dust must not defeat blank-when-zero) — the
+short-term loss left over after the short-term netting reduces the same
+FY's LTCG. Derived from the netted STCG figure (rate-independent — the tax
+loop skips unknown-rate rows, so its leftover would overstate the excess).
+Speculative rows never feed it (Sec 73), and an excess LTCG loss never
+touches STCG (Sec 70(3)) — each figure only nets inside itself; the
+equity-family figures never net against the debt-fund/slab buckets either
+(a deliberate scope cut, stated on the sheet).
+LTCG: LTCG_eff = max(LTCG − st_setoff, 0), ONE shared derivation (a
+FYSummary property in the reference implementation) used by the FY row AND
+headroom_now so the two surfaces cannot drift; subtract the FY-end rule's
+exemption once from LTCG_eff, residual at the FY-end LTCG rate. The
+displayed LTCG column stays RAW — the set-off is shown in its own column,
+never folded in silently. Carry-forward to later years and set-off against
+other income heads are NOT modelled (stated on the sheet, and the updater
+console prints the set-off beside the raw figures so its two numbers
+reconcile).
+headroom = max(0, exemption − LTCG_eff) — unused excess loss is NOT added
+to headroom (conservative, mirroring how a net long-term loss is clamped;
+the r3 headline's gloss says so); the current-FY headroom is also computed
+when nothing was sold yet (the r3 headline) and uses the same post-set-off
+figure.
 
 UNREALISED (sell-planning): per current Equity row — value/cost arithmetic
 IDENTICAL to §6.2 (qty·ca_factor·close vs qty·avg_cost·cost_factor) so the
@@ -1607,9 +1634,10 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
            XIRR (§6.1–6.3; equity flows include dividends + Equity_Sells
            round trips since v1.6), FY-end estimates (§6.8), net-worth
            snapshot (§6.11). v1.6: when sells exist or the CG switch is on,
-           run §6.16 once for the console (🧾 line: current-FY STCG/LTCG +
-           headroom) and surface its warnings; the sheet itself recomputes
-           at build time
+           run §6.16 ONCE and pass the result into the regenerate step
+           (`capgains=`): the console 🧾 line (current-FY STCG/LTCG,
+           intraday, ST-loss set-off, headroom) and the sheet read the SAME
+           computation — never compute it twice (§3.21)
 8. REGENERATE — build the complete workbook (xlsxwriter): structure from this
            spec + user inputs + computed/updater values (`today` passed in
            so the §6.16/§3.21 build is deterministic); sheets of
