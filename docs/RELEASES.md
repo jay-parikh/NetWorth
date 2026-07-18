@@ -333,6 +333,23 @@ bullion_proxies.csv verified live (42 SGB tranches + SILVERBEES).
 Packaging READMEs (in-zip README.txt, both variants) now describe the
 statement import.
 
+## v1.7.1 — "Real files, straightened out" (2026-07-19)
+
+Jay imported his REAL broker holdings the day v1.7.0 shipped and found
+four things — three defects and one gap — all fixed the same day:
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Corporate-action anchor for imported holdings (§6.18, Equity col U) | A holdings file states the POST-split count, but blank-Cost-date rows re-applied the stock's whole split/bonus history (Qty today ×5…×15, crores of phantom value). Every holdings-imported row now carries a hidden "Qty as of" anchor date; Adj/Cost factor stamping, demerger child-spawning, the dividend estimate, the §6.6 FMV fill and the netting guard all window from the anchor. Later actions still apply | test_v171_import_fixes.py: anchored row factor 1 over past actions, factor applies for future ones; no demerger child for pre-anchor events, child for post-anchor; dividend estimate divides back; FMV interplay via round-trip; typed rows unchanged |
+| ISIN classification gate (§6.18) | Holdings/tradebook rows classify by ISIN before landing: Stock_Master first (listed ETFs = equity), INF = fund units, non-01 series = debt. NCDs/bonds are refused to the Bonds sheet by name; nothing rides in on the accident of a filled ISIN column | NCD refused with "Bonds sheet" pointer; fund rows never become Equity rows; listed ETF still imports; fund trades refused with the CAS pointer |
+| Fund holdings import (§6.17) | Demat-held funds (broker platforms) are often absent from the CAS — fund rows in a holdings file now land as ONE opening MF_SIP line each (units × broker avg cost, NAV = avg so the triangle holds, dated the run day), scheme resolved by ISIN against MF_Master only (never name-fuzzy), MutualFunds row ensured, cross-checked never doubled on re-run | opening line lands + idempotent re-run; mismatch warns; no-avg-cost refused; unmapped account re-asks; unknown ISIN keeps name+override; capacity defers untouched |
+| By Scrip auto-sync (§3.11) | The family-exposure sheet filled itself never — the ISIN list was typed-only (the spec over-promised). Every distinct held ISIN now gets its row on each update, add-only (user rows untouched), budget 26→150 rows | missing ISINs appended sorted, user rows kept, overflow warns instead of truncating silently |
+
+Docs in-commit: SPEC §2/§3.6/§3.11/§6.17/§6.18; USER-GUIDE §6 (funds in
+broker files, never-double-counted note); Guide sheet ("Funds in demat"
+row); By Scrip sheet hint; release notes v1.7.1. Suite: 353 tests
+(20 added).
+
 ## Release artifact layout (from R4)
 
 ```

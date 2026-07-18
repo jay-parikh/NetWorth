@@ -248,6 +248,7 @@ def read_workbook(source) -> PortfolioData:
             flag=" | ".join(p for p in flag_parts if p and p != "FMV"),
             ca_factor=_as_float(ws.cell(r, 19).value),            # S = Adj factor
             cost_factor=_as_float(ws.cell(r, 20).value),          # T = Cost factor
+            qty_asof=_as_date(ws.cell(r, 21).value),              # U (§6.18)
         ))
 
     ws = wb["MutualFunds"]

@@ -138,8 +138,14 @@ def apply_demergers(data: PortfolioData, events: list[CorporateAction], *,
                 continue
             if lot.cost_date and lot.cost_date >= ev.ex_date:
                 continue
+            # a holdings-import row (§6.18) already reflects every action up
+            # to its as-of date — the broker file lists the spun-off shares
+            # as their own holding, so spawning a child here would double it
+            if lot.qty_asof and lot.qty_asof >= ev.ex_date:
+                continue
             qty_adj = lot.qty * chained_adjustment_factor(
-                lot_isin, lot.cost_date, eve, data.corporate_actions)
+                lot_isin, lot.qty_asof or lot.cost_date, eve,
+                data.corporate_actions)
             ratio = (ev.ratio_from / ev.ratio_to
                      if ev.ratio_from and ev.ratio_to else 1.0)
             child_qty = round(qty_adj * ratio, 4)
@@ -158,7 +164,8 @@ def apply_demergers(data: PortfolioData, events: list[CorporateAction], *,
                 # the cost available to apportion is the original cost × the
                 # retention of every EARLIER demerger on this chain
                 prior_cf = cost_adjustment_factor(
-                    lot_isin, lot.cost_date, eve, data.corporate_actions)
+                    lot_isin, lot.qty_asof or lot.cost_date, eve,
+                    data.corporate_actions)
                 child_cost = round(lot.qty * lot.avg_cost * prior_cf
                                    * ev.cost_pct / 100 / child_qty, 4)
             child = EquityRow(

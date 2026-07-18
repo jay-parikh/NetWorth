@@ -72,7 +72,7 @@ The generator takes a configuration (defaults in parentheses):
 | `locale.date_format` | display format for dates (`dd-mm-yyyy`) |
 | `inflation_default` | Dashboard inflation input default (7 %) |
 | `expected_return_default` | v1: Dashboard expected-return input default for the FY-end estimate (10 %) |
-| `row_budgets` | max data rows per sheet: Equity 137, MutualFunds 60, MF_SIP 500, FixedDeposits/PPF/Bonds ≥ 30, By Scrip ≥ 60 |
+| `row_budgets` | max data rows per sheet: Equity 137, MutualFunds 60, MF_SIP 500, FixedDeposits/PPF/Bonds ≥ 30, By Scrip 150 (v1.7.1 — auto-synced, must hold every distinct held ISIN) |
 | `sample_data` | whether to include the fictional sample rows (on for the released template) |
 
 Person names appear in three places that must stay consistent: the Dashboard
@@ -331,6 +331,7 @@ a typed row to the budget, §7 step 5). Columns:
 | v1: R | Flags | updater helper | `FMV` (§6.6 fallback), `MERGED→<name>` / `ISIN→<isin>` (row priced via a successor, §6.15), `DEMERGER:<old_isin>@<ex_date>` (an appended child row) — flags round-trip regeneration. When a row carries both a restructure flag and `FMV` they are joined with `" | "`; neither may evict the other (the reader splits on the separator) |
 | v1: S | Adj factor | **updater-written** | split/bonus **and merger-ratio** multiplier since Cost date (§6.7/§6.15, chain-aware); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price` |
 | v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
+| v1.7.1: U | Qty as of | **import-written**, hidden column | the date this row's Quantity is stated AS OF (§6.18). A broker HOLDINGS file reports the post-split/bonus count, so the corporate-action window for S/T starts here, not at Cost date — without it, history the broker already counted would re-apply (the ×5/×15 Qty-today bug). Blank for typed rows (their Quantity is as-bought). Round-trips like any input |
 
 Below the data block, one **updater-written** cell holds the equity-class
 XIRR (the row after TOTAL — N1505 at the v1.7 budget; the legacy
@@ -435,10 +436,17 @@ annual) — see §6.3.
 ### 3.11 By Scrip, masters, Guide
 
 **By Scrip** — data rows from 4; A ISIN (input or updater-synced from Equity),
-B Scrip lookup, C `=SUMIF(Equity!$B:$B,$A4,Equity!$D:$D)` total qty, one
-column per configured person `=SUMIFS(Equity!$D:$D, Equity!$B:$B,$A4,
-Equity!$A:$A,"<Person>")`, last column Cur. val
-`=SUMIF(Equity!$B:$B,$A4,Equity!$I:$I)`.
+B Scrip lookup, C `=SUMIF(Equity!$B:$B,$A4,Equity!$O:$O)` total qty (Qty
+today terms), one column per configured person `=SUMIFS(Equity!$O:$O,
+Equity!$B:$B,$A4, Equity!$A:$A,"<Person>")`, last column Cur. val
+`=SUMIF(Equity!$B:$B,$A4,Equity!$I:$I)`. **Auto-sync (v1.7.1)**: on every
+update, each distinct ISIN actually held on Equity (resolved via
+isin_override or the master lookup, quantity non-blank) that has no By
+Scrip row is APPENDED (display name from Stock_Master, else the typed
+scrip), sorted by name among the additions. Add-only: user rows are never
+edited or removed — a no-longer-held scrip simply shows 0, the user may
+keep or delete it. When the sheet lacks room a plain warning says not
+every held stock got a row (the budget is 150 data rows, §2).
 
 **MF_Master** — A1 title, A2 hint, D2 `Refreshed:` + E2 date (updater),
 row 3 headers `Fund Name, Scheme Name, ISIN`, data from row 4,
@@ -1731,7 +1739,40 @@ act ONLY on files passed explicitly via --import — the folder sweep is
 interactive-only (never a file nobody was asked about). Equity trade
 netting: §6.18 (v1.7 broker import).
 
+**Fund units in broker holdings files (v1.7.1)**: demat-held funds
+(broker platforms) are often ABSENT from the CAMS/KFintech CAS, so the
+holdings file is their only route in. Rows whose ISIN classifies as a
+fund (§6.18) route to a dedicated merge: each fund lands as ONE opening
+MF_SIP line — units = the broker balance, amount = units × the broker's
+average cost, NAV = that average (the triangle holds by construction),
+dated the run day. Values are right immediately; the return figure
+counts from the run day until real dates arrive (typed, or a later CAS
+import whose statement-wins replace covers the fund). Scheme identity
+resolves by ISIN against MF_Master ONLY — fund names are never
+fuzzy-matched; an unknown ISIN keeps the file's name plus an
+isin_override. Gates: a fund with NO average cost is refused (nothing to
+value the money in); an unmapped account is skipped re-askably; a fund
+already on the sheet (any MF_SIP rows for that owner+ISIN) is
+cross-checked against the broker balance — warning on mismatch, never
+doubled — so re-runs add zero; capacity defers the fund-holdings portion
+whole. A MutualFunds summary row is ensured per new (owner, scheme).
+
 ### 6.18 Broker equity import — generic parsing + FIFO netting (v1.7)
+
+**ISIN classification (v1.7.1)** — broker files mix instruments, and each
+class has its own honest route; nothing rides in on the accident of a
+filled ISIN column. The series digits (the two digits after the 5-character issuer code of an Indian ISIN)
+rank ABOVE Stock_Master membership, because the master is built from the
+bhavcopy, which also lists traded NCDs — membership alone must never
+make a bond "equity". Rules, in order: `INF…` is **equity** when the
+master trades it (a listed ETF), else a **fund unit** (→ the
+fund-holdings merge, §6.17; fund TRADES are refused per ISIN pointing at
+the CAS); series `01` is a **share**; series `07`/`08`/`09` is **debt**
+(NCD/bond — refused, "the Bonds sheet is filled by hand") even when the
+master has it; anything else (REITs/InvITs, G-secs, foreign) is equity
+only when the master prices it and refused plainly otherwise. A row with
+no ISIN at all keeps the "not in the stock list" refusal, which now also
+names the holdings-with-ISIN route for funds.
 
 **Generic by design**: a registry of exact header signatures for verified
 export layouts (Zerodha tradebook/holdings first), then a fuzzy fallback
@@ -1799,14 +1840,34 @@ re-import would shrink it again. Refusal gates, per ISIN, atomic:
 lots as a multiset, and the sells when the CG switch is on) is already on
 the sheet is skipped whole — re-running the same file adds nothing and
 consumes nothing. **Holdings files** cross-check the result (broker qty
-vs sheet qty, warning on mismatch — arithmetic, not luck) and provide the
-no-history fallback: a holding with no trades and no sheet rows lands as
-one row with the broker's average cost and NO cost date (amber; excluded
-from XIRR until the user dates it; pre-2018 paper shares instead follow
-the §6.6 FMV convention — type 31-01-2018). Capacity: over-cap defers
-the WHOLE equity import with a plain message; the run continues. Cuts
-to typed rows are only PLANNED during netting and applied after the
-capacity gate passes, so a deferred import leaves data byte-identical.
+vs sheet qty **in today's share terms** — each sheet row scales by its
+chained CA factor from its own anchor first; warning on mismatch —
+arithmetic, not luck) and provide the no-history fallback: a holding
+with no trades and no sheet rows lands as one row with the broker's
+average cost and NO cost date (amber; excluded from XIRR until the user
+dates it; pre-2018 paper shares instead follow the §6.6 FMV convention —
+type 31-01-2018). Capacity: over-cap defers the WHOLE equity import with
+a plain message; the run continues. Cuts to typed rows are only PLANNED
+during netting and applied after the capacity gate passes, so a deferred
+import leaves data byte-identical.
+
+**The quantity anchor (v1.7.1, Equity col U)** — the engine's core
+assumption is "Quantity is stated in units of some date"; for typed rows
+that date is the Cost date, but a HOLDINGS file states the post-action
+count as of the statement day. Every holdings-imported row therefore
+carries `qty_asof` = the import day, and every corporate-action window
+that touches quantities starts at the row's ANCHOR (`qty_asof`, else
+Cost date): the Adj/Cost factor stamping (§6.7/§6.15), demerger child
+spawning (§6.15 — an event at or before the anchor spawns NO child,
+because the broker file already lists the spun-off holding as its own
+row), the dividend-quantity estimate (§6.12 — an ex-date BEFORE the
+anchor divides the count back through the chained factor), and the
+netting comparability guard (an action after the oldest anchor OR the
+first trade date blocks netting against sheet lots). The §6.6 FMV fill
+for an anchored 31-01-2018 row divides the official value by the chained
+factor from 31-01-2018 to the anchor, so Invested = today's-count ×
+per-today's-share value — the same money either way, never ×factor.
+Actions with ex-dates AFTER the anchor apply exactly as for typed rows.
 
 ## 7. Updater behaviour
 

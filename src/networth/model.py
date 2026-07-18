@@ -35,7 +35,8 @@ PPF_TOTAL_ROW = 45
 PPF_LEDGER_LAST_ROW = 503
 BOND_LAST_ROW = 53
 BOND_TOTAL_ROW = 55
-BYSCRIP_LAST_ROW = 29
+BYSCRIP_LAST_ROW = 153          # v1.7.1: was 29 — auto-synced from Equity, so
+                                # it must hold every distinct held ISIN
 CA_LAST_ROW = 203               # Corporate_Actions data rows 4..203
 DIV_LAST_ROW = 203              # Dividends data rows 4..203 (SPEC §3.13)
 EQSELL_LAST_ROW = 203           # Equity_Sells data rows 4..203 (SPEC §3.20)
@@ -305,6 +306,18 @@ class EquityRow:
     cost_factor: float | None = None
     # updater-written informational flag ("MERGED→<name>", "DEMERGER:<isin>@<date>")
     flag: str = ""
+    # import-written (§6.18): the date this row's Quantity is true AS OF.
+    # A broker holdings file reports the POST-split/bonus share count, so
+    # corporate actions up to this date must never re-apply to it — the
+    # adjustment window runs from here, not from the (older) Cost date.
+    # Blank for typed rows: their Quantity is as-bought (as of Cost date).
+    qty_asof: date | None = None
+
+
+def qty_anchor(row) -> date | None:
+    """The date an Equity row's Quantity is expressed in units of — the
+    starting point of every corporate-action adjustment window (§6.18)."""
+    return row.qty_asof or row.cost_date
 
 
 @dataclass

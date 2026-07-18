@@ -39,7 +39,9 @@ GOOD TO KNOW
     the workbook and run the updater. It reads the file, shows you every
     fund and stock it found - each checked against the statement's own
     closing balance - and asks once before writing anything. Run it again
-    anytime; nothing is added twice.
+    anytime; nothing is added twice, and splits/bonuses are never counted
+    twice. Funds held in demat (broker platforms) come in from the
+    holdings file too - one opening line each at your average cost.
   - Sold shares? Record the sale on the Equity_Sells tab (and reduce the
     Equity quantity), then switch "Capital gains report" to Yes in Settings:
     the Capital Gains tab shows STCG & LTCG per year, your tax-free

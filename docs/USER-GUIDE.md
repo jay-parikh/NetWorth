@@ -307,6 +307,23 @@ Sold shares the file never shows you buying (old paper or transferred
 holdings)? The import asks: *bought before Feb 2018?* — answer yes and
 the official 2018 value stands in as their cost, the same grandfathering
 rule as everywhere else.
+**Splits and bonuses are never double-counted** (v1.7.1). A holdings
+file already shows the share count *after* every split and bonus — so
+the app anchors those rows to the import date, and only actions that
+happen **later** will adjust them. Your typed rows keep working exactly
+as before (their quantity is as-bought, and *Qty today* shows the demat
+view).
+
+**Mutual funds inside a broker file come in too** (v1.7.1). Funds held
+in a demat account (broker platforms) often don't appear on a CAS —
+if your broker's holdings file lists them (with their ISINs), each fund
+lands as **one opening line**: today's units at your average cost.
+Values are right immediately; the yearly return figure only becomes
+exact once real dates arrive — import a CAS that covers the fund, or
+type the history, whenever you want that. Bonds and debentures in a
+broker file are pointed at the Bonds sheet instead (typed by hand), so
+nothing lands as the wrong kind of thing.
+
 Who owns which folio or account is asked once and remembered on the
 Import_Map sheet (visible via the *Reference lists* switch) — the left
 table holds those answers (fix a wrong Owner right there), the right

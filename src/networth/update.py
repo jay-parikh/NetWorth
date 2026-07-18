@@ -34,7 +34,7 @@ from .model import (ASSET_CLASSES, MANUAL_CLASS_LABELS, DividendRow,
                     chained_adjustment_factor, class_has_data,
                     cost_adjustment_factor, effective_enabled, fy_label,
                     load_fmv, load_restructures, off_with_data_classes,
-                    resolve_isin)
+                    qty_anchor, resolve_isin)
 from .generate import build_workbook
 from .reader import read_workbook
 
@@ -198,9 +198,42 @@ def _dividend_qty(owner: str, isin: str, ex: date, equity_rows,
             continue
         if row.cost_date and row.cost_date >= ex:
             continue
-        total += row.qty * chained_adjustment_factor(row_isin, row.cost_date,
-                                                     as_of, actions)
+        anchor = row.qty_asof or row.cost_date
+        if anchor and anchor > as_of:
+            # the quantity is stated in POST-action units of a later date
+            # (imported holdings, §6.18) — divide back to the ex-date count
+            back = chained_adjustment_factor(row_isin, as_of, anchor, actions)
+            total += row.qty / back if back > 0 else row.qty
+        else:
+            total += row.qty * chained_adjustment_factor(row_isin, anchor,
+                                                         as_of, actions)
     return total
+
+
+def sync_by_scrip(data, isin_by_name: dict[str, str]) -> str | None:
+    """SPEC §3.11 (v1.7.1): every distinct held ISIN gets a By Scrip row so
+    the family-exposure sheet is complete without typing. Add-only: rows
+    the user typed (or added earlier) always stay — the SUMIFs just show 0
+    for a scrip no longer held, which the user may delete or keep. Returns
+    a warning when the sheet is too full to take every missing scrip."""
+    name_by_isin = {isin: name for _s, name, isin
+                    in data.masters.stock_rows if isin}
+    have = {r.isin for r in data.by_scrip if r.isin}
+    missing = []
+    for row in data.equity:
+        isin = row.isin_override or isin_by_name.get(row.scrip, "")
+        if isin and row.qty and isin not in have:
+            have.add(isin)
+            missing.append(M.ScripRef(
+                isin=isin, name=name_by_isin.get(isin, row.scrip)))
+    missing.sort(key=lambda r: (r.name or r.isin).casefold())
+    room = max(M.BYSCRIP_LAST_ROW - M.FIRST_DATA_ROW + 1
+               - len(data.by_scrip), 0)
+    data.by_scrip.extend(missing[:room])
+    if len(missing) > room:
+        return ("the By Scrip sheet is full - not every held stock could "
+                "get a row there (the Equity sheet itself is complete)")
+    return None
 
 
 def _merge_stock_master(existing: list[tuple[str, str, str]],
@@ -306,13 +339,23 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     # merges — headless-safe, and every never-garbage gate lives in the
     # merge engine itself. Deferred/refused items surface as warnings.
     if import_batches:
-        from .importers.merge import merge_equity_batches, merge_sip_batches
+        from .importers.merge import (merge_equity_batches,
+                                      merge_fund_holdings, merge_sip_batches)
         stored = {m.account: m.owner for m in data.import_map
                   if m.owner in data.persons}
         owner_map = {**stored, **(import_owner_map or {})}
         rep = merge_sip_batches(data, import_batches, owner_map, today,
                                 replace=import_replace,
                                 allow_condense=import_condense)
+        # AFTER the statement merge, so a CAS imported in the same run
+        # already sits on the sheet and the holdings cross-check sees it
+        rep_fh = merge_fund_holdings(data, import_batches, owner_map, today)
+        rep.funds.extend(rep_fh.funds)
+        rep.sip_added += rep_fh.sip_added
+        rep.sip_skipped += rep_fh.sip_skipped
+        rep.warnings.extend(w for w in rep_fh.warnings
+                            if w not in rep.warnings)
+        rep.deferred.extend(rep_fh.deferred)
         rep_eq = merge_equity_batches(data, import_batches, owner_map, today,
                                       cg_on=data.show_capital_gains,
                                       replace=import_replace,
@@ -673,15 +716,25 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     for row in data.equity:
         isin = row.isin_override or isin_by_name.get(row.scrip, "")
         # chained: merger ratios fold in, and later splits on the successor
-        # keep applying to the old-ISIN row (SPEC §6.15)
-        f = chained_adjustment_factor(isin, row.cost_date, today,
+        # keep applying to the old-ISIN row (SPEC §6.15). The window starts
+        # at the row's quantity anchor (§6.18): an imported holdings row is
+        # already post-split as of its import date, so only LATER actions
+        # may adjust it — Cost date alone would re-apply history the broker
+        # already counted.
+        anchor = qty_anchor(row)
+        f = chained_adjustment_factor(isin, anchor, today,
                                       data.corporate_actions)
         row.ca_factor = f if abs(f - 1.0) > 1e-9 else None
         adjusted += row.ca_factor is not None
-        cf = cost_adjustment_factor(isin, row.cost_date, today,
+        cf = cost_adjustment_factor(isin, anchor, today,
                                     data.corporate_actions)
         row.cost_factor = cf if abs(cf - 1.0) > 1e-9 else None
     summary["ca_adjusted_rows"] = adjusted
+
+    # ---- By Scrip auto-sync (SPEC §3.11) ----
+    w = sync_by_scrip(data, isin_by_name)
+    if w:
+        summary["warnings"].append(w)
 
     # ---- dividends (SPEC §6.12): rebuild current-FY Auto rows from the feed,
     # freeze prior FYs, let Manual rows override the same (isin, type, ex-date)
@@ -783,6 +836,14 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             # fall back to the exchange symbol
             fmv = fmv_by_isin.get(isin) or fmv_by_symbol.get(symbol_by_isin.get(isin, ""))
             if fmv:
+                if row.qty_asof:
+                    # the row's Quantity is post-split as of the import date
+                    # (§6.18) — express the 2018 per-share value in the same
+                    # terms, else Invested overstates by the split factor
+                    f = chained_adjustment_factor(
+                        isin, row.cost_date, row.qty_asof,
+                        data.corporate_actions)
+                    fmv = round(fmv / f, 4) if f > 0 else fmv
                 row.avg_cost = fmv
                 row.fmv_used = True
                 fmv_filled += 1
@@ -1645,7 +1706,15 @@ def _preview_batch(batch, today: date) -> None:
         print(f"    • {buys} buy(s) and {sells} sale(s) across "
               f"{len({t.isin or t.symbol for t in batch.trades})} stock(s)")
     if batch.holdings:
-        print(f"    • {len(batch.holdings)} current holding(s) "
+        fund_n = sum(1 for h in batch.holdings
+                     if (h.isin or "").upper().startswith("INF"))
+        share_n = len(batch.holdings) - fund_n
+        bits = []
+        if share_n:
+            bits.append(f"{share_n} share holding(s)")
+        if fund_n:
+            bits.append(f"{fund_n} fund holding(s)")
+        print(f"    • {' and '.join(bits)} "
               "(cross-checked against your sheet)")
     for w in batch.warnings:
         print(f"    ⚠️  {w}")

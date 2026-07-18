@@ -721,6 +721,11 @@ def _write_equity(wb, F, data: PortfolioData):
     ws.write("R3", "Flags", F["key"])
     ws.write("S3", "Adj factor", F["header"])
     ws.write("T3", "Cost factor", F["header"])
+    # U = Qty as-of (§6.18): import-written anchor date for the CA window —
+    # a broker holdings row already carries the post-split count, so hidden
+    # machinery, not user input (hidden column; survives round-trips)
+    ws.write("U3", "Qty as of", F["key"])
+    ws.set_column("U:U", 11, None, {"hidden": True})
     ws.write_comment("T3", "Written by the updater after a demerger: the share "
                            "of your cost that stays with this row. Invested = "
                            "Quantity x Avg. cost x this. Blank = 1. Your typed "
@@ -789,6 +794,8 @@ def _write_equity(wb, F, data: PortfolioData):
                 ws.write_datetime(f"H{r}", row.close_date, F["date_disp"])
             if row.cost_date is not None:
                 ws.write_datetime(f"M{r}", row.cost_date, F["in_date"])
+            if row.qty_asof is not None:
+                ws.write_datetime(f"U{r}", row.qty_asof, F["date_disp"])
         if row and row.ca_factor is not None:
             ws.write_number(f"S{r}", row.ca_factor, F["c_units"])
         if row and row.cost_factor is not None:
@@ -1595,8 +1602,9 @@ def _write_by_scrip(wb, F, data: PortfolioData):
         ws.set_column(3 + i, 3 + i, 11)
     _sheet_head(ws, F, "FAMILY EXPOSURE BY SCRIP",
                 "Total family quantity and current value per scrip, split by person. "
-                "Live from the Equity sheet. To add a scrip not listed, type its ISIN "
-                "and name in a blank row.")
+                "Live from the Equity sheet, and every stock you hold gets its row "
+                "automatically on each update. You can still type an ISIN and name "
+                "in a blank row yourself.")
     person_cols = [chr(ord("D") + i) for i in range(len(data.persons))]
     curval_col = chr(ord("D") + len(data.persons))
     ws.write_row("A3", ["ISIN", "Scrip", "Total Qty"] + list(data.persons) + ["Cur. val"],

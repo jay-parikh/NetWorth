@@ -373,6 +373,29 @@ def _symbol_isin(symbol, isin_by_symbol) -> str:
     return ""
 
 
+def _isin_class(isin: str, name_by_isin: dict) -> str:
+    """What kind of instrument an ISIN denotes (§6.18). The series digits
+    (positions 7-8 of an Indian ISIN) rank ABOVE stock-master membership:
+    the master is built from the bhavcopy, which also lists traded NCDs —
+    membership alone must never make a bond "equity". INF is an ETF when
+    the master trades it, else a mutual-fund unit; series 01 is a share;
+    series 07/08/09 is issued debt (NCD/bond) even when the master has
+    it; anything else (REITs/InvITs, G-secs, foreign) counts as equity
+    only when the master prices it, and is refused plainly otherwise.
+    Broker holdings files mix all of these — each class has its own
+    honest route."""
+    if isin.startswith("INF"):
+        return "equity" if isin in name_by_isin else "fund"
+    # IN + issuer type (1) + issuer code (4) + security type (2) + serial
+    # (2) + check (1) — the security-type digits sit at positions 7-8
+    if len(isin) == 12 and isin.startswith("IN"):
+        if isin[7:9] == "01":
+            return "equity"
+        if isin[7:9] in ("07", "08", "09"):
+            return "debt"
+    return "equity" if isin in name_by_isin else "other"
+
+
 def _opening_ok(openings, owner: str, isin: str, symbols) -> bool:
     """Did the user confirm pre-2018 for this stock? Keys may be the ISIN
     or (when the file had no ISIN column) the raw symbol."""
@@ -463,6 +486,19 @@ def merge_equity_batches(data, batches: list[ImportBatch],
         disp = name_by_isin.get(isin, isin)
         line = FundLine(owner=owner, isin=isin, scheme=disp)
         rep.stocks.append(line)
+        cls = _isin_class(isin, name_by_isin)
+        if cls != "equity":
+            line.scheme = trades[0].symbol or disp
+            line.ok, line.reason = False, {
+                "fund": "these are fund units, not shares - left out. "
+                        "Your fund statement (CAS) carries the full dated "
+                        "history; a holdings file (with ISINs) brings in "
+                        "the current balance",
+                "debt": "this is a bond/debenture, not a share - left "
+                        "out. The Bonds sheet is filled by hand",
+            }.get(cls, "not recognisable as a listed Indian share - "
+                       "left out")
+            continue
         if owner not in persons:
             line.ok, line.reason = False, (
                 "account not matched to a person - left out. Run again to "
@@ -498,10 +534,16 @@ def merge_equity_batches(data, batches: list[ImportBatch],
         # corporate action postdates the OLDEST typed lot, broker (post-CA)
         # sale quantities don't compare with the typed (raw) quantities —
         # never net across that boundary
+        # each row's quantity is stated in units of its own anchor (§6.18:
+        # qty_asof for imported holdings, else cost date). Netting compares
+        # sale quantities with row quantities, so an action after EITHER
+        # the oldest row anchor or the first trade makes them incomparable
         sheet_ca_blocked = bool(sheet_pool) and any(
             a.isin == isin and a.ex_date
-            and a.ex_date > min((r.cost_date or date(1900, 1, 1))
-                                for r in sheet_pool)
+            and a.ex_date > min(min((r.qty_asof or r.cost_date
+                                     or date(1900, 1, 1))
+                                    for r in sheet_pool),
+                                trades[0].trade_date)
             for a in data.corporate_actions)
         reductions: dict[int, float] = {}  # id(row) -> qty consumed
         pairs: list[tuple] = []            # (buy_date, buy_price, qty, sell)
@@ -659,8 +701,20 @@ def merge_equity_batches(data, batches: list[ImportBatch],
                 rep.warnings.append(
                     f"'{h.name}' isn't in the stock list and the file has "
                     "no ISIN for it - left out. Fund units come via your "
-                    "fund statement (CAS); bonds/NCDs go on the Bonds "
-                    "sheet by hand.")
+                    "fund statement (CAS) or a holdings file with an ISIN "
+                    "column; bonds/NCDs go on the Bonds sheet by hand.")
+                continue
+            cls = _isin_class(isin, name_by_isin)
+            if cls == "fund":
+                continue          # merge_fund_holdings() handles + reports
+            if cls != "equity":
+                rep.warnings.append(
+                    f"'{h.name or isin}' is "
+                    + ("a bond/debenture, not a share" if cls == "debt"
+                       else "not recognisable as a listed Indian share")
+                    + " - left out"
+                    + ("; the Bonds sheet is filled by hand"
+                       if cls == "debt" else "") + ".")
                 continue
             if owner not in persons:
                 rep.warnings.append(
@@ -671,7 +725,14 @@ def merge_equity_batches(data, batches: list[ImportBatch],
                     if r.owner == owner and _eq_isin(r, isin_by_name) == isin]
             traded = (owner, isin) in groups
             if rows or traded:
-                sheet_qty = sum(_eff_qty(r) for r in rows)
+                # compare in TODAY's share terms: a typed lot's raw quantity
+                # is as-of its own anchor and the broker states the post-
+                # split count, so each row scales by its CA factor first
+                sheet_qty = sum(
+                    _eff_qty(r) * M.chained_adjustment_factor(
+                        isin, r.qty_asof or r.cost_date, today,
+                        data.corporate_actions)
+                    for r in rows)
                 if abs(sheet_qty - (h.qty or 0.0)) > 0.001:
                     rep.warnings.append(
                         f"{h.name or isin}: the broker file shows "
@@ -687,6 +748,9 @@ def merge_equity_batches(data, batches: list[ImportBatch],
                 isin_override="" if isin in name_by_isin else isin,
                 qty=h.qty, avg_cost=h.avg_cost,
                 cost_date=FMV_DATE if pre2018 else None,
+                # the broker states the POST-split count as of today —
+                # anchor the CA window here or history re-applies (§6.18)
+                qty_asof=today,
                 flag=f"IMPORTED:{b.source}"))
             rep.eq_added += 1
             rep.stocks.append(FundLine(
@@ -744,6 +808,126 @@ def merge_equity_batches(data, batches: list[ImportBatch],
             new_equity.remove(r)
     data.equity = new_equity
     data.equity_sells = new_sells
+    return rep
+
+
+# ---- fund units inside broker holdings files (§6.18) -----------------------
+
+def merge_fund_holdings(data, batches: list[ImportBatch],
+                        owner_map: dict[str, str], today: date
+                        ) -> MergeReport:
+    """Demat-held funds (broker platforms) are often absent from the
+    CAMS/KFintech CAS, so a broker holdings file is their only route in.
+    A holdings file carries no dated history, so each fund lands as ONE
+    opening MF_SIP line: units = the broker's balance, amount = units ×
+    the broker's average cost, NAV = that average (the triangle holds by
+    construction), dated today. Values are right immediately; the return
+    figure counts from today until real dates arrive (typed, or replaced
+    by a CAS import — statement-wins covers the fund then). A fund already
+    on the sheet is cross-checked, never doubled. Scheme identity comes
+    from the ISIN against the fund master ONLY — names are never
+    fuzzy-matched (never-garbage)."""
+    rep = MergeReport()
+    by_isin = {i: (f, s) for f, s, i in data.masters.mf_rows if i}
+    isin_by_scheme = {s: i for _f, s, i in data.masters.mf_rows}
+    name_by_isin = {isin: name for _s, name, isin in data.masters.stock_rows
+                    if isin}
+    persons = set(data.persons)
+
+    staged: list[tuple[FundLine, object]] = []
+    seen: dict[tuple[str, str], FundLine] = {}
+    for b in batches:
+        for h in b.holdings:
+            isin = (h.isin or "").upper()
+            if _isin_class(isin, name_by_isin) != "fund":
+                continue                # the equity engine owns the rest
+            _house, scheme = by_isin.get(isin, ("", ""))
+            disp = scheme or h.name or isin
+            line = FundLine(folio=h.account, isin=isin, scheme=disp)
+            rep.funds.append(line)
+            owner = owner_map.get(h.account, "")
+            if owner not in persons:
+                line.ok, line.reason = False, (
+                    "account not matched to a person - left out. Run "
+                    "again to be asked, or fix the Owner on the "
+                    "Import_Map sheet")
+                continue
+            line.owner = owner
+            if h.avg_cost is None:
+                line.ok, line.reason = False, (
+                    "the file has no average cost for this fund, so the "
+                    "money in can't be valued - import your fund "
+                    "statement (CAS) or type it by hand")
+                continue
+            prior = seen.get((owner, isin))
+            if prior is not None:       # same fund twice in one run
+                line.skipped = 1
+                rep.sip_skipped += 1
+                if abs((h.qty or 0.0) - prior.units) > UNIT_TOLERANCE:
+                    rep.warnings.append(
+                        f"{disp}: two files show different balances "
+                        f"({prior.units:g} and {h.qty:g} units) - only "
+                        "the first was taken; check which is current")
+                continue
+            sheet_units = None
+            for r in data.sip:
+                if _sip_row_key(r, isin_by_scheme)[:2] == (owner, isin):
+                    sheet_units = (sheet_units or 0.0) + (
+                        r.units_override if r.units_override is not None
+                        else (r.amount / r.nav
+                              if r.amount and r.nav and r.nav > 0 else 0.0))
+            if sheet_units is not None:  # already on the sheet: check only
+                line.skipped = 1
+                rep.sip_skipped += 1
+                if abs(sheet_units - (h.qty or 0.0)) > UNIT_TOLERANCE:
+                    rep.warnings.append(
+                        f"{disp}: the broker file shows {h.qty:g} units "
+                        f"but the sheet holds {sheet_units:.3f} - check "
+                        "for missing history")
+                continue
+            amount = round((h.qty or 0.0) * h.avg_cost, 2)
+            row = M.SIPRow(
+                owner=owner, scheme=scheme or (h.name or isin),
+                txn_date=today, amount=amount,
+                nav=round(h.avg_cost, 4),
+                units_override=round(h.qty or 0.0, 4),
+                isin_override="" if scheme else isin)
+            line.invested, line.units = amount, h.qty or 0.0
+            seen[(owner, isin)] = line
+            staged.append((line, row))
+
+    if not staged:
+        return rep
+
+    # ---- capacity, then commit (workbook untouched on a deferral) ------
+    new_sip = list(data.sip) + [r for _l, r in staged]
+    new_mf = list(data.mutual_funds)
+    have_mf = {(r.owner, r.scheme) for r in new_mf}
+    for _line, r in staged:
+        if (r.owner, r.scheme) not in have_mf:
+            new_mf.append(M.MFRow(owner=r.owner, scheme=r.scheme,
+                                  isin_override=r.isin_override))
+            have_mf.add((r.owner, r.scheme))
+    sip_cap = M.SIP_LAST_ROW - M.FIRST_DATA_ROW + 1
+    mf_cap = M.MF_LAST_ROW - M.FIRST_DATA_ROW + 1
+    if len(new_sip) > sip_cap or len(new_mf) > mf_cap:
+        sheet = "MF_SIP" if len(new_sip) > sip_cap else "MutualFunds"
+        rep.deferred.append(
+            f"the fund holdings would overflow the {sheet} sheet - none "
+            "were imported. Free up rows and run again.")
+        for line, _r in staged:      # cross-checked funds stay reported
+            line.added = line.skipped = 0
+            line.ok, line.reason = False, "deferred - sheet full"
+        return rep
+    for line, _r in staged:
+        line.added = 1
+        rep.sip_added += 1
+    rep.warnings.append(
+        f"{len(staged)} fund holding(s) added as one opening line each - "
+        "values are right from today; the return figure counts from today "
+        "until your fund statement (CAS) fills in the real dates")
+    data.sip = new_sip
+    data.mutual_funds = new_mf
     return rep
 
 

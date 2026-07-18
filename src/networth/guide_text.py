@@ -56,6 +56,7 @@ GUIDE_ROWS: list[tuple] = [
     ("step", 2, "Save the PDF from the email into the same folder as this file."),
     ("step", 3, 'Double-click "Update Portfolio". It spots the statement, asks for its password, shows you what it read — every fund checked against the statement\'s own balance — and types it all in for you. Sales and switches too.'),
     ("kv", "Shares too", "save your broker's tradebook or holdings file (CSV or Excel) in the same folder — buys, sales and holdings come in the same way, any broker whose file names its columns. Old paper shares at cost 0? One question dates them and the official 2018 value fills in."),
+    ("kv", "Funds in demat", "funds bought on a broker platform often miss the CAS — if they're in your broker's holdings file (with ISINs), each one comes in as a single opening line at your average cost. Values are right from day one; a CAS or typed dates later make the return figure exact."),
     ("tip", "Run it again anytime — nothing gets added twice. A newer statement just adds the new months. A fund that can't be read reliably is left out and says why — never guessed."),
     ("space",),
 

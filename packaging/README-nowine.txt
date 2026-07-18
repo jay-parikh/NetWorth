@@ -8,7 +8,9 @@ TO RUN
   2. Open Family_Portfolio_Tracker.xlsx, enter your holdings, then SAVE and
      CLOSE it. (Or skip the typing: save your fund statement - the CAS PDF
      from camsonline.com - or your broker's tradebook/holdings file in this
-     folder, and the updater offers to type the history in for you.)
+     folder, and the updater offers to type the history in for you. Funds
+     held in demat come in from the holdings file too - one opening line
+     each - and splits/bonuses are never counted twice.)
   3. Double-click  "Update Portfolio.bat".
      A black window opens, refreshes prices/NAVs/XIRR, and pauses so you can
      read the summary. Press a key to close it.

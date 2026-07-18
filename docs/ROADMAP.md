@@ -71,10 +71,15 @@ into RELEASES.md with acceptance criteria.
 - ✅ **CAS import** *(shipped v1.7.0)* — the detailed CAMS/KFintech CAS PDF
   fills MF_SIP end-to-end (pypdf + owned text parser; per-fund balance
   reconciliation as the correctness gate; statement-wins after confirm).
-- ✅ **Broker import** *(shipped v1.7.0)* — generic by design: exact header
-  signatures (Zerodha) + fuzzy header matching for any broker's
-  tradebook/holdings CSV; FIFO netting with per-ISIN refusal gates
-  (uncovered sells, corporate actions inside the traded window).
+- ✅ **Broker import** *(shipped v1.7.0; hardened v1.7.1)* — generic by
+  design: exact header signatures (Zerodha) + fuzzy header matching for
+  any broker's tradebook/holdings CSV; FIFO netting with per-ISIN refusal
+  gates (uncovered sells, corporate actions inside the traded window).
+  v1.7.1 (from first real files): imported holdings anchor their
+  corporate-action window at the import date (no double-applied splits),
+  rows classify by ISIN (fund units → the MF ledger as one opening line
+  each — the route for demat-held funds the CAS misses; NCDs/bonds →
+  refused to the Bonds sheet), and By Scrip auto-fills from Equity.
 - ⬜ **e-CAS (NSDL/CDSL) import** — deliberately NOT built (2026-07-18):
   holdings-only (qty+ISIN, no cost/date), so the user still supplies the
   hard part, which blank-cost + FMV already handles. Revisit only if users
