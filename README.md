@@ -7,7 +7,8 @@
 Shares · Mutual Funds · FDs · PPF · EPF · NPS · Gold & Silver · Bonds ·
 Property · Cash · Insurance — **one workbook**, live prices, honest returns,
 automatic handling of the messy stuff (splits, bonuses, mergers, dividends).
-All on **your own computer**. Nothing ever uploaded.
+Since v1.7 your history **types itself in** — from your fund statement (CAS)
+or your broker's file. All on **your own computer**. Nothing ever uploaded.
 
 ![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)
@@ -27,9 +28,10 @@ All on **your own computer**. Nothing ever uploaded.
 
 You probably track your money in five apps, two brokers' statements, an EPFO
 passbook and a guess. NetWorth is a single Excel file that already knows how
-to do this. You type **what you own**; a double‑click fills in **what it's
-worth** — today's prices, fund NAVs, gold rate, NPS NAV — and answers the
-questions that actually matter:
+to do this. You type **what you own** — or just save your fund statement or
+broker file next to it and years of history **type themselves in** — and a
+double‑click fills in **what it's worth** — today's prices, fund NAVs, gold
+rate, NPS NAV — and answers the questions that actually matter:
 
 > *What are we worth? Is it growing faster than inflation? Is the mix what we
 > planned? What did our shares pay us this year? And if I sell — what will
@@ -66,7 +68,10 @@ You need Excel (or the free LibreOffice) and zero technical skills.
    Rahul) with your names. Overtype sample rows with your own holdings —
    dropdowns find your funds and stocks, IDs fill themselves in. **Switch
    on what you own, switch off what you don't** — your choice always wins,
-   and nothing is ever deleted.
+   and nothing is ever deleted. *(Skip the typing, since v1.7:* save your
+   fund statement — the free CAS PDF from camsonline.com — or your
+   broker's tradebook/holdings file next to the workbook, and the updater
+   offers to type the whole history in for you.)
 4. **Save, close, double‑click `Update Portfolio`.** It backs your file up,
    fetches everything, recomputes every number, and prints a friendly
    one‑screen summary. It'll even ask if you want to add a family member or
@@ -110,7 +115,7 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 | **Bonds** | Value, maturity amount, coupon‑aware returns |
 | **Manual Assets** | Property, cash, insurance surrender value, anything else — you type today's value, it joins the family total |
 | **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart — and counted in your return |
-| **Statement import** *(v1.7)* | Drop your fund statement (the free CAS PDF every MF investor can email themselves) or your broker's tradebook/holdings CSV next to the file and run the update — years of history type themselves in, every fund checked against the statement's own balance. Re‑runs never double anything; anything that can't be read reliably is left out with a plain reason, never guessed |
+| **Statement import** *(v1.7)* | Drop your fund statement (the free CAS PDF every MF investor can email themselves) or your broker's tradebook/holdings export (**CSV or Excel**, any broker whose file names its columns) next to the file and run the update — years of history type themselves in, every fund checked against the statement's own balance. Old paper shares at cost 0? One question dates them and the official 2018 value fills in. Re‑runs never double anything; who owns which folio is asked once and remembered (Import_Map); anything that can't be read reliably is left out with a plain reason, never guessed |
 | **Equity Sells** *(v1.6, optional)* | One row per share sale, straight from your contract note — feeds the tax view and your true return (a sale with its old buy price left blank counts in the tax view only) |
 | **Capital Gains** *(v1.6, optional)* | STCG & LTCG per year, the ₹1.25L tax‑free allowance you've used, an indicative tax figure, and the date each holding turns long‑term — with the pre‑2018 **grandfathering** rule applied for you. Intraday (same‑day) trades show separately as speculative income, never mixed in. Losses set off across your investments the way the law allows, in the same year — debt‑fund losses count too (v1.6.2) |
 | **Tax Rules** *(v1.6, optional)* | The capital‑gains rates, holding periods and allowance the report uses — editable in your workbook, so a Budget change needs no new app version |
@@ -127,6 +132,13 @@ Settings.
 
 ## 🧠 The smart bits (what it quietly does for you)
 
+- **Ten years of SIPs, no typing** *(v1.7)*. One free, official PDF (the
+  CAS) holds your entire fund history across every fund house; the updater
+  reads it in — every line must satisfy the statement's own arithmetic
+  (amount = units × NAV) and every fund must sum to the statement's printed
+  closing balance, or it is refused whole with a plain reason. Broker
+  tradebook/holdings files fill the Equity tab the same way, sales netted
+  off oldest‑first. Run it again anytime — nothing is added twice.
 - **Both exchanges, merged.** Prices come from **BSE and NSE together** —
   the union of both bhavcopies, so NSE‑only and BSE‑only listings all price,
   and the numbers match your broker's app.
@@ -161,7 +173,9 @@ Settings.
 
 ## 🔒 Your data stays yours
 
-Every fetch is a plain download of **public** data, started from your machine:
+Every fetch is a plain download of **public** data, started from your
+machine. Your statement and broker files are read **locally** — the CAS
+PDF's password is asked for on your screen and never stored:
 
 | What | Source |
 |---|---|
@@ -200,11 +214,12 @@ code generates it; the updater reads your inputs, fetches, recomputes, and
 regenerates it. End users never need Python.
 
 ```
-┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: 29 sheets, 10 charts, formulas)
+┌── generate.py ──►  Family_Portfolio_Tracker.xlsx   (xlsxwriter: 30 sheets, 10 charts, formulas)
 │                            │
 │                     you edit inputs
 │                            ▼
 └── update.py  ◄── reader.py (openpyxl, read‑only)
+        │  importers/ (cams CAS PDF · brokers CSV+XLSX · one merge engine, §6.17)
         │  fetch/  (amfi · bhavcopy BSE+NSE · corporate_actions+dividends · nps · bullion)
         │  compute/ (xirr · cashflows · ppf · projections · snapshot)
         └─►  regenerate the workbook (atomic, with a backup)
