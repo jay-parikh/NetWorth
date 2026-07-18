@@ -17,7 +17,7 @@ TODAY = date(2026, 7, 15)
 
 
 REFERENCE = {"MF_Master", "Stock_Master", "Bank_Master", "NPS_Master",
-             "Corporate_Actions"}
+             "Corporate_Actions", "Import_Map"}          # Import_Map: v1.7
 
 
 def test_default_template_shows_core_only(tmp_path):

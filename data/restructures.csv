@@ -1,2 +1,7 @@
 ex_date,type,old_isin,old_name,old_symbol,new_isin,new_name,new_symbol,ratio_from,ratio_to,cost_pct,details
 2023-07-13,MERGER,INE001A01036,HOUSING DEVELOPMENT FINANCE CORP.LTD,HDFC,INE040A01034,HDFC BANK LTD.,HDFCBANK,42,25,100,HDFC Ltd merged into HDFC Bank — 42 HDFC Bank shares per 25 HDFC Ltd shares; cost basis and holding period carry in full (Sec. 47)
+2026-04-30,DEMERGER,INE205A01025,VEDANTA LIMITED,VEDL,INE205A01025,VEDANTA LIMITED,VEDL,1,1,52.34,Vedanta five-way demerger (record date 01-05-2026): the residual Vedanta keeps 52.34% of the original cost — official apportionment filed with the exchanges 16-05-2026
+2026-04-30,DEMERGER,INE205A01025,VEDANTA LIMITED,VEDL,INE1CDF01017,VEDANTA ALUMINIUM METAL L,VAML,1,1,7.15,1 Vedanta Aluminium Metal share per Vedanta share; 7.15% of the original cost — listed 15-06-2026
+2026-04-30,DEMERGER,INE205A01025,VEDANTA LIMITED,VEDL,INE704J01044,VEDANTA OIL AND GAS LTD,VOGL,1,1,21.49,1 Vedanta Oil & Gas (formerly Malco Energy) share per Vedanta share; 21.49% of the original cost — listed 15-06-2026
+2026-04-30,DEMERGER,INE205A01025,VEDANTA LIMITED,VEDL,INE694L01019,VEDANTA POWER LIMITED,VEDPOWER,1,1,12.23,1 Vedanta Power (formerly Talwandi Sabo Power) share per Vedanta share; 12.23% of the original cost — listed 15-06-2026
+2026-04-30,DEMERGER,INE205A01025,VEDANTA LIMITED,VEDL,INE1CLE01013,VEDANTA IRON AND STEEL L,VISL,1,1,6.79,1 Vedanta Iron & Steel share per Vedanta share; 6.79% of the original cost — listed 15-06-2026

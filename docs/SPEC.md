@@ -179,6 +179,7 @@ banner help-text changed, nothing the reader matches on moves.
 | v1.2 | Dividends | mixed (§3.13) | FY dividend ledger — auto + manual rows, by-month chart |
 | v1.6 | Capital Gains | computed at build (§3.21) | STCG/LTCG per FY, grandfathering, sell-planning (default off, CG switch) |
 | v1.6 | Tax_Rules | input (§3.22) | the capital-gains rate table, editable in the workbook — a Budget change is an Excel edit, not a release (default off, CG switch) |
+| v1.7 | Import_Map | mixed (§3.23) | folio/account → person mapping + already-imported files (never-nag); Reference-lists switch |
 | v1.1 | History | updater data | one net-worth snapshot per day (§6.11) |
 | … | Guide | static text | 2-minute manual |
 
@@ -304,7 +305,7 @@ the holding blocks, which occupy columns A–G and only grow downward (the
 
 ### 3.6 Equity
 
-Header row 3, data rows 4…253 (v1.6.2: raised from 140 — one row per
+Header row 3, data rows 4…1503 (v1.7: was 253; v1.6.2 raised from 140 — one row per
 purchase lot is the norm, and the updater refuses to run rather than lose
 a typed row to the budget, §7 step 5). Columns:
 
@@ -332,14 +333,14 @@ a typed row to the budget, §7 step 5). Columns:
 | v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
 
 Below the data block, one **updater-written** cell holds the equity-class
-XIRR (the row after TOTAL — N255 at the v1.6.2 budget; the legacy
+XIRR (the row after TOTAL — N1505 at the v1.7 budget; the legacy
 template's N142). v1 additions: status/staleness amber flags (§6.5),
 FMV-fallback marking on E (§6.6), adjustment columns (§6.7).
 
 ### 3.7 MutualFunds (summary) and MF_SIP (ledger)
 
 **MF_SIP** — one row per purchase, SIP instalment or redemption
-(redemption = negative Amount). Header row 3, data rows 4…1003 (v1.6.2:
+(redemption = negative Amount). Header row 3, data rows 4…3003 (v1.7: was 1003;
 raised from 503):
 
 | Col | Header | Kind | Definition |
@@ -487,8 +488,8 @@ List validation with:
   delisted scheme); the lookup columns then stay blank, which downstream
   formulas treat as "fill ISIN manually".
 - Input tip on the cell explains the behaviour.
-- Applied ranges: Equity C4:C253, MutualFunds C4:C113, MF_SIP C4:C1003
-  (v1.6.2 budgets; always the sheet's LAST_ROW);
+- Applied ranges: Equity C4:C1503, MutualFunds C4:C113, MF_SIP C4:C3003
+  (v1.7.0 budgets; always the sheet's LAST_ROW);
   v1 adds FixedDeposits B4:B<n> over `Bank_NameList`.
 
 ### 3.13 Dividends (v1.2, R9)
@@ -856,6 +857,30 @@ Reader: guarded (`if "Tax_Rules" in wb.sheetnames` — pre-v1.6 workbooks fall
 back to the bundled CSV alone), anchor "Asset", columns 1–7 by position.
 Sample data ships `tax_rules = load_tax_rules()` so build→read→build is
 byte-stable (round-trip identity).
+
+### 3.23 Import_Map (v1.7; Reference-lists switch)
+
+Two small tables on one sheet, both written by the import flow (§6.17) and
+user-editable. Rows 4..103 each. **Left (columns A–D)** — the owner map:
+`Source, Account / Folio, Name on statement, Owner` where Owner is a
+non-blocking dropdown over the Dashboard persons; a folio maps once and
+never prompts again, and a wrong answer is fixed by editing the cell and
+re-running. Rows with a blank/unknown Owner are skipped by imports (with a
+warning). **Right (columns F–I)** — the never-nag file memory:
+`File, Fingerprint (sha256[:12] of the file bytes), Imported on, Result
+(imported | skipped)`; the updater consults it before offering a file
+found next to the workbook, and deleting a row is the documented way to
+be asked about that file again. A file is only recorded `imported` when
+its content actually landed — a capacity deferral or an unmapped-owner
+refusal keeps it offerable (§6.17); a stored Owner that no longer names
+a person is ignored and re-asked, and the fresh answer updates the row. Follows the Reference-lists switch
+(hidden by default — most users never see it). Reader: guarded
+(`if "Import_Map" in wb.sheetnames`), anchor "Source"; account keyed by
+column B, file rows by column F, each table independent. Both lists are
+in CAPACITIES (§7 step 5 refusal covers rows read from the sheet).
+Run-time APPENDS (new mapping answers / file records) that would overflow
+the sheet are dropped with a warning instead — the update itself never
+fails over an auxiliary sheet; dropped answers are simply asked again.
 
 ---
 
@@ -1601,6 +1626,187 @@ current NAV — carrying the SAME caveat notes as the realised rows
 ("assumed Equity", pre-2018 "gain may be overstated"): a planning figure
 must not hide its guesses.
 ```
+
+### 6.17 Import pipeline — statements & broker files (v1.7)
+
+Fills Equity and MF_SIP from files the user can obtain themselves: the
+CAMS/KFintech **detailed CAS PDF** (complete MF transaction history,
+password-protected) and **broker equity CSV exports** (tradebook /
+holdings; parser registry per broker + a generic header-matched
+fallback). The pipeline is **parse → validate → reconcile → preview →
+write** and every stage may refuse; parsers reduce files to normalized
+records (ImportedSipTxn / ImportedTrade / ImportedHolding inside an
+ImportBatch that also carries the statement's own per-(folio, ISIN)
+closing unit balances) and ONE merge engine reconciles batches into the
+data model — no parser ever touches a sheet.
+
+**The never-garbage contract (normative).** A wrong number costs more
+trust than typing ever saved, so garbage must be structurally unable to
+reach a sheet:
+
+1. *Triangle identity*: an MF transaction is accepted only if
+   `|amount − units × NAV| ≤ max(₹1, 0.1% of amount)`. Rows that carry
+   units without money (bonus / segregation) are exempt from the triangle
+   but must carry a zero amount AND their fund must have a declared
+   closing balance — units no money proves and no balance can check are
+   refused, not trusted. Accepted ones land as amount-0 rows (valuation
+   counts the units via the units override; the cash-flow return figure
+   ignores the zero leg — a documented approximation). *Sign-vs-type*: a
+   redemption/switch-out must read as money out and a purchase/switch-in
+   as money in — enforced in the MERGE engine, not any one parser, so a
+   drifted layout in a future parser cannot flip a sale into a purchase.
+2. *Balance reconciliation*: when the statement declares a closing unit
+   balance for a (folio, ISIN), the parsed history must sum to it within
+   ±0.001 unit. For a CAS the balances are MANDATORY: a balance line that
+   was seen but couldn't be parsed (opening or closing) refuses the fund
+   — an unreadable opening must never default to 0, which would disguise
+   a mid-history statement as since-inception — and a fund whose closing
+   line was never found is refused rather than imported unreconciled.
+3. *Chronology*: a negative running-units balance mid-history refuses the
+   fund (sell before buy = ordering or parse corruption). Month names in
+   dates are resolved by the importer's own table, never the OS locale.
+4. *Atomicity per fund*: ONE unprovable row refuses that fund whole —
+   funds import completely reconciled or not at all; sibling funds in the
+   same file still import. Every refusal carries a plain-words reason;
+   the preview shows each fund's Σ invested / Σ units with a tick or the
+   reason it was left out — never silence.
+5. *Hardened field parsing*: lakh grouping (1,23,456.78), parenthesised
+   negatives, the Indian date shapes (DD-Mon-YYYY, DD-MM-YYYY, …);
+   sanity bounds (dates 1990-01-01..today, NAV > 0, |amount| < ₹100
+   crore). Anything outside the recognised shapes parses to nothing and
+   quarantines its line — leniency is how garbage survives.
+
+**Merge semantics.** Statement rows carry exact units into the existing
+units-override path (never recomputed). Scheme names resolve via MF_Master
+by ISIN (master name wins so the sheet's INDEX/MATCH lookups work);
+unknown ISINs keep the statement name plus an ISIN override — which also
+marks the ISIN as referenced, so the master refresh keeps it. A
+MutualFunds summary row is created for any (owner, scheme) that lacks one
+(Tax type left at the default). Two write modes:
+
+- **statement-wins** (only after an interactive confirmation): for funds
+  the statement covers, typed rows of that (owner, ISIN) are replaced by
+  the exact history — the pre-run backup is the safety net; afterwards
+  the sheet's units for the fund must re-equal the statement balance.
+  The replace is folio-blind (the sheet stores no folio), so two guards
+  keep it from deleting history the statement doesn't cover: (a) an ISIN
+  any of whose folios the PARSER refused (mid-history, unreadable
+  balance — the batch marks them `partial`) is refused whole for every
+  owner, and (b) when the typed rows' net amount exceeds the statement's
+  net amount for the fund by more than 5% + ₹1,000, the statement is
+  presumed to be missing a folio and the typed rows are kept, with a
+  plain-words reason either way.
+- **append-only** (the headless default — never destructive without a
+  human): multiset upsert keyed `(owner, ISIN, date, amount₂dp)` with
+  multiplicity, so two genuine same-day SIPs import as two rows while a
+  re-import adds zero. Re-running on the same or a newer statement is
+  always idempotent ("second run adds 0" is a release-gate test).
+
+**Capacity**: the merge engine pre-counts; an import that would exceed a
+sheet's row budget is deferred WHOLE with a plain message (the workbook
+is untouched — mutations to shared rows are only PLANNED until every
+gate passes — and the update itself continues) — §7 step 5's refusal
+guards typed rows only. Exception, MF_SIP only and interactive only:
+when a rough estimate (rows in use + statement rows) says the ledger may
+overflow, the user is asked UP FRONT whether the oldest years may be
+rolled up; with that consent, an actual overflow triggers condense_txns
+retries at financial-year cutoffs — least condensing first, the current
+FY never rolled — until the import fits (each retry re-runs EVERY gate;
+condensing conserves Σamount and Σunits per fund, so the closing-balance
+reconciliation still proves the fund, and the OPENING row's NAV is
+amount/units so the triangle holds by construction). If even full
+condensing cannot fit (too many distinct funds), the plain deferral
+stands. Headless runs never condense. Owner attribution is a persisted mapping
+folio/account → person (the Import_Map sheet, §3.23); a new account
+prompts once, an unmapped account on a headless run skips its rows with
+a warning. Broker files with no client-id column key the answer by the
+FILE NAME (a blank key would not round-trip, and the question needs a
+readable label). A stored Owner that no longer names a person (typo,
+renamed on the Dashboard) never silences the question — it is re-asked
+and the fresh answer UPDATES the stored row. The never-nag memory only
+records a file as imported when its content actually landed: a capacity
+deferral or a fixable refusal (unmapped owner) leaves the file offerable
+on the next run, so "fix it and run again" always works. Headless runs
+act ONLY on files passed explicitly via --import — the folder sweep is
+interactive-only (never a file nobody was asked about). Equity trade
+netting: §6.18 (v1.7 broker import).
+
+### 6.18 Broker equity import — generic parsing + FIFO netting (v1.7)
+
+**Generic by design**: a registry of exact header signatures for verified
+export layouts (Zerodha tradebook/holdings first), then a fuzzy fallback
+that matches header CONCEPTS — a tradebook needs symbol-or-ISIN, date,
+buy/sell, quantity and price; a holdings file needs symbol-or-ISIN,
+quantity and average price (and no date/side columns); a LEDGER-style
+transaction register (traditional back-offices, e.g. MoneyMaker) with
+separate Buy Qty/Buy Rate and Sell Qty/Sell Rate columns parses each row
+into its buy and/or sell leg. Holdings average-cost matching is
+strict-before-loose: an explicit header ("Avg. Cost", "Average Price",
+…) anywhere in the row always wins; the bare back-office labels
+("Rate", "Net Rate", "Holding Rate") count as avg-cost ONLY when no
+explicit header exists — a market-price "Rate" column must never shadow
+a real "Avg. Cost" column, since a holdings row has no triangle identity
+to catch the wrong value. **XLSX exports** parse
+directly (first sheet → text rows → the same pipeline; the workbook
+being updated is excluded from discovery and never matches the header
+sniff). A holdings **average of 0 means the broker does not KNOW the
+cost** (demat-converted paper shares): the row lands with a BLANK cost —
+never ₹0 — and the interactive pre-2018 question may date it 31-01-2018
+so the §6.6 value fills in; symbols carrying an exchange series suffix
+("AJMERA EQ") resolve against the master's bare symbol. Matching is on
+headers only; every value still passes the hardened parsers, and an
+unrecognisable file fails politely naming the headers it saw. Multiple
+exchange fills of one order collapse to one trade per (account, security,
+date, side) at the weighted average price. Symbols without an ISIN column
+resolve through Stock_Master's symbol column; an unresolvable symbol's
+trades are left out with a warning (never guessed).
+
+**Netting (per owner + ISIN, chronological FIFO)**: buys append lots;
+sells consume imported lots first and — ONLY in replace mode, i.e. after
+an interactive confirmation — then the sheet's typed lots (oldest cost
+date first; a fully consumed typed row is removed, a partial one has its
+quantity reduced). Surviving lots land one row each (the lots-are-rows
+norm, §3.6) flagged `IMPORTED:<source>`; consumed (lot, sell) pairs land
+on Equity_Sells while the Capital-gains switch is on. With the switch
+OFF, netting among the file's own lots still proceeds silently, but a
+sale that would consume a TYPED sheet lot is REFUSED (per ISIN) with
+advice to turn the switch on first — without a sale record on
+Equity_Sells there is no memory that the lot was already reduced, and a
+re-import would shrink it again. Refusal gates, per ISIN, atomic:
+
+1. any line of the stock that couldn't be read reliably — and when the
+   unreadable line's stock IDENTITY is itself unreadable (no ISIN, no
+   recognisable symbol), there is no ISIN group to poison, so the whole
+   FILE's trades are refused (fail safe, loudly);
+2. an uncovered sell (the file sells more than it buys — partial
+   history). Two escapes before refusal: import the earlier file(s) in
+   the same run, or — interactively — confirm the shares predate
+   2018-02-01, in which case the missing buy becomes an OPENING lot at
+   31-01-2018 with a blank cost, so the §6.6 grandfathering value stands
+   in exactly as for a typed old holding (the sale pair carries that
+   date and a blank buy price; a warning names the assumption). Headless
+   runs never assume — they refuse;
+3. a corporate action whose ex-date falls INSIDE the imported trade
+   window — raw-unit FIFO across a split/bonus boundary would silently
+   corrupt, so v1.7 refuses loudly and suggests entering the current
+   holding by hand (folding chained_adjustment_factor into the netting is
+   a later release). The same logic guards typed lots: replace-mode
+   netting never consumes a sheet lot when any corporate action postdates
+   the oldest typed lot (typed quantities are raw §6.7 units; broker
+   sale quantities are post-action units — they don't compare).
+
+**Idempotency is stateless**: an ISIN whose computed outcome (surviving
+lots as a multiset, and the sells when the CG switch is on) is already on
+the sheet is skipped whole — re-running the same file adds nothing and
+consumes nothing. **Holdings files** cross-check the result (broker qty
+vs sheet qty, warning on mismatch — arithmetic, not luck) and provide the
+no-history fallback: a holding with no trades and no sheet rows lands as
+one row with the broker's average cost and NO cost date (amber; excluded
+from XIRR until the user dates it; pre-2018 paper shares instead follow
+the §6.6 FMV convention — type 31-01-2018). Capacity: over-cap defers
+the WHOLE equity import with a plain message; the run continues. Cuts
+to typed rows are only PLANNED during netting and applied after the
+capacity gate passes, so a deferred import leaves data byte-identical.
 
 ## 7. Updater behaviour
 

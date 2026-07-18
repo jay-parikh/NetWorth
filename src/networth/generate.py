@@ -2044,6 +2044,54 @@ def _write_tax_rules(wb, F, data: PortfolioData):
     return ws
 
 
+def _write_import_map(wb, F, data: PortfolioData):
+    """v1.7 (SPEC §3.23): who owns each imported folio/account, and which
+    files were already read. Follows the Reference-lists switch — most
+    users never see it; the import prompt fills it in."""
+    ws = wb.add_worksheet("Import_Map")
+    _widths(ws, {"A": 22, "B": 20, "C": 26, "D": 14, "E": 3, "F": 34,
+                 "G": 14, "H": 14, "I": 11})
+    _sheet_head(ws, F, "IMPORT — WHO OWNS WHAT, AND WHAT WAS READ",
+                "Filled in by the updater when you import a fund statement "
+                "or broker file. Fix a wrong Owner here and run the update "
+                "again. Delete a row on the right to be asked about that "
+                "file again.")
+    ws.write_row("A3", ["Source", "Account / Folio", "Name on statement",
+                        "Owner"], F["header"])
+    ws.write_row("F3", ["File", "Fingerprint", "Imported on", "Result"],
+                 F["header"])
+    ws.write_comment("D3", "A person from the Dashboard. Rows with a blank "
+                           "or unknown Owner are left out of imports.")
+    ws.write_comment("G3", "A short checksum of the file - how the updater "
+                           "recognises a file it has already read.")
+    by_row = {M.FIRST_DATA_ROW + i: m for i, m in enumerate(data.import_map)}
+    for r in range(M.FIRST_DATA_ROW, M.IMPORTMAP_LAST_ROW + 1):
+        m = by_row.get(r)
+        if m:
+            ws.write(f"A{r}", m.source, F["in_text"])
+            ws.write(f"B{r}", m.account, F["in_text"])
+            ws.write(f"C{r}", m.name_hint, F["in_text"])
+            ws.write(f"D{r}", m.owner, F["in_text"])
+        else:
+            for col in "ABCD":
+                ws.write(f"{col}{r}", None, F["in_text"])
+    by_row = {M.FIRST_DATA_ROW + i: f
+              for i, f in enumerate(data.imported_files)}
+    for r in range(M.FIRST_DATA_ROW, M.IMPORTMAP_LAST_ROW + 1):
+        fr = by_row.get(r)
+        if fr:
+            ws.write(f"F{r}", fr.file, F["in_text"])
+            ws.write(f"G{r}", fr.fingerprint, F["in_text"])
+            if fr.imported_on:
+                ws.write_datetime(f"H{r}", fr.imported_on, F["in_date"])
+            ws.write(f"I{r}", fr.decision, F["in_text"])
+    if data.persons:
+        ws.data_validation(f"D4:D{M.IMPORTMAP_LAST_ROW}", {
+            "validate": "list", "source": data.persons,
+            "show_error": False, "input_title": "Owner",
+            "input_message": "Pick the person this folio/account belongs to."})
+
+
 def _write_history(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("History")
     classes = _history_classes(data)
@@ -2245,6 +2293,7 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False,
     _write_dividends(wb, F, data, today)
     _write_capital_gains(wb, F, data, today, rep=capgains, masked=masked)
     _write_tax_rules(wb, F, data)
+    _write_import_map(wb, F, data)
     _write_history(wb, F, data)
     _write_guide(wb, F)
 

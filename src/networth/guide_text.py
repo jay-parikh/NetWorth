@@ -51,6 +51,14 @@ GUIDE_ROWS: list[tuple] = [
     ("tip", 'Gold & silver price at the daily bullion rate. Prefer your jeweller\'s rate? Type it in "Rate override" — it wins. A gold bond (SGB)? Fill the ISIN from your statement — it prices like a share.'),
     ("space",),
 
+    ("section", "📥", "Ten years of SIPs, no typing"),
+    ("step", 1, 'Email yourself your fund statement: camsonline.com > Statements > "CAS – CAMS+KFintech". Pick "Detailed" and "Since inception", and choose a password you\'ll remember.'),
+    ("step", 2, "Save the PDF from the email into the same folder as this file."),
+    ("step", 3, 'Double-click "Update Portfolio". It spots the statement, asks for its password, shows you what it read — every fund checked against the statement\'s own balance — and types it all in for you. Sales and switches too.'),
+    ("kv", "Shares too", "save your broker's tradebook or holdings file (CSV or Excel) in the same folder — buys, sales and holdings come in the same way, any broker whose file names its columns. Old paper shares at cost 0? One question dates them and the official 2018 value fills in."),
+    ("tip", "Run it again anytime — nothing gets added twice. A newer statement just adds the new months. A fund that can't be read reliably is left out and says why — never guessed."),
+    ("space",),
+
     ("section", "✨", "It quietly does the boring bits"),
     ("text", "You don't have to learn this file — you get to notice it. A stock splits and your share count just updates. A dividend lands and it's logged before your bank's SMS."),
     ("kv", "Splits & bonuses", '"Qty today" keeps your share count up to date on its own — your typed numbers never change'),
@@ -58,6 +66,7 @@ GUIDE_ROWS: list[tuple] = [
     ("kv", "Dividends", "every one your shares declare this year is logged on the Dividends tab, with a month-by-month chart — and it counts in your return figure (XIRR)"),
     ("kv", "PPF interest", "worked out exactly when you list deposits on PPF_Ledger — otherwise your typed balance is used"),
     ("kv", "A forgotten old cost", 'bought before Feb 2018 and don\'t know the price? Leave "Avg. cost" blank — the official 2018 value fills in'),
+    ("kv", "Old paper shares", 'know only the company and how many? Type the quantity, leave "Avg. cost" blank, and put 31-01-2018 as the Buy date — the official 2018 value fills in and the tax maths is right'),
     ("kv", "Delisted shares", "kept at their last known price and shaded amber so you can spot them"),
     ("text", "To refresh it all: close the file and double-click \"Update Portfolio\". It backs up first, then updates every price and figure. Once a week is plenty."),
     ("space",),

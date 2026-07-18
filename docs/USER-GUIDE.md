@@ -153,7 +153,7 @@ tax view then shows **each purchase's own "turns long-term" date** — so
 you can see which lot is already taxed at the kinder rate before you
 sell. (Prefer less typing? One combined row with the average cost and the
 first buy date also works — the name *Avg. cost* is for exactly that —
-but the tax dates blur together.) There is room for 250 rows — and if you
+but the tax dates blur together.) There is room for 1,500 rows — and if you
 ever exceed a sheet's limit, the updater refuses to run rather than lose
 a row: it stops before touching anything and tells you which sheet and
 what to move.
@@ -178,6 +178,12 @@ Things this tab quietly does for you:
 - **Forgotten old costs** — bought before February 2018 and don't know
   the price? Leave *Avg. cost* blank: the official 31-01-2018 value (the
   tax "grandfathering" value) fills in, marked amber.
+- **Old paper shares, now in demat** — certificates from decades ago,
+  where you know only the company and the quantity? Type the quantity,
+  leave *Avg. cost* blank, and put **31-01-2018** as the Buy date. That
+  date is inside the grandfathering window, so the official 2018 value
+  becomes your cost, the holding counts as long-term (it is, by now), and
+  the tax view is right. Nothing else to hunt for.
 - **Delisted shares** — kept at their last traded price and flagged, never
   silently stale. You can type a price override.
 
@@ -211,6 +217,102 @@ The **Tax type** column (Equity/Debt) matters only if you use the capital
 gains report — see [section 13](#13-selling--the-taxmans-view). Blank
 counts as Equity, and most share funds (including ELSS and index funds)
 are Equity.
+
+### Ten years of SIPs without typing — the statement import
+
+Since v1.7 you don't have to type the ledger at all. Every fund investor
+in India can request one free, official PDF that lists every purchase,
+SIP and sale across **all** their fund houses — the consolidated account
+statement (CAS). The updater reads it in for you:
+
+1. **Request the statement** at
+   [camsonline.com](https://www.camsonline.com) → *Statements* →
+   *CAS – CAMS + KFintech* (KFintech's own site works too). Pick
+   **Detailed** — not Summary — and **Since inception**, type your email,
+   and choose a password you'll remember. The PDF arrives by email in a
+   few minutes.
+2. **Save the PDF into the same folder** as your
+   `Family_Portfolio_Tracker.xlsx`.
+3. **Double-click `Update Portfolio`.** It notices the file, asks for the
+   statement's password (the one you chose — it is never stored), and
+   shows you what it read: every fund with its transaction count, amount
+   and units, each line **checked against the statement's own closing
+   balance**. You confirm once; it fills MF_SIP with the exact dates,
+   amounts, NAVs and units, and creates any missing MutualFunds summary
+   rows.
+
+Here is the whole conversation, exactly as it looks (just press Enter at
+each question to accept):
+
+```text
+📥 Found CAS_2026.pdf next to your workbook — looks like your fund statement (CAS).
+   Read it in? Press Enter for yes, or type n to skip:
+  🔑 Password for CAS_2026.pdf (the one you chose when requesting it):
+
+  What CAS_2026.pdf holds:
+    ✓ XYZ123 - Parag Parikh Flexi Cap Fund - Direct Plan - Growth —
+      3 transaction(s), ₹30,000 in, 588.386 units ·
+      matches the statement's closing balance ✓
+
+  👤 Who owns 12345678/90 (Amit Kumar)? 1. Amit, 2. Priya, 3. Rahul [Enter = Amit]:
+
+  Write these into your workbook? If a fund here is already typed on your
+  sheets, the statement's exact history replaces those rows (your file is
+  backed up first).
+  Press Enter to continue, type a to only ADD new entries, or n to cancel:
+```
+
+Some honest fine print:
+
+- **Run it again anytime — nothing is added twice.** A newer statement
+  just adds the new months. Already-read files are remembered (delete
+  their row on the hidden Import_Map sheet to be asked again).
+- If a fund is **already typed** on your sheets, the statement's exact
+  history replaces those typed rows — after you confirm, and your file
+  is backed up first. Choose "only add" at the prompt if you prefer.
+- A fund the app **can't read reliably is left out entirely and says
+  why** — a number that doesn't prove itself against the statement's own
+  arithmetic is never written. Refusing is how the figures stay
+  trustworthy.
+- Sent the **Summary** variant by mistake? The updater tells you and
+  explains how to request the Detailed one.
+- Funds held **inside a demat account** may not appear on a CAS — those
+  come via your broker's file instead (next section).
+- **A very long history still fits.** The ledger saves 3,000 lines; if
+  your statement holds more, the updater asks whether it may roll the
+  oldest years into one opening line per fund. Totals and each fund's
+  closing balance still match the statement — those years just lose
+  their per-SIP detail (and the return figure treats them
+  approximately). Say no and it simply waits instead.
+
+**Shares from your broker, the same way.** Save your broker's
+**tradebook** (trade history) or **holdings** export — **CSV or Excel
+(.xlsx)** — in the same folder. Any broker's file works if its columns
+are named — symbol or ISIN, date, buy/sell, quantity, price for a
+tradebook (separate Buy/Sell quantity columns work too); symbol/ISIN,
+quantity, average price for holdings. A banner or summary block above
+the table is fine, and a holding the broker carries at **cost 0** (old
+paper shares converted to demat) comes in with a blank cost — one
+question ("bought before Feb 2018?") dates it so the official 2018
+value fills in. Buys become lots with their real dates and prices,
+sales are netted off oldest-first, and a holdings file cross-checks the
+result against what your broker says you own. One switch to know: if
+the file sells shares you had **typed by hand**, turn **Capital gains
+report** to Yes on Settings first — the sale is then recorded properly
+on Equity_Sells; with it off, that stock is left out with a note saying
+exactly this. A stock whose history
+can't be read safely — for example a split falls inside the traded
+window — is left out with a plain reason, and you add that one by hand.
+Sold shares the file never shows you buying (old paper or transferred
+holdings)? The import asks: *bought before Feb 2018?* — answer yes and
+the official 2018 value stands in as their cost, the same grandfathering
+rule as everywhere else.
+Who owns which folio or account is asked once and remembered on the
+Import_Map sheet (visible via the *Reference lists* switch) — the left
+table holds those answers (fix a wrong Owner right there), the right
+table lists the files already read so nothing is offered twice:
+
+![Import_Map — who owns which folio, and which files were already read](images/import-map.png)
 
 ---
 
@@ -476,7 +578,10 @@ Double-click `Update Portfolio` (workbook closed). In order:
 
 It will also offer to add a family member or show/hide asset classes, and
 a once-per-run version check tells you when a newer release exists
-(`--no-update-check` turns that off).
+(`--no-update-check` turns that off). Since v1.7, a fund statement (CAS
+PDF) or broker CSV saved next to the workbook is noticed and offered for
+import right here — see [section 6](#6-mutual-funds--a-summary-tab-and-a-ledger-tab);
+the command-line equivalent is `--import FILE`.
 
 **Once a week is plenty.** Daily works too — it's your call.
 
@@ -546,6 +651,6 @@ Still stuck? Open an issue:
 
 ---
 
-*Guide for NetWorth v1.6.2, written 2026-07-18. Screenshots are renders of
+*Guide for NetWorth v1.7.0, written 2026-07-18. Screenshots are renders of
 the shipped sample workbook. Project home:
 [github.com/jay-parikh/NetWorth](https://github.com/jay-parikh/NetWorth).*

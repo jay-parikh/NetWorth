@@ -15,7 +15,7 @@ EXPECTED_SHEETS = [
     "Bank_Master", "FixedDeposits", "PPF", "PPF_Ledger", "EPF", "Bonds",
     "Gold_Silver", "NPS", "NPS_Master", "Manual_Assets", "By Scrip",
     "Corporate_Actions", "Dividends", "Capital Gains", "Tax_Rules",
-    "History", "Guide",
+    "Import_Map", "History", "Guide",
 ]
 
 
@@ -62,7 +62,8 @@ def test_typeahead_validations(built):
     with zipfile.ZipFile(built) as z:
         eq = z.read("xl/worksheets/sheet7.xml").decode()   # Equity is 7th sheet
     assert "OFFSET(Stock_Master!$B$3" in eq
-    assert 'sqref="C4:C253"' in eq
+    from networth.model import EQUITY_LAST_ROW
+    assert f'sqref="C4:C{EQUITY_LAST_ROW}"' in eq
 
 
 def test_comments_survive(built):
@@ -90,9 +91,10 @@ def test_equity_sheet(wb):
     assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4*IF($T4="",1,$T4)/IF($S4="",1,$S4))'
     assert e["O3"].value == "Qty today" and e["P3"].value == "Avg cost today"
     assert "MATCH($C4,Stock_Master!$B:$B,0)" in e["B4"].value
-    assert e["N255"].value == pytest.approx(0.0666771890)
-    assert e["C255"].value == "TOTAL"
-    assert e["I255"].value == "=SUM(I4:I253)"
+    from networth.model import EQUITY_LAST_ROW, EQUITY_TOTAL_ROW
+    assert e[f"N{EQUITY_TOTAL_ROW}"].value == pytest.approx(0.0666771890)
+    assert e[f"C{EQUITY_TOTAL_ROW}"].value == "TOTAL"
+    assert e[f"I{EQUITY_TOTAL_ROW}"].value == f"=SUM(I4:I{EQUITY_LAST_ROW})"
     assert e["M4"].value.date().isoformat() == "2018-01-31"
     assert e.freeze_panes == "A4"
 

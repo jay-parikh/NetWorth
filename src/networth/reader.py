@@ -21,7 +21,8 @@ from .model import (
     BullionRow, ClassSetting,
     ClassXirr, CorporateAction, DividendRow, EPFRow, EquityRow, EquitySellRow,
     FDRow,
-    HistorySnapshot, ManualAssetRow, Masters, MFRow, NPSRow, PPFLedgerRow,
+    HistorySnapshot, ImportMapRow, ImportedFileRow, ManualAssetRow, Masters,
+    MFRow, NPSRow, PPFLedgerRow,
     PPFRow, PortfolioData, ScripRef, SIPRow, TaxRule, parse_yes_no,
     person_tab_map,
 )
@@ -520,6 +521,25 @@ def read_workbook(source) -> PortfolioData:
                 ltcg_exempt=_as_float(ws.cell(r, 6).value) or 0.0,
                 notes=_as_str(ws.cell(r, 7).value),
             ))
+
+    if "Import_Map" in wb.sheetnames:              # absent pre-v1.7 → no-op
+        ws = wb["Import_Map"]
+        h = _header_row(ws, "Source")
+        for r in _data_rows(ws, h):
+            account = _as_str(ws.cell(r, 2).value)
+            if account:
+                data.import_map.append(ImportMapRow(
+                    source=_as_str(ws.cell(r, 1).value),
+                    account=account,
+                    name_hint=_as_str(ws.cell(r, 3).value),
+                    owner=_owner(ws.cell(r, 4).value)))
+            fname = _as_str(ws.cell(r, 6).value)
+            if fname:
+                data.imported_files.append(ImportedFileRow(
+                    file=fname,
+                    fingerprint=_as_str(ws.cell(r, 7).value),
+                    imported_on=_as_date(ws.cell(r, 8).value),
+                    decision=_as_str(ws.cell(r, 9).value)))
 
     def master_rows(sheet: str, key_col: int = 3) -> list[tuple[str, str, str]]:
         """Master triples, kept only when the KEY column is non-empty.

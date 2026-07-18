@@ -29,16 +29,20 @@ TODAY = date(2026, 7, 15)
 # ---- capacity: warn before rows are lost (A2) ------------------------------
 
 def test_raised_equity_cap_round_trips(tmp_path):
-    # v1.6.2 raised the tight budgets (Equity 250 data rows) — a full sheet
-    # must survive the build→read round trip losslessly
+    # v1.6.2 raised the tight budgets (v1.7 again, to 1500 equity data
+    # rows) — a sheet filled to the EXACT cap must survive the build→read
+    # round trip losslessly; deriving the count from the model constant
+    # keeps this test honest at every future raise
+    from networth.model import EQUITY_LAST_ROW, FIRST_DATA_ROW
+    cap = EQUITY_LAST_ROW - FIRST_DATA_ROW + 1
     d = sample_portfolio()
     d.equity = [EquityRow(owner="Amit", scrip=f"S{i}", qty=1, avg_cost=10,
                           cost_date=date(2024, 1, 1))
-                for i in range(250)]
+                for i in range(cap)]
     p = tmp_path / "big.xlsx"
     build_workbook(d, str(p))
     back = read_workbook(str(p))
-    assert len(back.equity) == 250
+    assert len(back.equity) == cap
     assert not any("Equity holds" in w for w in back.warnings)
 
 

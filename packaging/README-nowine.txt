@@ -6,7 +6,9 @@ price data (AMFI fund NAVs, BSE/NSE stock prices, corporate actions).
 TO RUN
   1. Keep this whole folder together (don't move files out of it).
   2. Open Family_Portfolio_Tracker.xlsx, enter your holdings, then SAVE and
-     CLOSE it.
+     CLOSE it. (Or skip the typing: save your fund statement - the CAS PDF
+     from camsonline.com - or your broker's tradebook/holdings file in this
+     folder, and the updater offers to type the history in for you.)
   3. Double-click  "Update Portfolio.bat".
      A black window opens, refreshes prices/NAVs/XIRR, and pauses so you can
      read the summary. Press a key to close it.

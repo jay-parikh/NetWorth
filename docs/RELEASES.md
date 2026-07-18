@@ -300,6 +300,39 @@ Docs in-commit: SPEC §3.6/§3.7/§3.19/§3.21/§5-in-§7/§6.16/§7; USER-GUIDE
 footer); Guide sheet (lots line + losses line); README; ROADMAP (netting ✅,
 stability ✅, cuts recorded); release notes v1.6.2. Suite: 258 tests.
 
+## v1.7.0 — "Your history types itself" (2026-07-18)
+
+Jay: manual Equity/MF_SIP entry is the adoption deal-breaker — kill it,
+generically (no single-broker lock-in), and it must NEVER produce garbage.
+Statement-wins on overlap; MF_SIP budget 3000; Equity budget 1500.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Statement import (CAS → MF_SIP, §6.17) | The detailed CAMS/KFintech CAS PDF (pypdf, ~+1MB; password never stored) fills the fund ledger end-to-end: exact dates/amounts/NAVs/verbatim units, MutualFunds rows created, folio→owner asked once and remembered (Import_Map sheet §3.23), files never nag twice (fingerprint memory). The never-garbage contract: amount=units×NAV triangle per row, per-fund reconciliation against the statement's OWN closing balance, chronology check, atomic per-fund refusal with plain reasons, summary-variant and mid-history statements refused with the fix explained | test_v170_import.py + test_v170_statement_variants.py: goldens for parse→merge→sheet; idempotent re-import adds 0 (both modes); statement-wins replaces typed rows only after confirm, headless append-only; triangle/balance/chronology refusals; multi-folio multi-investor with page noise; sign-normalised redemptions; switches; bonus units; lakh commas; condensing conserves Σunits/Σamount |
+| Broker equity import (generic, §6.18) | Tradebook/holdings CSVs from ANY broker whose columns are named (Zerodha exact signatures + fuzzy concept matching; fills collapsed at weighted price); chronological FIFO netting per (owner, ISIN) — buys → lots, covered sells → Equity_Sells when the CG switch is on; per-ISIN refusal gates (unreadable line, uncovered sell, corporate action inside the traded window); holdings cross-check + no-history fallback (amber, undated); stateless-idempotent re-import | Zerodha/Groww/Upstox/ICICI-style fixtures incl. BOM, banners, quoted lakh commas, CRLF, single-letter sides; netting goldens; replace-mode consumes typed lots; unknown-symbol and garbage-file polite failures |
+| Wiring + budgets | Drop-the-file-next-to-the-workbook discovery in the double-click flow, `--import FILE` CLI, per-fund ✓-or-reason preview before ONE confirm, import summary block; MF_SIP 1000→3000, Equity 250→1500; paper-shares convention documented (31-01-2018 date + blank cost) | end-to-end run() test: import → Import_Map + fingerprints persisted → re-run adds 0; capacity defers the import whole (workbook untouched, run continues); `--help` shows --import |
+
+Docs in-commit: SPEC §3.6/§3.7/§3.23/§6.17/§6.18/§7 validation ranges;
+USER-GUIDE §5 (paper shares) + §6 (the statement import, click-by-click) +
+§16; Guide sheet (import section + paper-shares row); README (feature row,
+badges); ROADMAP (CAS ✅, broker ✅, e-CAS cut with reason, CA-aware netting
+follow-up); release notes v1.7.0. Suite: 333 tests (16 added by the
+pre-release review round — one regression test per finding — plus 4 for
+the audit round: condensing consent wiring ×3 and the read-once payload).
+Audit additions (2026-07-19): the condensing offer is WIRED (up-front
+consent → FY-cutoff retries in the merge, least condensing first;
+headless still defers), and each import file is read once end to end
+(the sniff's extraction feeds the parser).
+
+Curated-data refresh (standing item, checked 2026-07-19): restructures.csv
+gains the **Vedanta five-way demerger** (ex-date 30-04-2026, 1:1 into
+Vedanta Aluminium Metal / Oil & Gas / Power / Iron & Steel; official cost
+apportionment 52.34/7.15/21.49/12.23/6.79 filed with the exchanges
+16-05-2026; ISINs+symbols confirmed from the live bhavcopy).
+bullion_proxies.csv verified live (42 SGB tranches + SILVERBEES).
+Packaging READMEs (in-zip README.txt, both variants) now describe the
+statement import.
+
 ## Release artifact layout (from R4)
 
 ```

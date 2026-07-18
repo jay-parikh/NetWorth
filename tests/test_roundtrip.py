@@ -17,6 +17,8 @@ def _comparable(data) -> dict:
         "sip": [asdict(r) for r in data.sip],
         "equity_sells": [asdict(r) for r in data.equity_sells],
         "tax_rules": [asdict(r) for r in data.tax_rules],
+        "import_map": [asdict(r) for r in data.import_map],
+        "imported_files": [asdict(r) for r in data.imported_files],
         "fixed_deposits": [asdict(r) for r in data.fixed_deposits],
         "ppf": [asdict(r) for r in data.ppf],
         "bonds": [asdict(r) for r in data.bonds],

@@ -29,6 +29,7 @@ mkdir -p "$WORK/pdfs" "$WORK/pdfs-masked" "$WORK/png"
 import sys
 from datetime import date
 from networth.generate import build_workbook
+from networth.model import ImportMapRow, ImportedFileRow
 from networth.sample_data import sample_portfolio
 from networth import crypto
 
@@ -41,6 +42,24 @@ m = sample_portfolio()
 m.privacy_enabled = True
 m.privacy_hash = crypto.hash_password("demo-password")
 build_workbook(m, f"{out}/guide-masked.xlsx", masked=True, today=today)
+# third variant just for the Import_Map shot (v1.7): reference lists ON so
+# the sheet is visible, plus fictional example rows — the main build stays
+# untouched so the Settings screenshot keeps its defaults
+i = sample_portfolio()
+i.show_references = True
+i.import_map = [
+    ImportMapRow(source="fund statement (CAS)", account="12345678/90",
+                 name_hint="Amit Kumar", owner="Amit"),
+    ImportMapRow(source="Zerodha holdings", account="holdings.csv",
+                 name_hint="", owner="Priya"),
+]
+i.imported_files = [
+    ImportedFileRow(file="CAS_2026.pdf", fingerprint="3f9c2ab41d07",
+                    imported_on=date(2026, 7, 18), decision="imported"),
+    ImportedFileRow(file="holdings.csv", fingerprint="a11c60e2b9f4",
+                    imported_on=date(2026, 7, 18), decision="imported"),
+]
+build_workbook(i, f"{out}/guide-import.xlsx", today=today)
 print("workbooks built")
 EOF
 
@@ -66,6 +85,8 @@ sleep 10
   "Dashboard,Projection,Settings,Amit:A1:P32,Equity:A1:P14,Equity_Sells:A1:K8,MutualFunds:A1:M8,MF_SIP:A1:K12,FixedDeposits:A1:N10,PPF:A1:L10,Bonds:A1:N10,Gold_Silver:A1:O10,NPS:A1:K10,Manual_Assets:A1:L12,Dividends:A1:S36,Capital~Gains,Tax_Rules:A1:G12,Guide"
 "$LOPYTHON" "$HERE/uno_export.py" "$WORK/guide-masked.xlsx" \
   "$WORK/pdfs-masked" "Equity:A1:P14" "$SHPW"
+"$LOPYTHON" "$HERE/uno_export.py" "$WORK/guide-import.xlsx" "$WORK/pdfs" \
+  "Import_Map:A1:I8"
 
 # 4. rasterize + auto-crop, then place with the guide's names
 "$PY" "$HERE/rasterize.py" "$WORK/pdfs" "$WORK/png"
@@ -79,6 +100,7 @@ for f in dashboard settings equity equity-sells capital-gains mutualfunds \
 done
 cp "$WORK/png/amit.png" "$IMG/person-amit.png"
 cp "$WORK/png/guide.png" "$IMG/guide-tab.png"
+cp "$WORK/png/import-map.png" "$IMG/import-map.png"
 
 pkill -f "soffice.bin.*port=$PORT" || true
 echo "done — $(ls "$IMG" | wc -l) images in docs/images/"

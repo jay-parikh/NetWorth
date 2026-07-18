@@ -234,6 +234,12 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         div_data=None, bullion_rates=None, nps_data=None, restructures=None,
         add_persons: list[str] | None = None,
         toggle_classes: list[str] | None = None,
+        import_batches: list | None = None,
+        import_owner_map: dict[str, str] | None = None,
+        import_replace: bool = False,
+        import_decisions: list[tuple[str, str, str]] | None = None,
+        import_openings: set | None = None,
+        import_condense: bool = False,
         password: str | None = None, reveal: bool = False,
         reset_privacy: bool = False,
         today: date | None = None, do_backup: bool = True) -> dict:
@@ -294,6 +300,85 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                     f"saved but not counted; switch it back on in Settings "
                     f"to include them")
         summary["classes_toggled"] = toggled
+
+    # ---- statement / broker-file import (v1.7, SPEC §6.17/§6.18) ----
+    # Declarative like add_persons: main() parsed and confirmed, run() only
+    # merges — headless-safe, and every never-garbage gate lives in the
+    # merge engine itself. Deferred/refused items surface as warnings.
+    if import_batches:
+        from .importers.merge import merge_equity_batches, merge_sip_batches
+        stored = {m.account: m.owner for m in data.import_map
+                  if m.owner in data.persons}
+        owner_map = {**stored, **(import_owner_map or {})}
+        rep = merge_sip_batches(data, import_batches, owner_map, today,
+                                replace=import_replace,
+                                allow_condense=import_condense)
+        rep_eq = merge_equity_batches(data, import_batches, owner_map, today,
+                                      cg_on=data.show_capital_gains,
+                                      replace=import_replace,
+                                      pre2018_openings=import_openings)
+        rep.stocks = rep_eq.stocks
+        rep.eq_added, rep.eq_skipped = rep_eq.eq_added, rep_eq.eq_skipped
+        rep.eq_reduced = rep_eq.eq_reduced
+        rep.sells_added = rep_eq.sells_added
+        # both engines carry every batch's parser warnings — keep one copy
+        rep.warnings.extend(w for w in rep_eq.warnings
+                            if w not in rep.warnings)
+        rep.deferred.extend(rep_eq.deferred)
+        summary["import_report"] = rep
+        summary["warnings"].extend(rep.warnings)
+        summary["warnings"].extend(rep.deferred)
+        # persist folio/account → owner answers so they never re-ask; a
+        # fresh answer also REPAIRS a stored row (stale owner after a
+        # Dashboard rename, or a typo fixed by re-answering)
+        by_account = {m.account: m for m in data.import_map}
+        hints = {a: hint for b in import_batches for a, hint in b.accounts}
+        sources = {a: b.source for b in import_batches for a, _h in b.accounts}
+        for account, owner in sorted((import_owner_map or {}).items()):
+            if owner not in data.persons:
+                continue
+            m = by_account.get(account)
+            if m is not None:
+                m.owner = owner
+            else:
+                data.import_map.append(M.ImportMapRow(
+                    source=sources.get(account, "import"), account=account,
+                    name_hint=hints.get(account, ""), owner=owner))
+        # a deferral or a fixable refusal means "fix it and run again" —
+        # which only works if the file is OFFERED again, so its 'imported'
+        # decision must not enter the never-nag memory this run
+        retry_needed = bool(rep.deferred) or any(
+            (not ln.ok) and ("not matched to a person" in ln.reason
+                             or ln.reason.startswith("deferred"))
+            for ln in rep.funds + rep.stocks)
+        if retry_needed:
+            summary["warnings"].append(
+                "part of the import couldn't land this time - the file(s) "
+                "will be offered again on the next run")
+    else:
+        retry_needed = False
+    # the never-nag memory records declines too — but only what main()
+    # actually decided this run, never a file the user wasn't asked about
+    for fname, fp, decision in (import_decisions or []):
+        if decision == "imported" and retry_needed:
+            continue
+        if not any(f.fingerprint == fp for f in data.imported_files):
+            data.imported_files.append(M.ImportedFileRow(
+                file=fname, fingerprint=fp, imported_on=today,
+                decision=decision))
+    # Import_Map has a row budget like every sheet — never write past it
+    im_cap = M.IMPORTMAP_LAST_ROW - M.FIRST_DATA_ROW + 1
+    if len(data.import_map) > im_cap:
+        data.import_map = data.import_map[:im_cap]
+        summary["warnings"].append(
+            "the Import_Map sheet is full - some folio→owner answers "
+            "couldn't be saved and will be asked again next time")
+    if len(data.imported_files) > im_cap:
+        # oldest never-nag entries give way; re-offering an old file is
+        # harmless (the user just declines again)
+        data.imported_files = sorted(
+            data.imported_files,
+            key=lambda f: f.imported_on or today)[-im_cap:]
 
     # ---- privacy state resolution (SPEC §3.19) — four legal Mask×Lock
     # combinations, transitions included; the user's Settings Yes/No always
@@ -1031,6 +1116,36 @@ def _print_summary(s: dict) -> None:
         _row("👥", "Added", f"sheet(s) for {', '.join(s['persons_added'])}")
     if s.get("classes_toggled"):
         _row("🗂️", "Classes", "; ".join(s["classes_toggled"]))
+    rep = s.get("import_report")
+    if rep is not None:
+        bits = []
+        if rep.sip_added:
+            bits.append(f"{rep.sip_added} fund transaction(s) filled in")
+        if rep.sip_replaced:
+            bits.append(f"{rep.sip_replaced} typed row(s) replaced by the "
+                        "statement's exact history")
+        if rep.eq_added:
+            bits.append(f"{rep.eq_added} share lot(s) added")
+        if rep.sells_added:
+            bits.append(f"{rep.sells_added} sale(s) recorded")
+        if rep.eq_reduced:
+            bits.append(f"{rep.eq_reduced} holding(s) reduced by imported "
+                        "sales")
+        skipped = rep.sip_skipped + rep.eq_skipped
+        if skipped:
+            bits.append(f"{skipped} already on your sheets")
+        _row("📥", "Imported", " · ".join(bits)
+             or "nothing new — everything was already in your workbook")
+        for ln in rep.funds + rep.stocks:
+            label = ln.scheme or ln.isin
+            if ln.ok:
+                tick = (" · matches the statement ✓" if ln.reconciled else "")
+                _say(f"      {_c('32', '✓')} {label}: {ln.added} added"
+                     + (f", {ln.skipped} already there" if ln.skipped else "")
+                     + (f", {ln.replaced} replaced" if ln.replaced else "")
+                     + tick)
+            else:
+                _say(f"      {_c('33', '✗')} {label}: {ln.reason}")
     if s.get("capgains"):
         _row("🧾", "Cap. gains", s["capgains"] + " (Capital Gains tab)")
     if s.get("privacy"):
@@ -1332,6 +1447,420 @@ def _prompt_mask_password(stored_hash: str) -> tuple[str | None, bool]:
     return None, False
 
 
+# ---- statement / broker-file import prompts (v1.7, SPEC §6.17) -------------
+
+def _fingerprint(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
+def peek_import_state(src) -> tuple[set, dict, int]:
+    """(known file fingerprints, stored account→owner, MF_SIP rows in use)
+    from one read-only peek; accepts a path or decrypted BytesIO. The row
+    count feeds the up-front condensing question (§6.17) — an estimate is
+    all it needs to be."""
+    from openpyxl import load_workbook
+    if hasattr(src, "seek"):
+        src.seek(0)
+    wb = load_workbook(src, read_only=True)
+    fps: set = set()
+    amap: dict = {}
+    sip_used = 0
+    try:
+        if "Import_Map" in wb.sheetnames:
+            ws = wb["Import_Map"]
+            for row in ws.iter_rows(min_row=M.FIRST_DATA_ROW,
+                                    max_row=M.IMPORTMAP_LAST_ROW,
+                                    max_col=9, values_only=True):
+                if row[1] and row[3]:
+                    amap[str(row[1]).strip()] = str(row[3]).strip()
+                if row[6]:
+                    fps.add(str(row[6]).strip())
+        if "MF_SIP" in wb.sheetnames:
+            ws = wb["MF_SIP"]
+            for row in ws.iter_rows(min_row=M.FIRST_DATA_ROW,
+                                    max_row=M.SIP_LAST_ROW,
+                                    max_col=3, values_only=True):
+                if any(c not in (None, "") for c in row):
+                    sip_used += 1
+    finally:
+        wb.close()
+    return fps, amap, sip_used
+
+
+_IMPORT_SUFFIXES = (".pdf", ".csv", ".txt", ".tsv", ".xlsx", ".xlsm")
+
+
+def _import_candidates(folder: Path, cli_files: list[str], known_fps: set,
+                       workbook: Path | None = None,
+                       include_folder: bool = True
+                       ) -> list[tuple[Path, str, str, bool]]:
+    """[(path, kind, fingerprint, from_cli, payload)] — CLI files always
+    included (an explicit ask overrides the never-nag memory); folder
+    files only when include_folder (interactive runs — a headless run must
+    never act on a file nobody was asked about), recognisable and not yet
+    decided. `payload` is whatever the sniff already extracted (CSV text /
+    XLSX rows) so the parse never reads the same file twice."""
+    from .importers import detect_format
+    out = []
+    seen = set()
+    for f in cli_files:
+        p = Path(f)
+        if not p.is_file():
+            print(f"  ⚠️  --import: {f} not found")
+            continue
+        kind, payload = detect_format(p, with_payload=True)
+        if kind is None:
+            print(f"  ⚠️  --import: couldn't recognise {p.name} as a fund "
+                  "statement (PDF) or broker CSV")
+            continue
+        out.append((p, kind, _fingerprint(p), True, payload))
+        seen.add(p.resolve())
+    if not include_folder:
+        return out
+    try:
+        folder_files = sorted(folder.iterdir())
+    except OSError:
+        folder_files = []
+    wb_resolved = workbook.resolve() if workbook else None
+    for p in folder_files:
+        if (not p.is_file() or p.resolve() in seen
+                or p.resolve() == wb_resolved
+                or p.suffix.casefold() not in _IMPORT_SUFFIXES):
+            continue
+        try:
+            if p.stat().st_size > 50 * 1024 * 1024:
+                continue                     # a statement is never this big
+        except OSError:
+            continue
+        # fingerprint BEFORE sniffing: an already-decided file skips the
+        # (much costlier) content sniff on every future run
+        fp = _fingerprint(p)
+        if fp in known_fps:
+            continue
+        kind, payload = detect_format(p, with_payload=True)
+        if kind is None:
+            continue
+        out.append((p, kind, fp, False, payload))
+    return out
+
+
+def _parse_candidate(p: Path, kind: str, today: date, interactive: bool,
+                     payload=None):
+    """One file → ImportBatch, or (None, reason). Owns the PDF password
+    conversation (3 tries, nothing stored). `payload` = the sniff's
+    already-extracted content (CSV text / XLSX rows) — reused so the file
+    is read once end to end."""
+    from .importers.brokers import parse_equity_csv
+    from .importers.cams import looks_like_cas
+    from .importers.cams import parse as cas_parse
+    from .importers.pdftext import NeedsPassword, WrongPassword, extract_text
+    if kind == "equity_xlsx":
+        from .importers.brokers import rows_from_xlsx
+        try:
+            rows = payload if payload is not None else rows_from_xlsx(p)
+            batch = parse_equity_csv(rows, today, str(p))
+        except ValueError as e:
+            return None, str(e)
+        except Exception as e:  # noqa: BLE001 — truncated/corrupt xlsx
+            return None, ("the file couldn't be read - it may be damaged "
+                          f"({e.__class__.__name__})")
+        return batch, ""
+    if kind == "cas":
+        import getpass
+        text = None
+        password = None
+        for attempt in range(4):               # first try + 3 passwords
+            try:
+                text = extract_text(p, password)
+                break
+            except NeedsPassword:
+                if not interactive:
+                    return None, ("locked PDF - run by double-click to type "
+                                  "its password")
+            except WrongPassword:
+                if not interactive:
+                    return None, "wrong password"
+                print("  ✗ that password doesn't open it")
+            except Exception as e:  # noqa: BLE001 — a corrupt/truncated
+                # PDF must become a per-file message, never unwind the
+                # whole import (the magic-bytes sniff can't catch these)
+                return None, ("the file couldn't be read - it may be "
+                              f"damaged ({e.__class__.__name__})")
+            if attempt == 3:
+                return None, "wrong password"
+            password = getpass.getpass(
+                f"  🔑 Password for {p.name} (the one you chose when "
+                "requesting it): ") or None
+            if not password:
+                return None, "no password typed"
+        if text is None:
+            return None, "wrong password"
+        if not looks_like_cas(text):
+            return None, ("doesn't look like a CAMS/KFintech statement - "
+                          "only the consolidated fund statement (CAS) is "
+                          "supported for PDFs")
+        try:
+            batch = cas_parse(text, today, str(p))
+        except ValueError as e:
+            return None, str(e)
+    else:
+        try:
+            text = (payload if payload is not None
+                    else p.read_text(encoding="utf-8-sig", errors="replace"))
+            batch = parse_equity_csv(text, today, str(p))
+        except ValueError as e:
+            return None, str(e)
+        except Exception as e:  # noqa: BLE001
+            return None, ("the file couldn't be read - it may be damaged "
+                          f"({e.__class__.__name__})")
+    return batch, ""
+
+
+def _preview_batch(batch, today: date) -> None:
+    """The trust surface: per fund, what was read and whether it PROVES
+    itself against the statement's own closing balance — before anything
+    is written."""
+    from .importers.merge import _validate_fund
+    funds: dict = {}
+    for t in batch.sip_txns:
+        funds.setdefault((t.folio, t.isin), []).append(t)
+    for (folio, isin), txns in sorted(funds.items()):
+        txns.sort(key=lambda t: (t.txn_date or today))
+        name = txns[0].scheme_name or isin
+        invested = sum(t.amount or 0 for t in txns if (t.amount or 0) > 0)
+        units = sum(t.units or 0 for t in txns)
+        reason = _validate_fund(txns, batch.closing_units.get((folio, isin)),
+                                today)
+        if reason:
+            print(f"    ✗ {name} — left out: {reason}")
+        else:
+            tick = ("matches the statement's closing balance ✓"
+                    if (folio, isin) in batch.closing_units else "read ✓")
+            print(f"    ✓ {name} — {len(txns)} transaction(s), "
+                  f"₹{invested:,.0f} in, {units:,.3f} units · {tick}")
+    if batch.trades:
+        buys = sum(1 for t in batch.trades if t.side == "BUY")
+        sells = sum(1 for t in batch.trades if t.side == "SELL")
+        print(f"    • {buys} buy(s) and {sells} sale(s) across "
+              f"{len({t.isin or t.symbol for t in batch.trades})} stock(s)")
+    if batch.holdings:
+        print(f"    • {len(batch.holdings)} current holding(s) "
+              "(cross-checked against your sheet)")
+    for w in batch.warnings:
+        print(f"    ⚠️  {w}")
+
+
+def prompt_imports(folder: Path, peek_src, persons: list[str],
+                   cli_files: list[str], interactive: bool,
+                   today: date | None = None,
+                   workbook: Path | None = None):
+    """Discover/parse/confirm import files. Returns (batches, new
+    owner-map answers, replace?, decisions-for-the-never-nag-memory,
+    pre-2018 opening answers, condense-consent).
+    Never raises past itself — a broken file becomes a message."""
+    today = today or date.today()
+    # cheap pre-check first: a routine run with no statement files (and no
+    # --import) must not pay the workbook peek at all
+    if not cli_files:
+        try:
+            has_files = any(
+                p.suffix.casefold() in _IMPORT_SUFFIXES and p.is_file()
+                and (workbook is None or p.resolve() != workbook.resolve())
+                for p in folder.iterdir())
+        except OSError:
+            has_files = False
+        if not (interactive and has_files):
+            return [], {}, False, [], set(), False
+    known_fps, stored_map, sip_used = peek_import_state(peek_src)
+    # a stored Owner that no longer names a person (typo, renamed on the
+    # Dashboard) must NOT silence the question — the merge would drop it
+    valid_owners = {per.casefold() for per in persons}
+    stored_map = {a: o for a, o in stored_map.items()
+                  if o.casefold() in valid_owners}
+    candidates = _import_candidates(folder, cli_files, known_fps,
+                                    workbook=workbook,
+                                    include_folder=interactive)
+    if not candidates:
+        return [], {}, False, [], set(), False
+    batches, decisions = [], []
+    for p, kind, fp, from_cli, payload in candidates:
+        label = ("your fund statement (CAS)" if kind == "cas"
+                 else "a broker file")
+        # noqa: the xlsx/csv distinction doesn't matter to the user
+        if interactive and not from_cli:
+            try:
+                ans = input(f"\n📥 Found {p.name} next to your workbook — "
+                            f"looks like {label}.\n   Read it in? Press "
+                            "Enter for yes, or type n to skip: ").strip()
+            except EOFError:
+                break
+            if M.parse_yes_no(ans, True) is False:
+                decisions.append((p.name, fp, "skipped"))
+                print("   (skipped - it won't be offered again; delete its "
+                      "row on the Import_Map sheet to change your mind)")
+                continue
+        try:
+            batch, reason = _parse_candidate(p, kind, today, interactive,
+                                             payload=payload)
+        except Exception as e:  # noqa: BLE001 — belt to the parser's own
+            # braces: ONE broken file must never abort the whole import
+            batch, reason = None, ("the file couldn't be read - it may be "
+                                   f"damaged ({e.__class__.__name__})")
+        if batch is None:
+            print(f"  ✗ {p.name}: {reason}")
+            if "password" not in reason:      # a password fumble can retry
+                decisions.append((p.name, fp, "skipped"))
+                print("   (it won't be offered again - fix and re-save the "
+                      "file, or delete its row on the Import_Map sheet, to "
+                      "try again)")
+            continue
+        if any(not a for a, _h in batch.accounts):
+            # broker exports with no client-id column: key the owner
+            # answer by the file name so it survives on the Import_Map
+            # sheet (blank keys don't round-trip) and the who-owns
+            # question has a readable label
+            for t in batch.trades:
+                t.account = t.account or p.name
+            for h in batch.holdings:
+                h.account = h.account or p.name
+            batch.accounts = sorted({(a or p.name, hint)
+                                     for a, hint in batch.accounts})
+        batch.fingerprint = fp
+        print(f"\n  What {p.name} holds:")
+        _preview_batch(batch, today)
+        batches.append(batch)
+        decisions.append((p.name, fp, "imported"))
+    if not batches:
+        return [], {}, False, decisions, set(), False
+
+    # one question per NEW folio/account — remembered on the Import_Map
+    new_map: dict = {}
+    for b in batches:
+        for account, hint in b.accounts:
+            if account in stored_map or account in new_map:
+                continue
+            guess = next((per for per in persons
+                          if hint and per.casefold() in hint.casefold()), "")
+            if not interactive:
+                if guess:
+                    new_map[account] = guess
+                continue
+            who = f"{account}" + (f" ({hint})" if hint else "")
+            names = ", ".join(f"{i + 1}. {per}"
+                              for i, per in enumerate(persons))
+            try:
+                ans = input(f"  👤 Who owns {who}? {names}"
+                            + (f" [Enter = {guess}]" if guess else "")
+                            + ": ").strip()
+            except EOFError:
+                ans = ""
+            pick = guess
+            if ans:
+                if ans.isdigit() and 1 <= int(ans) <= len(persons):
+                    pick = persons[int(ans) - 1]
+                else:
+                    match = next((per for per in persons
+                                  if per.casefold() == ans.casefold()), "")
+                    pick = match or ans
+            if pick:
+                new_map[account] = pick
+
+    # a sell with no matching buy = shares held from before the file's
+    # window. If the user says they predate Feb 2018, the official
+    # 31-01-2018 value stands in as the cost (the grandfathering rule the
+    # workbook already applies to typed old holdings).
+    openings: set = set()
+    all_map = {**stored_map, **new_map}
+    if interactive:
+        for b in batches:
+            net: dict = {}
+            names: dict = {}
+            for t in b.trades:
+                if t.side not in ("BUY", "SELL") or not t.isin:
+                    continue
+                k = (t.account, t.isin)
+                net[k] = net.get(k, 0.0) + (t.qty if t.side == "SELL"
+                                            else -t.qty)
+                names.setdefault(k, t.symbol or t.isin)
+            for (account, isin), n in sorted(net.items()):
+                owner = all_map.get(account, "")
+                if n <= 0 or not owner:
+                    continue
+                try:
+                    ans = input(
+                        f"  📜 {names[(account, isin)]}: this file sells "
+                        f"{n:g} more than it buys — were those shares "
+                        "bought before Feb 2018 (old paper/demat "
+                        "holdings)? Press Enter for yes (the official "
+                        "2018 value stands in as the cost), or n to "
+                        "leave that stock out: ").strip()
+                except EOFError:
+                    ans = "n"
+                if M.parse_yes_no(ans, True):
+                    openings.add((owner, isin))
+            # holdings the broker carries at cost 0 = demat-converted old
+            # certificates; the same question dates them for the official
+            # 2018 value (no = they land with a blank cost to fill in)
+            for h in b.holdings:
+                if h.avg_cost is not None or not h.qty:
+                    continue
+                owner = all_map.get(h.account, "")
+                ident = h.isin or (h.name or "").upper().strip()
+                if not owner or not ident:
+                    continue
+                try:
+                    ans = input(
+                        f"  📜 {h.name or h.isin}: the broker has no buy "
+                        f"price for these {h.qty:g} share(s) (old "
+                        "paper/demat holding?). Bought before Feb 2018? "
+                        "Press Enter for yes (the official 2018 value "
+                        "stands in), or n to leave the cost blank for "
+                        "you to fill: ").strip()
+                except EOFError:
+                    ans = "n"
+                if M.parse_yes_no(ans, True):
+                    openings.add((owner, ident))
+
+    # more history than the ledger can hold? Ask for condensing consent UP
+    # FRONT (the merge only uses it if the precise count really overflows,
+    # and rolls up the fewest years that make it fit)
+    condense_ok = False
+    sip_new = sum(len(b.sip_txns) for b in batches)
+    sip_cap = M.SIP_LAST_ROW - M.FIRST_DATA_ROW + 1
+    if interactive and sip_new and sip_used + sip_new > sip_cap:
+        try:
+            ans = input(
+                f"\n  📚 Your fund ledger holds {sip_used} lines and the "
+                f"statement adds {sip_new} — more than the sheet's "
+                f"{sip_cap}. If it doesn't all fit, may I roll the oldest "
+                "years into one opening line per fund? Totals and the "
+                "statement's closing balances still match; those years "
+                "just lose per-SIP detail.\n  Press Enter for yes, or n "
+                "to keep every line (the import will wait instead): "
+            ).strip()
+        except EOFError:
+            ans = "n"
+        condense_ok = M.parse_yes_no(ans, True) is not False
+
+    replace = False
+    if interactive:
+        try:
+            ans = input(
+                "\n  Write these into your workbook? If a fund here is "
+                "already typed on your sheets, the statement's exact "
+                "history replaces those rows (your file is backed up "
+                "first).\n  Press Enter to continue, type a to only ADD "
+                "new entries, or n to cancel: ").strip().casefold()
+        except EOFError:
+            ans = "n"
+        if ans == "n" or M.parse_yes_no(ans, True) is False:
+            print("   (nothing will be imported this run)")
+            return [], {}, False, [], set(), False
+        replace = ans != "a"
+    return batches, new_map, replace, decisions, openings, condense_ok
+
+
 def prompt_new_persons(existing: list[str],
                        pre_added: list[str] | None = None) -> list[str]:
     """Interactively collect new person names (double-click / Terminal only).
@@ -1404,6 +1933,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="never ask interactive questions (e.g. add a person)")
     parser.add_argument("--add-person", action="append", metavar="NAME", default=[],
                         help="add a person's sheet without prompting (repeatable)")
+    parser.add_argument("--import", dest="import_files", action="append",
+                        metavar="FILE", default=[],
+                        help="read in a fund statement (CAS PDF) or broker "
+                             "CSV (repeatable). Files saved next to the "
+                             "workbook are offered automatically")
     parser.add_argument("--lock", action="store_true",
                         help="just put the privacy mask/lock back "
                              "(no fetching; works offline)")
@@ -1441,14 +1975,35 @@ def main(argv: list[str] | None = None) -> int:
         else:
             new_persons = list(args.add_person)
             toggles: list[str] = []
+            im_batches: list = []
+            im_map: dict = {}
+            im_replace = False
+            im_decisions: list = []
+            im_openings: set = set()
+            im_condense = False
             reveal = reset = False
+            persons_now: list[str] | None = None
             if interactive:
                 try:
-                    new_persons += prompt_new_persons(
-                        peek_persons(peek_src), new_persons)
+                    persons_now = peek_persons(peek_src)
+                    new_persons += prompt_new_persons(persons_now,
+                                                      new_persons)
                     toggles = prompt_class_toggle(peek_src)
                 except Exception:  # noqa: BLE001 — prompting must never break the run
                     pass
+            if interactive or args.import_files:
+                try:
+                    if persons_now is None:
+                        persons_now = peek_persons(peek_src)
+                    (im_batches, im_map, im_replace, im_decisions,
+                     im_openings, im_condense) = \
+                        prompt_imports(path.parent, peek_src,
+                                       persons_now + new_persons,
+                                       args.import_files, interactive,
+                                       workbook=path)
+                except Exception:  # noqa: BLE001 — a broken statement file
+                    pass           # must never break the price update
+            if interactive:
                 try:
                     mask_on, lock_on, stored_hash = peek_privacy(peek_src)
                     if (mask_on or lock_on) and not stored_hash:
@@ -1474,6 +2029,12 @@ def main(argv: list[str] | None = None) -> int:
                     pass
             summary = run(path, add_persons=new_persons,
                           toggle_classes=toggles, password=password,
+                          import_batches=im_batches,
+                          import_owner_map=im_map,
+                          import_replace=im_replace,
+                          import_decisions=im_decisions,
+                          import_openings=im_openings,
+                          import_condense=im_condense,
                           reveal=reveal, reset_privacy=reset)
             _print_summary(summary)
     except SystemExit as e:

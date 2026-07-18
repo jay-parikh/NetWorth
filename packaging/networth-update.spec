@@ -17,7 +17,8 @@ a = Analysis(
            ("../data/bullion_proxies.csv", "data"),
            ("../data/restructures.csv", "data"),
            ("../data/tax_rules_in.csv", "data")],
-    hiddenimports=["truststore", "msoffcrypto", "msoffcrypto.format.ooxml"],
+    hiddenimports=["truststore", "msoffcrypto", "msoffcrypto.format.ooxml",
+                   "pypdf"],  # CAS import (v1.7, §6.17)
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "test", "unittest"],

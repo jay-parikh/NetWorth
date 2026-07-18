@@ -68,10 +68,26 @@ into RELEASES.md with acceptance criteria.
   successor at the right ratio (cost & holding period carried), demergers
   append the spun-off shares with the notified cost split, all audited on
   Corporate_Actions. Keeping the curated file current is a release duty.
-- ⬜ **CAS import** — parse CAMS/KFintech Consolidated Account Statement PDFs
-  to auto-fill the MF_SIP ledger.
-- ⬜ **Broker import** — Zerodha (tradebook/holdings CSV) first; then generic
-  contract-note CSV mapping.
+- ✅ **CAS import** *(shipped v1.7.0)* — the detailed CAMS/KFintech CAS PDF
+  fills MF_SIP end-to-end (pypdf + owned text parser; per-fund balance
+  reconciliation as the correctness gate; statement-wins after confirm).
+- ✅ **Broker import** *(shipped v1.7.0)* — generic by design: exact header
+  signatures (Zerodha) + fuzzy header matching for any broker's
+  tradebook/holdings CSV; FIFO netting with per-ISIN refusal gates
+  (uncovered sells, corporate actions inside the traded window).
+- ⬜ **e-CAS (NSDL/CDSL) import** — deliberately NOT built (2026-07-18):
+  holdings-only (qty+ISIN, no cost/date), so the user still supplies the
+  hard part, which blank-cost + FMV already handles. Revisit only if users
+  ask.
+- ⬜ **CA-aware tradebook netting** — fold chained_adjustment_factor into
+  the import's FIFO so split/bonus inside the traded window imports instead
+  of refusing (v1.7 refuses loudly, by design).
+- ✅ **Condensing offer for over-cap imports** *(shipped in v1.7.0 after
+  the pre-release audit)* — the updater asks up front when the ledger may
+  overflow; with consent, the merge retries at FY cutoffs (least
+  condensing first, current FY never rolled, every gate re-run) and falls
+  back to the plain deferral if even full condensing can't fit. Headless
+  runs never condense.
 - ✅ **Curated-data refresh cadence** *(decided 2026-07-18)* —
   `restructures.csv` (R14) and `bullion_proxies.csv` (R13) are refreshed as
   part of **every release** (a standing item in the RELEASES.md checklist),

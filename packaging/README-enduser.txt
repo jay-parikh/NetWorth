@@ -33,6 +33,13 @@ GET STARTED (5 minutes)
 
 GOOD TO KNOW
   - The workbook must be CLOSED while the updater runs.
+  - Tired of typing history? Save your fund statement (the CAS PDF from
+    camsonline.com - pick "Detailed" and "Since inception") or your
+    broker's tradebook/holdings file (CSV or Excel) in the SAME folder as
+    the workbook and run the updater. It reads the file, shows you every
+    fund and stock it found - each checked against the statement's own
+    closing balance - and asks once before writing anything. Run it again
+    anytime; nothing is added twice.
   - Sold shares? Record the sale on the Equity_Sells tab (and reduce the
     Equity quantity), then switch "Capital gains report" to Yes in Settings:
     the Capital Gains tab shows STCG & LTCG per year, your tax-free

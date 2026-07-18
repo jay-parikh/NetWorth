@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "networth"
-version = "1.6.2"
+version = "1.7.0"
 description = "Local-only family portfolio tracker — Excel workbook generator and updater"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,8 @@ dependencies = [
     "requests>=2.31",
     "truststore>=0.9",
     "msoffcrypto-tool>=6.0",     # the privacy Lock: OOXML encryption (§3.19)
+    "pypdf>=4",                  # CAS statement import (§6.17) — pure Python;
+                                 # AES PDFs use cryptography, already shipped
 ]
 
 [project.optional-dependencies]

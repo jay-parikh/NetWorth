@@ -19,11 +19,15 @@ from pathlib import Path
 HEADER_ROW = 3
 FIRST_DATA_ROW = 4
 
-EQUITY_LAST_ROW = 253          # data rows 4..253 (v1.6.2: was 140 — lots
-EQUITY_TOTAL_ROW = 255         # are rows, families hit 137; SPEC §3.6)
+EQUITY_LAST_ROW = 1503         # data rows 4..1503 (v1.7: was 253 — lots are
+                               # rows, and an imported tradebook of a long
+                               # family history needs the room; SPEC §3.6)
+EQUITY_TOTAL_ROW = EQUITY_LAST_ROW + 2     # TOTAL sits 2 under the data
 MF_LAST_ROW = 113              # v1.6.2: was 63
-MF_TOTAL_ROW = 115
-SIP_LAST_ROW = 1003            # v1.6.2: was 503 (a decade of SIPs is 500+)
+MF_TOTAL_ROW = MF_LAST_ROW + 2
+SIP_LAST_ROW = 3003            # v1.7: was 1003 — an imported family CAS
+                               # (2 investors × 8 funds × 10 years) needs
+                               # verbatim room; exact history beats condensing
 FD_LAST_ROW = 53
 FD_TOTAL_ROW = 55
 PPF_LAST_ROW = 43
@@ -41,6 +45,7 @@ EPF_LAST_ROW = 43               # EPF data rows 4..43 (SPEC §3.17)
 GS_LAST_ROW = 53                # Gold_Silver data rows 4..53 (SPEC §3.15)
 NPS_LAST_ROW = 43               # NPS data rows 4..43 (SPEC §3.16)
 HISTORY_LAST_ROW = 400          # net-worth snapshots, one per day (rows 4..400)
+IMPORTMAP_LAST_ROW = 103        # Import_Map rows 4..103, both tables (§3.23)
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
 
@@ -53,6 +58,7 @@ RESERVED_SHEET_NAMES = frozenset({
     "FixedDeposits", "PPF", "PPF_Ledger", "EPF", "Bonds", "Gold_Silver",
     "NPS", "NPS_Master", "Manual_Assets", "By Scrip", "Corporate_Actions",
     "Dividends", "Capital Gains", "Tax_Rules", "History", "Guide",
+    "Import_Map",
 })
 _SHEET_BAD_CHARS = set("[]:*?/\\")
 
@@ -124,6 +130,8 @@ CAPACITIES: list[tuple[str, int, str]] = [
     ("manual_assets", MA_LAST_ROW, "Manual_Assets"),
     ("equity_sells", EQSELL_LAST_ROW, "Equity_Sells"),
     ("tax_rules", TAXRULES_LAST_ROW, "Tax_Rules"),
+    ("import_map", IMPORTMAP_LAST_ROW, "Import_Map"),
+    ("imported_files", IMPORTMAP_LAST_ROW, "Import_Map"),
 ]
 DASH_PERSON_LAST = 15
 DASH_TOTAL_ROW = 16
@@ -215,7 +223,7 @@ ASSET_CLASSES: list[AssetClass] = [
 # Visible only when the Settings "Reference lists" switch is Yes — their
 # formulas (type-ahead dropdowns, INDEX/MATCH lookups) work fine hidden.
 REFERENCE_SHEETS = ("MF_Master", "Stock_Master", "Bank_Master", "NPS_Master",
-                    "Corporate_Actions")
+                    "Corporate_Actions", "Import_Map")
 
 # Manual_Assets Class-column values, in dropdown order. "Property" was
 # labelled "Real Estate" before v1.4.3 — the reader canonicalises old rows.
@@ -701,6 +709,31 @@ class Masters:
 
 
 @dataclass
+class ImportMapRow:
+    """One folio/account → person mapping (v1.7 import, SPEC §3.23).
+
+    Written once by the import prompt, then persisted so the same statement
+    never asks again. Owner is a normal dropdown cell — the user can fix a
+    wrong answer in Excel and re-run.
+    """
+    source: str = ""                   # "fund statement (CAS)" / broker name
+    account: str = ""                  # folio number / client id, as printed
+    name_hint: str = ""                # investor name on the statement
+    owner: str = ""                    # a Dashboard person
+
+
+@dataclass
+class ImportedFileRow:
+    """One already-imported (or declined) file (SPEC §3.23) — the
+    never-nag memory. Delete a row in Excel to be asked about that file
+    again."""
+    file: str = ""                     # file name only, never the path
+    fingerprint: str = ""              # sha256[:12] of the file bytes
+    imported_on: date | None = None
+    decision: str = ""                 # "imported" | "skipped"
+
+
+@dataclass
 class PortfolioData:
     """Everything the generator needs beyond the spec itself."""
     persons: list[str] = field(default_factory=list)
@@ -721,6 +754,8 @@ class PortfolioData:
     dividends: list["DividendRow"] = field(default_factory=list)
     equity_sells: list["EquitySellRow"] = field(default_factory=list)  # v1.6 §3.20
     tax_rules: list["TaxRule"] = field(default_factory=list)           # v1.6 §3.22
+    import_map: list[ImportMapRow] = field(default_factory=list)       # v1.7 §3.23
+    imported_files: list[ImportedFileRow] = field(default_factory=list)
     history: list["HistorySnapshot"] = field(default_factory=list)
     inflation_pct: float = 7
     expected_return_pct: float = 10        # drives the FY-end estimate (SPEC §6.8)
