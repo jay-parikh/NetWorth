@@ -35,13 +35,16 @@ into RELEASES.md with acceptance criteria.
   person sheet. Residual idea: `_dividend_qty` could add back sold lots
   (needs ex-date-unit conversion) — deferred until **broker import** lands,
   which brings the sale data needed to do it honestly (verdict 2026-07-18).
-- ✅ **Same-FY loss set-off, Sec 70(2)** *(shipped v1.6.1)* — a short-term
-  loss left over after netting now reduces the same year's LTCG before the
-  §112A allowance, shown in its own By-FY column (equity family only, in
-  FYs whose rules are known; debt↔equity cross-bucket netting is NOT
-  modelled and the sheet says so). The following related ideas were
-  deliberately excluded, with reasons (verdicts 2026-07-18 — settled,
-  please don't re-open as "pending"):
+- ✅ **Same-FY loss set-off, Sec 70** *(v1.6.1 equity-family; cross-bucket
+  shipped v1.6.2)* — losses net inside each figure, then across buckets
+  the way the law allows: debt-fund LT losses reduce LTCG (Sec 70(3)),
+  ST losses — equity-family and debt-fund/slab (Sec 50AA) — reduce ST tax
+  first and their excess reduces LTCG (Sec 70(2)), all before the §112A
+  allowance, era-gated, shown in the "Losses used vs LTCG ₹" column.
+  Leftover losses never widen headroom (they'd carry forward in a real
+  filing). The following related ideas were deliberately excluded, with
+  reasons (verdicts 2026-07-18 — settled, please don't re-open as
+  "pending"):
   - *Carry-forward across years* — can't be honest: needs loss history from
     before the user started the ledger plus proof of timely ITR filing.
   - *Debt-fund indexation* — obsolete: sales on/after 23-07-2024 are 12.5%
@@ -108,6 +111,19 @@ into RELEASES.md with acceptance criteria.
   every edit without running the updater.
 
 ## Platform & polish
+
+- ✅ **Whole-product stability batch** *(shipped v1.6.2)* — from the
+  2026-07-18 stability sweep: reader warnings channel (text in number
+  cells, implausible dates, overfull sheets), raised row budgets (Equity
+  250 / MF_SIP 1000 / MutualFunds 110 data rows), backup-before-every-
+  rewrite incl. `--lock` + keep-one-readable-backup-one-cycle purge,
+  distrust-empty feeds (AMFI floor, CA structural check), person-name tab
+  sanitising, XIRR never-raises on absurd dates, future-dated SIP/PPF rows
+  excluded, symmetric Yes/No parsing, case-insensitive Owner/metal joins,
+  friendly file-open-during-update failure. Deliberately cut (small,
+  covered by backups — revisit only on real reports): fsync-on-save,
+  a single-instance lock for double-launches, pinning one long-term backup
+  outside the 10-deep rotation.
 
 - ✅ **Auto-update check** *(shipped v1.1)* — the updater compares its
   version against the latest GitHub release tag and prints a one-line hint

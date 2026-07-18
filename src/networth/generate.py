@@ -616,8 +616,9 @@ _PERSON_BLOCK_SPECS = {
 }
 
 
-def _write_person(wb, F, name: str, data: PortfolioData, today: date):
-    ws = wb.add_worksheet(name)
+def _write_person(wb, F, name: str, data: PortfolioData, today: date,
+                  sheet_name: str | None = None):
+    ws = wb.add_worksheet(sheet_name or name)
     _widths(ws, {"A": 26, "B": 30, "C": 12, "D": 12, "E": 14, "F": 13, "G": 10})
     ws.write("A1", f"{name} — PORTFOLIO", F["title"])
     ws.set_row(0, 18)
@@ -658,10 +659,14 @@ def _write_person(wb, F, name: str, data: PortfolioData, today: date):
     ws.write_formula(f"C{total_row}", f"=SUM(C6:C{total_row - 1})", F["total"])
 
     if n:
+        # the ref uses the TAB name (may differ from the display name,
+        # v1.6.2), with any apostrophe doubled — Excel's escape; a raw '
+        # (e.g. D'Souza) writes chart XML Excel asks to "repair"
+        ref = (sheet_name or name).replace("'", "''")
         pie = wb.add_chart({"type": "pie"})
         pie.add_series({
-            "categories": f"='{name}'!$A$6:$A${total_row - 1}",
-            "values": f"='{name}'!$B$6:$B${total_row - 1}",
+            "categories": f"='{ref}'!$A$6:$A${total_row - 1}",
+            "values": f"='{ref}'!$B$6:$B${total_row - 1}",
             "data_labels": {"percentage": True},
         })
         pie.set_title({"name": f"{name} — allocation"})
@@ -1806,11 +1811,12 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None,
     _sheet_head(ws, F, "CAPITAL GAINS — THE TAX VIEW OF YOUR SALES",
                 "Worked out for you from Equity_Sells and MF_SIP on every "
                 "update. Indicative only - for planning, not for filing. "
-                "Losses net against gains of the same kind this year, and a "
-                "leftover short-term loss also reduces long-term gains "
-                "(Sec 70) - but equity and debt-fund figures never net "
-                "against each other here, other income is never touched, "
-                "and carry-forward to later years is not modelled.")
+                "Losses net across your investments the way the law allows "
+                "(Sec 70): debt-fund losses count too, and a leftover "
+                "short-term loss reduces long-term gains. The gain columns "
+                "themselves always stay raw - set-offs show in their own "
+                "column and in the tax figures. Other income is never "
+                "touched; carry-forward to later years is not modelled.")
     if rep is None:
         ws.write("A3", "Nothing recorded yet - sales you add on the "
                        "Equity_Sells tab appear here after an update.",
@@ -1820,9 +1826,9 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None,
     fy_end = f"31-03-{int(rep.fy_now.split('-')[0]) + 1}"
     ws.write("A3", f"LTCG still tax-free this year (sell before {fy_end})",
              F["label"])
-    ws.write_comment("A3", _G_LTCG + " Counted after any short-term-loss "
-                           "set-off this year; unused losses are not added "
-                           "to this figure, so it never overpromises.")
+    ws.write_comment("A3", _G_LTCG + " Counted after any loss set-off this "
+                           "year (Sec 70); unused losses are not added to "
+                           "this figure, so it never overpromises.")
     if rep.headroom_now is not None:
         ws.write_number("D3", rep.headroom_now, F["money_bold"])
 
@@ -1832,23 +1838,24 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None,
                            "Allowance used", "Still tax-free",
                            "Indicative tax (STCG)", "Indicative tax (LTCG)",
                            "At-your-slab gains ₹", "Debt fund gains ₹",
-                           "Intraday gains ₹", "ST loss used vs LTCG ₹"],
+                           "Intraday gains ₹", "Losses used vs LTCG ₹"],
                  F["header"])
     ws.write_comment(f"B{r}", _G_STCG)
     ws.write_comment(f"C{r}", _G_LTCG)
     ws.write_comment(f"E{r}", "How much of the year's tax-free allowance "
                               "your long-term gains used - counted after "
-                              "any short-term-loss set-off.")
+                              "any loss set-off (last column).")
     ws.write_comment(f"F{r}", "Long-term gains you could still take "
-                              "tax-free that year - after any "
-                              "short-term-loss set-off (losses beyond your "
-                              "long-term gains are not added here).")
+                              "tax-free that year - after any loss set-off "
+                              "(losses beyond your long-term gains are not "
+                              "added here).")
     ws.write_comment(f"G{r}", "At the rate in force on each sale's date, "
                               "after this year's short-term losses are set "
-                              "off - indicative, not a filing figure.")
-    ws.write_comment(f"H{r}", "After the short-term-loss set-off and the "
-                              "tax-free allowance, at the year-end rate - "
-                              "indicative, not a filing figure.")
+                              "off - debt-fund losses count here too "
+                              "(Sec 70). Indicative, not a filing figure.")
+    ws.write_comment(f"H{r}", "After the loss set-off (last column) and "
+                              "the tax-free allowance, at the year-end "
+                              "rate - indicative, not a filing figure.")
     ws.write_comment(f"I{r}", "Gains taxed at your income-tax slab (newer "
                               "debt funds) - the rate depends on you, so no "
                               "amount is computed.")
@@ -1857,11 +1864,13 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None,
                               "income - shown here so nothing is hidden, "
                               "but it is not a capital gain and never mixes "
                               "into STCG / LTCG.")
-    ws.write_comment(f"L{r}", "Short-term losses left over after netting "
-                              "reduce the year's long-term gains first - "
-                              "the law (Sec 70) allows it; only then is the "
-                              "tax-free allowance applied. Blank when there "
-                              "was nothing to set off.")
+    ws.write_comment(f"L{r}", "Losses that reduced this year's long-term "
+                              "gains, the way the law (Sec 70) allows: "
+                              "leftover short-term losses - from debt "
+                              "funds too - and debt-fund long-term losses; "
+                              "only then is the tax-free allowance "
+                              "applied. Blank when there was nothing to "
+                              "set off.")
     r += 1
     if not rep.summaries:
         ws.write(f"A{r}", "Nothing sold yet - record sales on the "
@@ -2197,8 +2206,8 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False,
     _write_dashboard(wb, F, data, today)
     _write_projection(wb, F)
     _write_settings(wb, F, data)
-    for person in data.persons:
-        _write_person(wb, F, person, data, today)
+    for person, tab in M.person_tab_map(data.persons).items():
+        _write_person(wb, F, person, data, today, sheet_name=tab)
     _write_equity(wb, F, data)
     _write_equity_sells(wb, F, data)
     _write_mutualfunds(wb, F, data)
@@ -2266,7 +2275,10 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False,
     TAB_GREY, TAB_GOLD = "#A6A6A6", "#BF8F00"
     tab_color = {"Dashboard": TAB_NAVY, "Projection": TAB_NAVY,
                  "Settings": TAB_NAVY, "Guide": TAB_GOLD}
-    tab_color.update({p: TAB_TEAL for p in data.persons})
+    # keyed by the TAB name (person_tab_map), not the typed name — an
+    # adjusted tab ("Jay/HUF" → "Jay-HUF") must still get its teal strip
+    tab_color.update({t: TAB_TEAL
+                      for t in M.person_tab_map(data.persons).values()})
     tab_color.update({s: TAB_BLUE for s in (
         "Equity", "Equity_Sells", "MutualFunds", "MF_SIP", "FixedDeposits",
         "PPF", "PPF_Ledger", "EPF", "Bonds", "Gold_Silver", "NPS",

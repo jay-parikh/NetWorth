@@ -544,7 +544,7 @@ def test_setoff_column_on_sheet_and_masked_presence(tmp_path):
     out = tmp_path / "setoff.xlsx"
     build_workbook(d, out, today=TODAY)
     ws = load_workbook(out)["Capital Gains"]
-    assert ws["L6"].value == "ST loss used vs LTCG ₹"
+    assert ws["L6"].value == "Losses used vs LTCG ₹"      # v1.6.2 header
     assert ws["L7"].value == pytest.approx(200000)   # newest FY first
     assert ws["L8"].value is None                    # normal year: blank
     m = tmp_path / "setoff-masked.xlsx"
@@ -552,6 +552,89 @@ def test_setoff_column_on_sheet_and_masked_presence(tmp_path):
     wm = load_workbook(m)["Capital Gains"]
     assert wm["L7"].value == pytest.approx(200000)
     assert wm["L8"].value == pytest.approx(0)        # written, masked, no leak
+
+
+def test_debt_st_loss_reduces_equity_stcg_tax():
+    # Sec 70(2) across buckets (v1.6.2): a slab-bucket (post-2023 debt)
+    # loss wipes the tax on an equal equity ST gain; raw columns stay raw
+    d = _mf([SIPRow("Amit", "FUND X", date(2025, 6, 1), 200000, 10.0),
+             SIPRow("Amit", "FUND X", date(2026, 5, 1), -100000, 5.0)],
+            tax_type="Debt")
+    d.equity_sells = [_mk_sell(100, 1000.0, 2000.0,
+                               date(2026, 1, 10), date(2026, 5, 1))]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.stcg == pytest.approx(100000)        # raw, untouched
+    assert s.slab_gain == pytest.approx(-100000)  # raw, untouched
+    assert s.tax_stcg == pytest.approx(0)         # loss absorbed the tax
+    assert s.st_setoff == 0                       # nothing left for LTCG
+
+
+def test_debt_st_loss_excess_spills_to_ltcg_before_exemption():
+    d = _mf([SIPRow("Amit", "FUND X", date(2025, 6, 1), 400000, 10.0),
+             SIPRow("Amit", "FUND X", date(2026, 5, 1), -200000, 5.0)],
+            tax_type="Debt")                      # slab ST loss 2L
+    d.equity_sells = [
+        _mk_sell(50, 1000.0, 2000.0, date(2026, 1, 10), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 4000.0, date(2024, 4, 1), date(2026, 5, 1)),
+    ]                                             # eq ST +0.5L, eq LT +3L
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.tax_stcg == pytest.approx(0)         # 0.5L gain fully sheltered
+    assert s.st_setoff == pytest.approx(150000)   # the excess, vs LTCG
+    assert s.exemption_used == pytest.approx(125000)
+    assert s.headroom == pytest.approx(0)
+    assert s.tax_ltcg == pytest.approx(25000 * 0.125)
+
+
+def test_debt_lt_loss_reduces_ltcg_but_never_stcg():
+    # Sec 70(3): an LT loss only nets against LT gains — cross-asset
+    d = _mf([SIPRow("Amit", "FUND X", date(2022, 1, 10), 200000, 10.0),
+             SIPRow("Amit", "FUND X", date(2026, 5, 1), -100000, 5.0)],
+            tax_type="Debt")                      # mf_debt LT loss 1L
+    d.equity_sells = [
+        _mk_sell(100, 1000.0, 3000.0, date(2024, 4, 1), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 2000.0, date(2026, 1, 10), date(2026, 5, 1)),
+    ]                                             # eq LT +2L, eq ST +1L
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert rep.realised[2].term == "Long-term"    # the debt redemption row
+    assert s.debt_gain == pytest.approx(-100000)  # raw
+    assert s.st_setoff == pytest.approx(100000)   # LT loss applied vs LTCG
+    assert s.exemption_used == pytest.approx(100000)
+    assert s.tax_ltcg == pytest.approx(0)         # 1L eff < 1.25L allowance
+    assert s.tax_stcg == pytest.approx(100000 * 0.20)   # NEVER touched
+
+
+def test_slab_st_gain_absorbs_equity_st_loss_before_ltcg_spill():
+    # the whole short-term head nets first (v1.6.2): an equity ST loss is
+    # consumed by a slab-bucket ST gain, so NOTHING spills to LTCG
+    d = _mf([SIPRow("Amit", "FUND X", date(2025, 6, 1), 100000, 10.0),
+             SIPRow("Amit", "FUND X", date(2026, 5, 1), -300000, 30.0)],
+            tax_type="Debt")                      # slab ST GAIN +2L
+    d.equity_sells = [
+        _mk_sell(100, 2000.0, 1000.0, date(2026, 1, 10), date(2026, 5, 1)),
+        _mk_sell(100, 1000.0, 4000.0, date(2024, 4, 1), date(2026, 5, 1)),
+    ]                                             # eq ST -1L, eq LT +3L
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.slab_gain == pytest.approx(200000)   # raw, untouched
+    assert s.st_setoff == 0                       # loss absorbed in ST head
+    assert s.exemption_used == pytest.approx(125000)
+    assert s.tax_ltcg == pytest.approx(175000 * 0.125)
+
+
+def test_equity_loss_never_changes_debt_display_sums():
+    d = _mf([SIPRow("Amit", "FUND X", date(2025, 6, 1), 100000, 10.0),
+             SIPRow("Amit", "FUND X", date(2026, 5, 1), -300000, 30.0)],
+            tax_type="Debt")                      # slab GAIN 2L
+    d.equity_sells = [_mk_sell(100, 2000.0, 1000.0,
+                               date(2026, 1, 10), date(2026, 5, 1))]
+    rep = capital_gains_report(d, TODAY, rules=RULES, fmv=FMV)
+    s = rep.summaries[0]
+    assert s.slab_gain == pytest.approx(200000)   # no tax computed → losses
+    assert s.stcg == pytest.approx(-100000)       # are never applied to it
+    assert s.st_setoff == 0 and s.tax_stcg == pytest.approx(0)
 
 
 def test_speculative_loss_never_feeds_the_setoff():

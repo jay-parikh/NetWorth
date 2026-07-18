@@ -43,6 +43,9 @@ Repo: https://github.com/jay-parikh/NetWorth (owner decides when to push).
   structure, never for users entering data.
 - **NEVER load-and-save the xlsx with openpyxl** — it silently drops all
   6 charts and every cell comment. openpyxl is for *reading only* here.
+  (One carve-out, v1.6.2: TESTS may load→edit→save to a NEW path to
+  fabricate user-edited fixtures that only `read_workbook` will consume —
+  the reader needs no charts/comments. Never for a shipped or user file.)
   All writing goes through xlsxwriter in `generate.py`. The legacy template
   was maintained by raw XML surgery inside the zip for exactly this reason;
   the regenerate model exists so nobody ever does that again. Likewise,

@@ -116,6 +116,31 @@ def ensure_closed(path: Path) -> None:
                     "close it and run again")
 
 
+def _refuse_overfull(data) -> None:
+    """v1.6.2: regeneration writes only each sheet's row budget, so an
+    overfull sheet would silently LOSE rows. Refuse up front — before the
+    fetch, before the backup — while everything is still intact (the
+    ensure_closed pattern: stop in plain words, change nothing)."""
+    def _count(attr) -> int:
+        if attr == "tax_rules":
+            # the sheet is written MERGED (bundled defaults upserted with
+            # the user's rows, §3.22) — measure what will be written, not
+            # what was read, or an app upgrade could push it past the cap
+            valid, invalid, _w = M.effective_tax_rules(data.tax_rules)
+            return len(valid) + len(invalid)
+        return len(getattr(data, attr))
+
+    over = [(sheet, _count(attr), last - M.FIRST_DATA_ROW + 1)
+            for attr, last, sheet in M.CAPACITIES
+            if _count(attr) > last - M.FIRST_DATA_ROW + 1]
+    if over:
+        raise _fail("; ".join(
+            f"{sheet} holds {n} rows but the sheet can only save {cap}"
+            for sheet, n, cap in over)
+            + " - the update stopped so nothing is lost. Move the extra "
+            "rows to another file and run again.")
+
+
 def make_backup(path: Path, *, unmasked: bool = False) -> Path:
     """Byte-copy the at-rest file. A Locked file yields an encrypted backup
     for free. `unmasked=True` (mask on but the file was left open for
@@ -128,17 +153,26 @@ def make_backup(path: Path, *, unmasked: bool = False) -> Path:
     kind = "unmasked-backup" if unmasked else "backup"
     dest = bdir / f"{path.stem}.{kind}-{stamp}{path.suffix}"
     shutil.copy2(path, dest)
-    backups = sorted(bdir.glob(f"{path.stem}.backup-*{path.suffix}"))
-    for old in backups[:-KEEP_BACKUPS]:
-        old.unlink()
+    # each kind rotates on its own: a view-preferring user who never
+    # re-masks would otherwise accumulate readable copies without bound
+    # (v1.6.2; the masked-run purge still removes unmasked ones earlier)
+    for kind_glob in (f"{path.stem}.backup-*{path.suffix}",
+                      f"{path.stem}.unmasked-backup-*{path.suffix}"):
+        backups = sorted(bdir.glob(kind_glob))
+        for old in backups[:-KEEP_BACKUPS]:
+            old.unlink()
     return dest
 
 
-def _purge_unmasked_backups(path: Path) -> int:
+def _purge_unmasked_backups(path: Path, keep: Path | None = None) -> int:
     """Remove the readable view-run backups once the file is masked/locked
-    again — they were the one place hidden numbers could linger."""
+    again — they were the one place hidden numbers could linger. `keep`
+    (v1.6.2) spares THIS run's pre-run copy so one rollback backup always
+    survives one cycle; the next successful masked run removes it."""
     gone = 0
     for p in path.parent.glob(f"backups/{path.stem}.unmasked-backup-*"):
+        if keep is not None and p == keep:
+            continue
         p.unlink()
         gone += 1
     return gone
@@ -220,6 +254,8 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             raise _fail("wrong password — the file was not touched")
     else:
         data = read_workbook(str(path))
+    summary["warnings"].extend(data.warnings)
+    _refuse_overfull(data)
 
     # add new people (declaratively: they land in data.persons, so regeneration
     # creates their sheet, Dashboard row, By-Scrip column — everything)
@@ -307,10 +343,12 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 f"unrecognised Class '{r.asset_class}' — it is counted in no "
                 f"class total; pick Property / Cash / Insurance / Other")
 
+    backup_path: Path | None = None
     if do_backup:
-        summary["backup"] = str(make_backup(
+        backup_path = make_backup(
             path, unmasked=(mask_active and not data.masked_at_rest
-                            and not locked_at_rest)))
+                            and not locked_at_rest))
+        summary["backup"] = str(backup_path)
 
     # ---- restructures (SPEC §6.15): curated file + Manual rows; the one
     # corporate-action category with no free feed. Runs BEFORE pricing so
@@ -345,6 +383,8 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     if amfi_data is None:
         _step("Fetching mutual-fund NAVs (AMFI)…")
         try:
+            # fetch() itself distrusts a suspiciously-empty feed (v1.6.2,
+            # AMFI_MIN_SCHEMES) and raises — landing in this same warning
             amfi_data = amfi_mod.fetch()
         except Exception as e:  # noqa: BLE001
             summary["warnings"].append(f"AMFI fetch failed, keeping old NAVs: {e}")
@@ -515,6 +555,16 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         ca_cap = M.CA_LAST_ROW - M.FIRST_DATA_ROW + 1
         overflow = len(manual) + len(auto) - ca_cap
         if overflow > 0:
+            if len(manual) > ca_cap:
+                # Manual/Curated rows can never be sacrificed: they carry
+                # user data and the demerger Applied stamps (a truncated
+                # stamp would re-apply the event next run and duplicate its
+                # child Equity rows) — refuse, like _refuse_overfull
+                raise _fail(
+                    f"Corporate_Actions holds {len(manual)} Manual rows "
+                    f"but the sheet can only save {ca_cap} - the update "
+                    "stopped so nothing is lost. Move old Manual rows to "
+                    "another file and run again.")
             oldest = sorted(auto, key=lambda a: a.ex_date or today)[:overflow]
             drop_ids = {id(a) for a in oldest}
             auto = [a for a in auto if id(a) not in drop_ids]
@@ -592,14 +642,23 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         div_cap = M.DIV_LAST_ROW - M.FIRST_DATA_ROW + 1
         if len(rows) > div_cap:
             overflow = len(rows) - div_cap
-            oldest = sorted(frozen_auto,
+            if len(manual) > div_cap:
+                # Manual rows are user data — refuse rather than truncate
+                raise _fail(
+                    f"Dividends holds {len(manual)} Manual rows but the "
+                    f"sheet can only save {div_cap} - the update stopped "
+                    "so nothing is lost. Move old Manual rows to another "
+                    "file and run again.")
+            # oldest Auto rows give way — prior-FY first (they sort oldest),
+            # current-FY ones only when even that isn't enough
+            oldest = sorted(frozen_auto + kept + fresh,
                             key=lambda d: d.ex_date or today)[:overflow]
             drop_ids = {id(d) for d in oldest}
             rows = [d for d in rows if id(d) not in drop_ids]
             summary["warnings"].append(
                 f"Dividends sheet is full — dropped the {overflow} oldest "
-                f"prior-year Auto row(s); copy old years elsewhere if you "
-                f"want to keep the full record")
+                f"Auto row(s); copy old years elsewhere if you want to "
+                f"keep the full record")
         data.dividends = rows
         summary["dividend_rows"] = len(fresh)
     if div_skipped:
@@ -660,16 +719,32 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         if now and now.spec_gain:
             bits.append(f"intraday ₹{now.spec_gain:,.0f} (speculative, "
                         f"at your slab)")
+        if now and now.st_sheltered:
+            # without these two bits the raw figures and the tax numbers
+            # printed beside them look mutually impossible in a harvest year
+            bits.append(f"debt losses ₹{now.st_sheltered:,.0f} set off vs "
+                        f"STCG (Sec 70)")
         if now and now.st_setoff:
-            # without this, the raw LTCG and the post-set-off headroom
-            # printed beside it look mutually impossible in a harvest year
-            bits.append(f"ST loss ₹{now.st_setoff:,.0f} set off vs LTCG "
+            bits.append(f"losses ₹{now.st_setoff:,.0f} set off vs LTCG "
                         f"(Sec 70)")
         if rep.headroom_now is not None:
             bits.append(f"₹{rep.headroom_now:,.0f} LTCG still tax-free "
                         f"this year")
         if bits:
             summary["capgains"] = " — ".join(bits)
+
+    # v1.6.2: a row whose units can't be known is left out of the return
+    # figure entirely (cashflows) — that must never be silent. The capital-
+    # gains engine warns about the same rows; this covers the default case
+    # where that engine is off.
+    if capgains_rep is None:
+        from .compute.cashflows import _sip_units
+        for r in data.sip:
+            if (r.owner and r.scheme and r.txn_date and r.amount
+                    and r.txn_date <= today and not _sip_units(r)):
+                summary["warnings"].append(
+                    f"MF_SIP: a {r.scheme} row on {r.txn_date:%d-%m-%Y} "
+                    "has no NAV or units - left out of the return figure")
 
     # ---- gold & silver (SPEC §5.7): SGBs from the bhavcopy; physical metal
     # from IBJA, falling back to the bhavcopy-implied median, else kept as-is
@@ -757,7 +832,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
 
     # ---- PPF: exact balance/interest/XIRR for ledgered accounts (SPEC §6.10) ----
     rates = load_ppf_rates()
-    led = ppf_ledger_by_account(data)
+    led = ppf_ledger_by_account(data, today)
     ledgered = 0
     for row in data.ppf:
         if row.rate is None:
@@ -806,11 +881,14 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                        lock_active=lock_active, password=password,
                        today=today, capgains=capgains_rep)
     if masked_build or lock_active:
-        gone = _purge_unmasked_backups(path)
+        # v1.6.2: this run's own pre-run copy survives ONE cycle as the
+        # rollback of last resort; the next masked run removes it
+        gone = _purge_unmasked_backups(path, keep=backup_path)
         if gone:
             summary["warnings"].append(
-                f"removed {gone} readable backup(s) now that the file is "
-                f"masked again")
+                f"removed {gone} older readable backup(s) now that the file "
+                f"is masked again (this run's own backup is kept until the "
+                f"next update)")
     summary["privacy"] = ("locked + masked" if lock_active and masked_build
                           else "locked" if lock_active
                           else "masked" if masked_build
@@ -828,15 +906,31 @@ def _regenerate_atomic(path: Path, data, *, masked_build: bool,
     ciphertext, and encrypt_workbook self-verifies before anything is
     replaced)."""
     tmp = path.with_name(path.stem + ".new" + path.suffix)
-    if lock_active:
-        buf = io.BytesIO()
-        build_workbook(data, buf, masked=masked_build, today=today,
-                       capgains=capgains)
-        tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
-    else:
-        build_workbook(data, str(tmp), masked=masked_build, today=today,
-                       capgains=capgains)
-    os.replace(tmp, path)
+    try:
+        if lock_active:
+            buf = io.BytesIO()
+            build_workbook(data, buf, masked=masked_build, today=today,
+                           capgains=capgains)
+            tmp.write_bytes(crypto.encrypt_workbook(buf.getvalue(), password))
+        else:
+            build_workbook(data, str(tmp), masked=masked_build, today=today,
+                           capgains=capgains)
+        os.replace(tmp, path)
+    except BaseException as e:
+        # v1.6.2: never leave a half-written .new file behind (it breaks
+        # the no-argument workbook auto-detection) — and the cleanup itself
+        # must not raise (on Windows the OPEN file may be the tmp)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if isinstance(e, PermissionError):
+            # the pre-run open check can't catch a file opened DURING the
+            # multi-minute fetch — fail in plain words, not a WinError
+            raise _fail(f"{path.name} (or its temporary copy) is open in "
+                        "another program - close Excel and run the update "
+                        "again (your file was not changed)")
+        raise
 
 
 def relock(path: Path, password: str | None = None) -> dict:
@@ -870,14 +964,23 @@ def relock(path: Path, password: str | None = None) -> dict:
     # content (Capital Gains terms/FY, the FY labels) can't shift under a
     # relock that promised to change nothing. Fresh file with no history →
     # date.today() fallback inside build_workbook.
+    for w in data.warnings:
+        print(f"⚠  {w}")
+    _refuse_overfull(data)
+    # v1.6.2: every rewrite path backs up first — relock was the one that
+    # didn't, making a read-back edge case unrecoverable
+    relock_backup = make_backup(
+        path, unmasked=(data.privacy_enabled and not data.masked_at_rest
+                        and not locked_at_rest))
     asof = max((s.snap_date for s in data.history if s.snap_date),
                default=None)
     _regenerate_atomic(path, data, masked_build=masked_build,
                        lock_active=lock_active, password=password, today=asof)
-    gone = _purge_unmasked_backups(path)
+    gone = _purge_unmasked_backups(path, keep=relock_backup)
     return {"privacy": ("locked + masked" if lock_active and masked_build
                         else "locked" if lock_active else "masked"),
-            "purged_backups": gone, "workbook": str(path)}
+            "purged_backups": gone, "backup": str(relock_backup),
+            "warnings": list(data.warnings), "workbook": str(path)}
 
 
 def _row(icon: str, label: str, text: str) -> None:
@@ -1050,7 +1153,8 @@ def peek_class_details(path: Path) -> list[tuple[str, bool, bool]]:
                 if label == "Real Estate":            # pre-v1.4.3 label
                     label = "Property"
                 if label in enabled and row[1].value is not None:
-                    enabled[label] = str(row[1].value).strip().casefold() != "no"
+                    enabled[label] = M.parse_yes_no(row[1].value,
+                                                    enabled[label])
         for cls in ASSET_CLASSES:
             sheet = cls.owner_col.split("!")[0]
             if sheet not in wb.sheetnames:
@@ -1131,7 +1235,7 @@ def peek_privacy(source) -> tuple[bool, bool, str]:
                                     max_row=M.SETTINGS_LOCK_ROW + 1,
                                     max_col=2):
                 label = str(row[0].value or "").strip()
-                val = str(row[1].value or "").strip().casefold() == "yes"
+                val = M.parse_yes_no(row[1].value, False)
                 if label == "Privacy mask":
                     mask = val
                 elif label.startswith("Lock file"):
@@ -1228,19 +1332,23 @@ def _prompt_mask_password(stored_hash: str) -> tuple[str | None, bool]:
     return None, False
 
 
-def prompt_new_persons(existing: list[str]) -> list[str]:
+def prompt_new_persons(existing: list[str],
+                       pre_added: list[str] | None = None) -> list[str]:
     """Interactively collect new person names (double-click / Terminal only).
     Adding a person here is optional — you can also just type a name in a yellow
-    Dashboard cell."""
+    Dashboard cell. `pre_added` = names already queued via --add-person, so
+    the tab prediction and duplicate check see the same final list run() will.
+    """
+    pre = list(pre_added or [])
     print("\nPeople currently tracked: " + (", ".join(existing) or "(none)"))
-    slots = 10 - len(existing)
+    slots = 10 - len(existing) - len(pre)
     if slots <= 0:
         print("(the Dashboard already lists the maximum of 10 people)")
         return []
     print("Add a new person's sheet? Type a name and press Enter, "
           "or just press Enter to skip.")
     added: list[str] = []
-    seen = {p.casefold() for p in existing}
+    seen = {p.casefold() for p in existing + pre}
     while len(added) < slots:
         try:
             name = input("  New person (blank to continue): ").strip()
@@ -1253,7 +1361,11 @@ def prompt_new_persons(existing: list[str]) -> list[str]:
             continue
         seen.add(name.casefold())
         added.append(name)
-        print(f"  ✓ will add a sheet for {name} "
+        # predict from the SAME mapping the build uses — seeding with raw
+        # names would mispredict when an earlier tab was already adjusted
+        tab = M.person_tab_map(list(existing) + pre + added)[name]
+        note = f" (their tab will be called '{tab}')" if tab != name else ""
+        print(f"  ✓ will add a sheet for {name}{note} "
               f"(then record holdings with '{name}' in the Owner columns)")
     return added
 
@@ -1332,7 +1444,8 @@ def main(argv: list[str] | None = None) -> int:
             reveal = reset = False
             if interactive:
                 try:
-                    new_persons += prompt_new_persons(peek_persons(peek_src))
+                    new_persons += prompt_new_persons(
+                        peek_persons(peek_src), new_persons)
                     toggles = prompt_class_toggle(peek_src)
                 except Exception:  # noqa: BLE001 — prompting must never break the run
                     pass
@@ -1352,7 +1465,7 @@ def main(argv: list[str] | None = None) -> int:
                         ans = input("  See them this time? Type y — or just "
                                     "press Enter to leave them masked: "
                                     ).strip().casefold()
-                        reveal = ans == "y"
+                        reveal = M.parse_yes_no(ans, False)
                     elif mask_on:
                         pw, reset = _prompt_mask_password(stored_hash)
                         if pw:

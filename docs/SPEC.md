@@ -304,7 +304,9 @@ the holding blocks, which occupy columns A–G and only grow downward (the
 
 ### 3.6 Equity
 
-Header row 3, data rows 4…140. Columns:
+Header row 3, data rows 4…253 (v1.6.2: raised from 140 — one row per
+purchase lot is the norm, and the updater refuses to run rather than lose
+a typed row to the budget, §7 step 5). Columns:
 
 | Col | Header | Kind | Definition |
 |---|---|---|---|
@@ -330,13 +332,15 @@ Header row 3, data rows 4…140. Columns:
 | v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
 
 Below the data block, one **updater-written** cell holds the equity-class
-XIRR (legacy: N142). v1 additions: status/staleness amber flags (§6.5),
+XIRR (the row after TOTAL — N255 at the v1.6.2 budget; the legacy
+template's N142). v1 additions: status/staleness amber flags (§6.5),
 FMV-fallback marking on E (§6.6), adjustment columns (§6.7).
 
 ### 3.7 MutualFunds (summary) and MF_SIP (ledger)
 
 **MF_SIP** — one row per purchase, SIP instalment or redemption
-(redemption = negative Amount). Header row 3, data rows 4…503:
+(redemption = negative Amount). Header row 3, data rows 4…1003 (v1.6.2:
+raised from 503):
 
 | Col | Header | Kind | Definition |
 |---|---|---|---|
@@ -483,7 +487,8 @@ List validation with:
   delisted scheme); the lookup columns then stay blank, which downstream
   formulas treat as "fill ISIN manually".
 - Input tip on the cell explains the behaviour.
-- Applied ranges (legacy): Equity C4:C140, MutualFunds C4:C63, MF_SIP C4:C503;
+- Applied ranges: Equity C4:C253, MutualFunds C4:C113, MF_SIP C4:C1003
+  (v1.6.2 budgets; always the sheet's LAST_ROW);
   v1 adds FixedDeposits B4:B<n> over `Bank_NameList`.
 
 ### 3.13 Dividends (v1.2, R9)
@@ -516,9 +521,12 @@ differently (§5.4 dedupe rule). Current-FY Auto rows of an ISIN the feed
 could NOT verify this run are **kept, not rebuilt** — a one-symbol outage
 must never delete income already on the sheet. Re-runs are idempotent. If
 the feed is unreachable entirely, the sheet is left as-is. **Capacity:** the
-sheet holds 200 data rows; if an assembly exceeds it, the OLDEST prior-FY
-Auto rows give way (Manual and current-FY rows never do) and the run warns
-with the dropped count.
+sheet holds 200 data rows; if an assembly exceeds it, the OLDEST Auto rows
+by ex-date give way (prior-FY first, since they are oldest; current-FY Auto
+rows only when that is not enough) and the run warns with the dropped
+count. Manual rows NEVER give way: if Manual rows alone exceed capacity
+the run refuses up front (§7 step 5 refusal semantics) instead of
+truncating user data.
 
 **By-month chart.** Columns M/N rows 4..15 hold the current FY's months
 (Apr..Mar) and `SUMPRODUCT(rate × qty × month × FY)` sums; a column chart
@@ -733,8 +741,12 @@ explicit choice writes the current build unmasked ("open (viewing)");
 the next run (Enter at the prompt), or the offline `--lock` flag
 (read → regenerate, no fetching), puts the mask back. While the mask is
 on, a backup taken of an unmasked-at-rest file is named
-`*.unmasked-backup-*` and purged on the next masked/locked run (one
-warning line says so) — readable copies never linger in backups/.
+`*.unmasked-backup-*`; a masked/locked run purges all of them EXCEPT the
+one it made itself this run (v1.6.2: exactly one readable rollback copy
+survives one cycle; the next masked run removes it — one warning line says
+so), and both backup kinds rotate independently to the newest 10 so a
+view-preferring user's readable copies stay bounded even if no masked run
+ever comes. (Backup-before-rewrite itself, incl. `--lock`, is §7 step 4.)
 
 ### 3.20 Equity_Sells (v1.6; default off — CG switch §3.14)
 
@@ -787,12 +799,13 @@ filing."*; r3 headline = current-FY LTCG headroom with the absolute deadline
 blocks — **By financial year** (newest first: STCG ₹, LTCG ₹, allowance,
 allowance used, still tax-free, indicative tax STCG/LTCG, at-your-slab
 gains, debt-fund gains, intraday/speculative gains — the K gloss says
-they're slab-taxed business income, not capital gains — and "ST loss used
-vs LTCG ₹" (v1.6.1): the Sec 70(2) set-off amount (§6.16), written ONLY
-when non-zero (blank otherwise — don't-intimidate; the engine clamps float
-dust so a normal year truly stays blank) — EXCEPT in masked builds, where
-the cell is written on every row: a ••• appearing only in loss-harvest
-years would leak that fact through the mask by its mere presence),
+they're slab-taxed business income, not capital gains — and "Losses used
+vs LTCG ₹" (v1.6.1, widened v1.6.2): the total Sec 70 set-off applied
+against LTCG (§6.16), written ONLY when non-zero (blank otherwise —
+don't-intimidate; the engine clamps float dust so a normal year truly
+stays blank) — EXCEPT in masked builds, where the cell is written on every
+row: a ••• appearing only in loss-harvest years would leak that fact
+through the mask by its mere presence),
 **What you sold (realised)** (FY, owner, what, tax
 bucket, qty, dates, days held, term, proceeds, taxable cost, gain,
 plain-words note), **What you still hold (if sold today)** (the
@@ -1235,7 +1248,10 @@ an Auto row with the same isin/type/ex-date). **Row order & capacity:**
 Manual and Curated rows are written FIRST — they carry user data and the
 §6.15 Applied stamps and must never fall past the last row. If the assembly
 still exceeds capacity, the OLDEST Auto rows (by ex-date) are dropped and
-the run warns with the count — never a silent truncation.
+the run warns with the count — never a silent truncation. If Manual/Curated
+rows ALONE exceed capacity the run refuses up front (§7 step 5 refusal
+semantics): a truncated Applied stamp would re-apply its demerger next run
+and duplicate the child rows.
 
 ### 6.8 Expected value at FY-end (v1)
 
@@ -1536,27 +1552,40 @@ against the highest-taxed gains first (the taxpayer-favourable order), each
 remaining gain at ITS OWN asset's rate — equity vs mf_equity per the row's
 bucket, only the §112A exemption bucket is shared — on its own sell date
 (handles the mid-FY switch; any uncovered gain ⇒ whole figure "—").
-Sec 70(2) set-off (v1.6.1): computed ONLY inside the FY-end-rule guard
-(rule-less pre-2018 §10(38) FYs — LTCG then exempt, losses carry-forward
-only — keep st_setoff 0, like their blank tax cells):
-st_setoff = min(max(0, −STCG_netted), max(LTCG, 0)), then clamped to 0
-when below ₹0.005 (float dust must not defeat blank-when-zero) — the
-short-term loss left over after the short-term netting reduces the same
-FY's LTCG. Derived from the netted STCG figure (rate-independent — the tax
-loop skips unknown-rate rows, so its leftover would overstate the excess).
-Speculative rows never feed it (Sec 73), and an excess LTCG loss never
-touches STCG (Sec 70(3)) — each figure only nets inside itself; the
-equity-family figures never net against the debt-fund/slab buckets either
-(a deliberate scope cut, stated on the sheet).
+Sec 70 same-FY set-off (v1.6.1 equity-family; v1.6.2 ACROSS buckets) —
+computed ONLY inside the FY-end-rule guard (rule-less pre-2018 §10(38)
+FYs — LTCG then exempt, losses carry-forward only — keep st_setoff 0,
+like their blank tax cells). Per FY, with dust(x) = 0 when |x| < ₹0.005
+(float residue must never defeat blank-when-zero or nudge a tax figure):
+  debt_st_net  = dust(Σ mf_debt Short-term rows + Σ slab rows)  (Sec 50AA
+                 deems post-2023 debt lots short-term)
+  debt_lt_loss = dust(max(0, −Σ mf_debt Long-term rows))   [Sec 70(3): LT
+                 losses only against LT gains, cross-asset]
+  debt_st_loss = max(0, −debt_st_net)
+  excess_st    = dust(max(0, −(STCG_netted + debt_st_net)))
+                 — the WHOLE short-term head nets first, both directions: a
+                 debt/slab ST gain absorbs an equity ST loss and vice
+                 versa; only a genuine all-ST net loss spills to LTCG.
+                 Rate-independent (the tax loop skips unknown-rate rows, so
+                 ITS leftover would overstate the excess).
+  st_setoff    = dust(min(debt_lt_loss + excess_st, max(LTCG, 0)))
+  st_sheltered = dust(min(debt_st_loss, max(STCG_netted, 0))) — the debt
+                 losses absorbed by the equity ST figure, surfaced on the
+                 console so "STCG ₹1L · tax ₹0" never looks impossible.
+The STCG tax loop's loss pool = equity-family ST losses + debt_st_loss
+(losses offset the highest-taxed gains first, taxpayer-favourable).
+Speculative rows feed nothing (Sec 73). Leftover losses are simply unused:
+never applied to debt/slab gain DISPLAYS (their raw sums always stay
+as-is), never added to headroom, never carried forward.
 LTCG: LTCG_eff = max(LTCG − st_setoff, 0), ONE shared derivation (a
 FYSummary property in the reference implementation) used by the FY row AND
 headroom_now so the two surfaces cannot drift; subtract the FY-end rule's
-exemption once from LTCG_eff, residual at the FY-end LTCG rate. The
-displayed LTCG column stays RAW — the set-off is shown in its own column,
-never folded in silently. Carry-forward to later years and set-off against
-other income heads are NOT modelled (stated on the sheet, and the updater
-console prints the set-off beside the raw figures so its two numbers
-reconcile).
+exemption once from LTCG_eff, residual at the FY-end LTCG rate. Every raw
+column (STCG, LTCG, debt, slab) stays RAW — set-offs show only in the
+"Losses used vs LTCG ₹" column and the tax/allowance figures. Set-off
+against other income heads and carry-forward are NOT modelled (stated on
+the sheet, and the updater console prints the set-off beside the raw
+figures so its numbers reconcile).
 headroom = max(0, exemption − LTCG_eff) — unused excess loss is NOT added
 to headroom (conservative, mirroring how a net long-term loss is clamped;
 the r3 headline's gloss says so); the current-FY headroom is also computed
@@ -1615,17 +1644,65 @@ One entry point (`Update Portfolio`), replacing the legacy three scripts:
    also warns in the summary; every run additionally carries the single
    hidden-money awareness line (§2.1). Prompting must never hang or break a
    run — any error is swallowed.
-3. refuse politely if the file is locked/open (detect via exclusive-open probe)
-4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10)
+3. refuse politely if the file is locked/open (detect via exclusive-open
+   probe); if the file is opened DURING the run, the final atomic replace
+   fails in plain words too ("close it and run again") and the temp file
+   is removed (v1.6.2 — a leftover *.new.xlsx must never confuse the
+   no-argument workbook auto-detection)
+4. backup:  backups/<name>.backup-YYYYMMDD-HHMMSS.xlsx   (keep newest 10);
+   `--lock` backs up too (§3.19 names the readable-copy purge policy)
 5. READ  — all input columns of all data sheets (hidden ones too) + persons
            + Settings (§3.14; missing sheet ⇒ defaults) + Dashboard cells
            (openpyxl read-only; header row located by matching known header
            names within rows 1–5, and dynamic Dashboard/History columns by
-           header label, so user row edits/sorts never break it)
+           header label, so user row edits/sorts never break it).
+           v1.6.2 — the reader carries a WARNINGS list on the data object,
+           surfaced with the updater's other warnings (relock() returns
+           them too): text OR a typed formula in a make-or-break number
+           cell (the holding is skipped, never guessed); a date before
+           1980 (serial-0 typos compound balances into nonsense); a
+           Settings switch that isn't a recognised Yes/No token
+           (yes/y/true/on/1 · no/n/false/off/0, case-insensitive — ONE
+           parser, model.parse_yes_no, shared with the interactive peeks
+           so a prompt can never disagree with the build; garbage falls
+           back to the row's default with a warning); a person whose name
+           can't be an Excel tab as typed (the tab is adjusted — ≤31
+           chars, no []:*?/\\, no leading/trailing apostrophe, no clash
+           with fixed sheets or other persons — via ONE person_tab_map
+           the generator, reader and add-person prompt all share; cells
+           keep the full name and chart refs escape any apostrophe).
+           MORE ROWS THAN A SHEET'S BUDGET (§3.6) makes the update REFUSE
+           to run — like the open-file check — so nothing is ever
+           truncated; the message names each sheet, its count and its cap.
+           Tax_Rules is measured as it will be WRITTEN (bundled defaults
+           upserted with the user's rows plus invalid rows, §3.22), not as
+           read — an app upgrade shipping new default rows must not push
+           the sheet silently past its cap.
+           Owner and Gold_Silver Type values are canonicalised
+           case-insensitively onto the person list / {Gold, Silver, SGB}
+           so Python joins agree with Excel's case-insensitive SUMIFS.
+           Future-dated MF_SIP and PPF_Ledger rows are excluded from
+           flows, FIFO, snapshot and projections until their date arrives
+           (same semantics as every other class; an all-future PPF ledger
+           reads as empty and the account falls back to its typed-balance
+           path). An MF_SIP row whose units can't be known (no NAV and no
+           units, or a typed 0; a zero/negative NAV counts as missing) is
+           left out of the return figure entirely
+           and warned about — by the capital-gains engine when it runs,
+           by run() itself otherwise. flat_accrual's year-fraction clamps
+           at 0 (a reversed date pair must never DISCOUNT a balance).
+           §6.1's XIRR never raises even on absurd spans (year-9999,
+           serial-0): overflow/underflow degrade to a blank cell.
 6. FETCH — AMFI, bhavcopy (BSE+NSE same-day union merge, §5.2), corporate
            actions + dividends (NSE+BSE, §5.4; merged holdings' successor
            symbols included); per-source failure ⇒ keep previous values,
-           note in summary
+           note in summary. v1.6.2 — DISTRUST EMPTY SUCCESS: an AMFI fetch
+           carrying fewer than 100 schemes (a 200-OK maintenance page) is
+           treated as a failure (never wholesale-replace MF_Master from
+           it); a corporate-actions/dividends response whose JSON lacks
+           the expected structure counts as a per-security failure (its
+           kept Auto rows are preserved), and a valid-but-empty list still
+           counts as checked (genuinely no actions)
 7. COMPUTE — restructure routing before pricing and demerger children after
            the CA refresh (§6.15), masters merge (§6.4), prices/NAVs by
            ISIN, status flags (§6.5), FMV fallbacks (§6.6), corp-action

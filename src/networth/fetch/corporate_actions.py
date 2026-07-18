@@ -225,7 +225,16 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
                 resp.raise_for_status()
                 records = resp.json()
                 if isinstance(records, dict):
-                    records = records.get("data", [])
+                    # v1.6.2: a dict WITHOUT the expected key is a changed/
+                    # maintenance response, not "no actions" — treating it
+                    # as empty would mark the ISIN checked and let the
+                    # updater drop its kept Auto rows. Fail it instead so
+                    # the rows are preserved.
+                    if "data" not in records:
+                        raise ValueError("unexpected NSE response shape")
+                    records = records["data"]
+                if not isinstance(records, list):
+                    raise ValueError("unexpected NSE response shape")
                 nse_actions.extend(parse_records(records, isin, symbol))
                 divs, skipped = parse_dividend_records(records, isin, symbol,
                                                        div_skip_since)
@@ -244,7 +253,11 @@ def fetch(nse_symbols: dict[str, str], bse_codes: dict[str, str] | None = None,
             resp.raise_for_status()
             records = resp.json()
             if isinstance(records, dict):
-                records = records.get("Table", [])
+                if "Table" not in records:      # same guard as the NSE path
+                    raise ValueError("unexpected BSE response shape")
+                records = records["Table"]
+            if not isinstance(records, list):
+                raise ValueError("unexpected BSE response shape")
             symbol = isin_to_symbol.get(isin, code)
             bse_actions.extend(parse_bse_records(records, isin, symbol))
             divs, skipped = parse_dividend_records(records, isin, symbol,

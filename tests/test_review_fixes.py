@@ -182,8 +182,10 @@ def test_partial_ca_feed_failure_preserves_applied_rows(tmp_path, monkeypatch):
 # 5 — demerger children never silently fall off the Equity sheet ------------
 
 def test_demerger_blocked_by_full_equity_sheet_retries(tmp_path):
+    from networth.model import EQUITY_LAST_ROW, FIRST_DATA_ROW
+    cap = EQUITY_LAST_ROW - FIRST_DATA_ROW + 1       # sheet capacity
     data = sample_portfolio()
-    while len(data.equity) < 137:                    # sheet capacity
+    while len(data.equity) < cap:
         data.equity.append(EquityRow(owner="Amit", scrip="INFOSYS LTD.",
                                      qty=1, avg_cost=1,
                                      cost_date=date(2020, 1, 1)))

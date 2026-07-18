@@ -117,7 +117,7 @@ def test_redgreen_conditional_formats(built, wb):
         eq = sheet_xml("Equity")
         dash = sheet_xml("Dashboard")
         amit = sheet_xml("Amit")
-    assert 'sqref="K4:L140"' in eq and "conditionalFormatting" in eq
+    assert 'sqref="K4:L253"' in eq and "conditionalFormatting" in eq
     assert 'sqref="C20:C24"' in dash
     assert 'sqref="F16:G55"' in amit
 

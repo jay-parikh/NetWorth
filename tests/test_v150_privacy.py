@@ -151,10 +151,12 @@ def test_mask_lifecycle_enable_view_remask_reset(tmp_path):
     back = read_workbook(str(path))
     assert back.masked_at_rest is True
     assert back.equity[0].close == pytest.approx(1520)  # prices still refresh
-    # the view-run's readable backup was purged once the mask returned
-    kinds = {b.name.split(".")[1].rsplit("-", 2)[0]
-             for b in (tmp_path / "backups").glob("*.xlsx")}
-    assert "unmasked-backup" not in kinds and "backup" in kinds
+    # v1.6.2 policy: OLDER readable backups are purged once the mask
+    # returns, but this run's own pre-run copy survives one cycle as the
+    # rollback of last resort (the next masked run removes it)
+    unmasked = [b for b in (tmp_path / "backups").glob("*.xlsx")
+                if ".unmasked-backup-" in b.name]
+    assert len(unmasked) == 1
     assert any("readable backup" in w for w in s["warnings"])
 
     s = _upd(path, reset_privacy=True)                # RESET escape hatch

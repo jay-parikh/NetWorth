@@ -10,18 +10,16 @@ from __future__ import annotations
 from datetime import date
 
 from ..model import HistorySnapshot, PortfolioData
-from .cashflows import flat_accrual
+from .cashflows import _yearfrac, flat_accrual
 
 
-def _yf(a: date, b: date) -> float:
-    return max(0.0, (b - a).days / 365.0)
-
-
-def _mf_units(data: PortfolioData) -> dict[tuple[str, str], float]:
+def _mf_units(data: PortfolioData, today: date) -> dict[tuple[str, str], float]:
     units: dict[tuple[str, str], float] = {}
     for s in data.sip:
         if not (s.owner and s.scheme):
             continue
+        if s.txn_date and s.txn_date > today:
+            continue        # v1.6.2: a pre-typed future row waits (§6.2)
         u = s.units_override if s.units_override is not None else (
             s.amount / s.nav if s.amount and s.nav else None)
         if u is not None:
@@ -33,7 +31,7 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
     equity = sum(r.qty * (r.ca_factor or 1.0) * r.close
                  for r in data.equity if r.qty and r.close)
 
-    units = _mf_units(data)
+    units = _mf_units(data, today)
     mutual_funds = sum(units.get((m.owner, m.scheme), 0.0) * m.current_nav
                        for m in data.mutual_funds if m.current_nav)
 
@@ -43,7 +41,7 @@ def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
             asof = min(today, r.maturity)
             n = r.comp_per_year
             fixed_deposits += r.principal * (1 + (r.rate / 100) / n) ** (
-                n * _yf(r.start, asof))
+                n * _yearfrac(r.start, asof))
 
     ppf = sum((r.balance_today if r.balance_today is not None else (r.balance or 0.0))
               for r in data.ppf)

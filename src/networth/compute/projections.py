@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from ..model import PortfolioData, enabled_classes
-from .cashflows import coupon_dates, flat_accrual
+from .cashflows import _yearfrac, coupon_dates, flat_accrual
 
 
 def fy_end(today: date) -> date:
@@ -19,15 +19,11 @@ def fy_end(today: date) -> date:
     return end if today <= end else date(today.year + 1, 3, 31)
 
 
-def _yf(a: date, b: date) -> float:
-    return max(0.0, (b - a).days / 365.0)
-
-
 def fy_expected_by_person(data: PortfolioData, today: date | None = None
                           ) -> dict[str, float]:
     today = today or date.today()
     end = fy_end(today)
-    growth = (1 + data.expected_return_pct / 100) ** _yf(today, end)
+    growth = (1 + data.expected_return_pct / 100) ** _yearfrac(today, end)
     out: dict[str, float] = {p: 0.0 for p in data.persons}
     # a switched-off class is not counted anywhere (SPEC §3.14, v1.4.3)
     on = {c.key for c in enabled_classes(data)}
@@ -44,6 +40,8 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
     if "mutual_funds" in on:
         nav_units: dict[tuple[str, str], float] = {}
         for s in data.sip:
+            if s.txn_date and s.txn_date > today:
+                continue    # v1.6.2: a pre-typed future row waits (§6.2)
             u = s.units_override if s.units_override is not None else (
                 s.amount / s.nav if s.amount and s.nav else None)
             if u is not None:
@@ -62,12 +60,12 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
             asof = min(end, r.maturity)
             n = r.comp_per_year
             add(r.owner,
-                r.principal * (1 + (r.rate / 100) / n) ** (n * _yf(r.start, asof)))
+                r.principal * (1 + (r.rate / 100) / n) ** (n * _yearfrac(r.start, asof)))
 
     if "ppf" in on:
         from .cashflows import ppf_ledger_by_account
         from .ppf import load_ppf_rates, ppf_value
-        led = ppf_ledger_by_account(data)
+        led = ppf_ledger_by_account(data, today)
         rates = load_ppf_rates() if led else []
         for r in data.ppf:
             deposits = led.get((r.owner, r.account_no))

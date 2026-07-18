@@ -15,7 +15,9 @@ Flow = tuple[date, float]
 
 
 def _yearfrac(a: date, b: date) -> float:
-    return (b - a).days / 365.0
+    # clamped like its siblings (projections._yf, snapshot._yf): a reversed
+    # pair must never DISCOUNT a balance (v1.6.2)
+    return max(0.0, (b - a).days / 365.0)
 
 
 def flat_accrual(balance: float, rate_pct: float, as_on: date,
@@ -72,8 +74,8 @@ def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
 def _sip_units(row) -> float | None:
     if row.units_override is not None:
         return row.units_override
-    if row.amount and row.nav:
-        return row.amount / row.nav
+    if row.amount and row.nav and row.nav > 0:  # a negative NAV is noise
+        return row.amount / row.nav             # (same guard as _mf_units)
     return None
 
 
@@ -86,11 +88,18 @@ def mf_flows_by_fund(data: PortfolioData, today: date,
     for r in data.sip:
         if not (r.owner and r.scheme and r.txn_date and r.amount):
             continue
+        if r.txn_date > today:           # v1.6.2: a pre-typed future row
+            continue                     # takes effect when its date arrives
+        u = _sip_units(r)
+        if not u:
+            # v1.6.2: a row whose units can't be known (no NAV, or a typed
+            # 0) is left out ENTIRELY — counting only its cash side swung
+            # XIRR wildly (buys negative, redemptions positive). run()
+            # warns about every such row so it is never silent.
+            continue
         key = (r.owner, r.scheme)
         funds.setdefault(key, []).append((r.txn_date, -r.amount))
-        u = _sip_units(r)
-        if u is not None:
-            units[key] = units.get(key, 0.0) + u
+        units[key] = units.get(key, 0.0) + u    # signed: redemptions reduce
     for key, flows in funds.items():
         nav = nav_by_key.get(key)
         if nav and units.get(key):
@@ -113,12 +122,20 @@ def fd_flows(data: PortfolioData, today: date) -> list[Flow]:
     return flows
 
 
-def ppf_ledger_by_account(data: PortfolioData) -> dict[tuple[str, str], list[Flow]]:
-    """Group PPF deposits by (owner, account_no)."""
+def ppf_ledger_by_account(data: PortfolioData, today: date | None = None
+                          ) -> dict[tuple[str, str], list[Flow]]:
+    """Group PPF deposits by (owner, account_no). With `today` (v1.6.2,
+    pass it — every real caller does), future-dated deposits are excluded
+    HERE so all three surfaces (class XIRR, the sheet's per-row figures,
+    projections) see the identical ledger; a pre-typed deposit takes
+    effect when its date arrives. An all-future ledger reads as empty and
+    the account falls back to its typed-balance path."""
     from collections import defaultdict
     led: dict[tuple[str, str], list[Flow]] = defaultdict(list)
     for lr in data.ppf_ledger:
         if lr.owner and lr.account_no and lr.txn_date and lr.amount:
+            if today is not None and lr.txn_date > today:
+                continue
             led[(lr.owner, lr.account_no)].append((lr.txn_date, lr.amount))
     return led
 
@@ -128,7 +145,7 @@ def ppf_flows(data: PortfolioData, today: date) -> list[Flow]:
     flat balance-grows-at-rate estimate (SPEC §6.2/§6.10)."""
     from .ppf import load_ppf_rates, ppf_value
 
-    led = ppf_ledger_by_account(data)
+    led = ppf_ledger_by_account(data, today)
     rates = load_ppf_rates() if led else []
     flows: list[Flow] = []
     for r in data.ppf:

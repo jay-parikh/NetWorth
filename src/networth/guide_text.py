@@ -39,7 +39,7 @@ GUIDE_ROWS: list[tuple] = [
     ("space",),
 
     ("section", "📒", "Where does each thing go?"),
-    ("kv", "Shares", "the Equity tab"),
+    ("kv", "Shares", "the Equity tab. Bought the same share again? Just add another row — same name, its own quantity, price and date; each purchase keeps its own tax date"),
     ("kv", "Mutual funds", "the MutualFunds tab (one row per fund) — log each purchase on MF_SIP. Sold some? Add a row with a minus amount."),
     ("kv", "Fixed deposits", "the FixedDeposits tab"),
     ("kv", "PPF", "the PPF tab (want exact interest? list deposits on PPF_Ledger — optional)"),
@@ -87,7 +87,7 @@ GUIDE_ROWS: list[tuple] = [
     ("text", "Indicative only — for planning, not for filing. Recorded sales also count in your return figure (XIRR)."),
     ("text", "Government changed a rate or the tax-free allowance? Edit the Tax_Rules tab (it ships filled in with the current law) — no new app version needed."),
     ("text", "Bought and sold the same day? That is speculative income — shown separately at your slab, never mixed into STCG / LTCG."),
-    ("text", "Sold shares or equity funds at a loss? It reduces that year's taxable gains — a leftover short-term loss even counts against long-term gains."),
+    ("text", "Sold at a loss? It reduces that year's taxable gains the way the law allows — debt-fund losses count too, and a leftover short-term loss even counts against long-term gains."),
     ("space",),
 
     ("section", "🔤", "Words you'll see"),

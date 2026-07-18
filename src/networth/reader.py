@@ -22,7 +22,8 @@ from .model import (
     ClassXirr, CorporateAction, DividendRow, EPFRow, EquityRow, EquitySellRow,
     FDRow,
     HistorySnapshot, ManualAssetRow, Masters, MFRow, NPSRow, PPFLedgerRow,
-    PPFRow, PortfolioData, ScripRef, SIPRow, TaxRule,
+    PPFRow, PortfolioData, ScripRef, SIPRow, TaxRule, parse_yes_no,
+    person_tab_map,
 )
 
 # the Class dropdown is non-blocking, so users can type any casing — Excel's
@@ -31,6 +32,8 @@ from .model import (
 # was the pre-v1.4.3 label for the Property class; old rows read seamlessly.
 _CANON_CLASS = {label.casefold(): label for label in MANUAL_CLASS_LABELS}
 _CANON_CLASS["real estate"] = "Property"
+# same idiom for the Gold_Silver Type column (v1.6.2)
+_CANON_METAL = {"gold": "Gold", "silver": "Silver", "sgb": "SGB"}
 
 
 def _as_date(v) -> date | None:
@@ -43,6 +46,28 @@ def _as_date(v) -> date | None:
 
 def _as_float(v) -> float | None:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _num(ws, r: int, c: int, label: str, warnings: list) -> float | None:
+    """A make-or-break numeric input cell (v1.6.2): text (or a typed
+    formula — these are pure input columns, the generator never writes
+    formulas here) where a number belongs used to silently drop the whole
+    holding from totals, XIRR and the permanent History snapshot — now it
+    says so. The sheet name comes from the worksheet itself."""
+    v = ws.cell(r, c).value
+    f = _as_float(v)
+    if f is None and isinstance(v, str) and v.strip():
+        if v.startswith("="):
+            warnings.append(
+                f"{ws.title} row {r}: a formula in the {label} column "
+                "isn't read (and won't survive an update) - type the "
+                "plain number")
+        else:
+            warnings.append(
+                f"{ws.title} row {r}: '{v.strip()}' in the {label} column "
+                "is not a number - that row is left out of the totals "
+                "until it is fixed")
+    return f
 
 
 def _as_str(v) -> str:
@@ -93,6 +118,26 @@ def read_workbook(source) -> PortfolioData:
         _as_str(dash.cell(r, 1).value)
         for r in range(6, 16) if _as_str(dash.cell(r, 1).value)
     ]
+    # v1.6.2: Excel's SUMIFS matches Owner case-insensitively but the
+    # Python joins (FY-expected, dividend estimates) were exact-match — a
+    # row owned by "JAY" showed in the sheet totals yet dropped out of the
+    # computed columns. Canonicalise typed owners onto the person list, the
+    # _CANON_CLASS idiom; unknown owners stay as typed.
+    _owner_map = {p.casefold(): p for p in data.persons}
+
+    def _owner(v) -> str:
+        s = _as_str(v)
+        return _owner_map.get(s.casefold(), s)
+
+    # v1.6.2: names that can't be Excel tab names as typed (too long, a /,
+    # a duplicate, a fixed sheet's name…) used to crash the rebuild after
+    # the whole fetch; now the tab is quietly adjusted — say so (the same
+    # person_tab_map the generator builds from, so this can never drift)
+    for _p, _tab in person_tab_map(data.persons).items():
+        if _tab != _p:
+            data.warnings.append(
+                f"'{_p}' can't be a tab name as typed - their tab is "
+                f"called '{_tab}'; totals and figures are unaffected")
     infl = _as_float(dash["E3"].value)
     data.inflation_pct = infl if infl is not None else 7
     exp = _as_float(dash["E2"].value)
@@ -127,6 +172,22 @@ def read_workbook(source) -> PortfolioData:
 
     if "Settings" in wb.sheetnames:
         st = wb["Settings"]
+
+        def _yes_no(row: int, label: str, default: bool) -> bool:
+            """One Yes/No reading for EVERY Settings switch (v1.6.2),
+            delegating to model.parse_yes_no — the SAME truth the
+            interactive peeks use, so a prompt can never disagree with the
+            build ('Y' under Privacy mask used to silently mean OFF here
+            and on for the peek). Unrecognised non-blank text warns and
+            falls back to the row's default."""
+            raw = _as_str(st.cell(row, 2).value)
+            recognised = (parse_yes_no(raw, True) == parse_yes_no(raw, False))
+            if raw and not recognised:
+                data.warnings.append(
+                    f"Settings: '{raw}' for {label} is not Yes or No - "
+                    f"using {'Yes' if default else 'No'}")
+            return parse_yes_no(raw, default)
+
         label_rows = {_as_str(st.cell(r, 1).value): r
                       for r in range(4, SETTINGS_LOCK_ROW + 1)}
         for cls in ASSET_CLASSES:
@@ -135,30 +196,25 @@ def read_workbook(source) -> PortfolioData:
                 r = label_rows.get("Real Estate")     # pre-v1.4.3 label
             if r is None:
                 continue
-            enabled_txt = _as_str(st.cell(r, 2).value).casefold()
             data.class_settings[cls.key] = ClassSetting(
-                enabled=(enabled_txt != "no") if enabled_txt
-                else cls.default_enabled,
+                enabled=_yes_no(r, cls.label, cls.default_enabled),
                 target_pct=_as_float(st.cell(r, 3).value),
             )
         ref_row = label_rows.get("Reference lists")
         if ref_row:                                   # absent pre-v1.4.3 → No
-            data.show_references = (
-                _as_str(st.cell(ref_row, 2).value).casefold() == "yes")
+            data.show_references = _yes_no(ref_row, "Reference lists", False)
         cg_row = label_rows.get("Capital gains report")
         if cg_row:                                    # absent pre-v1.6 → No
-            data.show_capital_gains = (
-                _as_str(st.cell(cg_row, 2).value).casefold() == "yes")
+            data.show_capital_gains = _yes_no(cg_row, "Capital gains report",
+                                              False)
         # privacy switches (SPEC §3.19) — absent pre-v1.5 → both off
         pr = label_rows.get("Privacy mask")
         if pr:
-            data.privacy_enabled = (
-                _as_str(st.cell(pr, 2).value).casefold() == "yes")
+            data.privacy_enabled = _yes_no(pr, "Privacy mask", False)
         lk = next((r for lbl, r in label_rows.items()
                    if lbl.startswith("Lock file")), None)
         if lk:
-            data.lock_enabled = (
-                _as_str(st.cell(lk, 2).value).casefold() == "yes")
+            data.lock_enabled = _yes_no(lk, "Lock file", False)
         tol_row = next((r for r in range(16, 25)
                         if _as_str(st.cell(r, 1).value).startswith("Drift tolerance")),
                        None)
@@ -171,7 +227,7 @@ def read_workbook(source) -> PortfolioData:
     ws = wb["Equity"]
     h = _header_row(ws, "Owner")
     for r in _data_rows(ws, h):
-        owner = _as_str(ws.cell(r, 1).value)
+        owner = _owner(ws.cell(r, 1).value)
         scrip = _manual(ws.cell(r, 3).value)
         if not owner and not scrip:
             continue
@@ -180,8 +236,8 @@ def read_workbook(source) -> PortfolioData:
                       for p in _as_str(ws.cell(r, 18).value).split("|")]
         data.equity.append(EquityRow(
             owner=owner, scrip=scrip,
-            qty=_as_float(ws.cell(r, 4).value),
-            avg_cost=_as_float(ws.cell(r, 5).value),
+            qty=_num(ws, r, 4, "Quantity", data.warnings),
+            avg_cost=_num(ws, r, 5, "Avg. cost", data.warnings),
             close=_as_float(ws.cell(r, 6).value),
             prev_close=_as_float(ws.cell(r, 7).value),
             close_date=_as_date(ws.cell(r, 8).value),
@@ -196,7 +252,7 @@ def read_workbook(source) -> PortfolioData:
     ws = wb["MutualFunds"]
     h = _header_row(ws, "Owner")
     for r in _data_rows(ws, h):
-        owner = _as_str(ws.cell(r, 1).value)
+        owner = _owner(ws.cell(r, 1).value)
         scheme = _manual(ws.cell(r, 3).value)
         if not owner and not scheme:
             continue
@@ -212,7 +268,7 @@ def read_workbook(source) -> PortfolioData:
     ws = wb["MF_SIP"]
     h = _header_row(ws, "Owner")
     for r in _data_rows(ws, h):
-        owner = _as_str(ws.cell(r, 1).value)
+        owner = _owner(ws.cell(r, 1).value)
         scheme = _manual(ws.cell(r, 3).value)
         if not owner and not scheme:
             continue
@@ -220,7 +276,7 @@ def read_workbook(source) -> PortfolioData:
         data.sip.append(SIPRow(
             owner=owner, scheme=scheme,
             txn_date=_as_date(ws.cell(r, 5).value),
-            amount=_as_float(ws.cell(r, 6).value),
+            amount=_num(ws, r, 6, "Amount", data.warnings),
             nav=_as_float(ws.cell(r, 7).value),
             units_override=None if _is_formula(units) else _as_float(units),
             fund_house_override=_manual(ws.cell(r, 2).value),
@@ -230,14 +286,14 @@ def read_workbook(source) -> PortfolioData:
     ws = wb["FixedDeposits"]
     h = _header_row(ws, "Owner")
     for r in _data_rows(ws, h):
-        owner = _as_str(ws.cell(r, 1).value)
+        owner = _owner(ws.cell(r, 1).value)
         if not owner:
             continue
         data.fixed_deposits.append(FDRow(
             owner=owner,
             bank=_as_str(ws.cell(r, 2).value),
             fd_no=_as_str(ws.cell(r, 3).value),
-            principal=_as_float(ws.cell(r, 4).value),
+            principal=_num(ws, r, 4, "Principal", data.warnings),
             rate=_as_float(ws.cell(r, 5).value),
             start=_as_date(ws.cell(r, 6).value),
             maturity=_as_date(ws.cell(r, 7).value),
@@ -247,14 +303,14 @@ def read_workbook(source) -> PortfolioData:
     ws = wb["PPF"]
     h = _header_row(ws, "Owner")
     for r in _data_rows(ws, h):
-        owner = _as_str(ws.cell(r, 1).value)
+        owner = _owner(ws.cell(r, 1).value)
         if not owner:
             continue
         data.ppf.append(PPFRow(
             owner=owner,
             institution=_as_str(ws.cell(r, 2).value),
             account_no=_as_str(ws.cell(r, 3).value),
-            balance=_as_float(ws.cell(r, 4).value),
+            balance=_num(ws, r, 4, "Balance", data.warnings),
             as_on=_as_date(ws.cell(r, 5).value),
             rate=_as_float(ws.cell(r, 6).value),
             notes=_as_str(ws.cell(r, 7).value),
@@ -267,28 +323,28 @@ def read_workbook(source) -> PortfolioData:
         ws = wb["PPF_Ledger"]
         h = _header_row(ws, "Owner")
         for r in range(h + 1, ws.max_row + 1):
-            owner = _as_str(ws.cell(r, 1).value)
+            owner = _owner(ws.cell(r, 1).value)
             acct = _as_str(ws.cell(r, 2).value)
             if not owner and not acct:
                 continue
             data.ppf_ledger.append(PPFLedgerRow(
                 owner=owner, account_no=acct,
                 txn_date=_as_date(ws.cell(r, 3).value),
-                amount=_as_float(ws.cell(r, 4).value),
+                amount=_num(ws, r, 4, "Amount", data.warnings),
             ))
 
     if "EPF" in wb.sheetnames:
         ws = wb["EPF"]
         h = _header_row(ws, "Owner")
         for r in _data_rows(ws, h):
-            owner = _as_str(ws.cell(r, 1).value)
+            owner = _owner(ws.cell(r, 1).value)
             if not owner:
                 continue
             data.epf.append(EPFRow(
                 owner=owner,
                 establishment=_as_str(ws.cell(r, 2).value),
                 member_id=_as_str(ws.cell(r, 3).value),
-                balance=_as_float(ws.cell(r, 4).value),
+                balance=_num(ws, r, 4, "Balance", data.warnings),
                 as_on=_as_date(ws.cell(r, 5).value),
                 rate=_as_float(ws.cell(r, 6).value),
                 notes=_as_str(ws.cell(r, 7).value),
@@ -299,15 +355,19 @@ def read_workbook(source) -> PortfolioData:
         h = _header_row(ws, "Owner")
         data.bullion_rate_asof = _as_date(ws["I2"].value)
         for r in _data_rows(ws, h):
-            owner = _as_str(ws.cell(r, 1).value)
+            owner = _owner(ws.cell(r, 1).value)
             if not owner:
                 continue
             data.bullion.append(BullionRow(
                 owner=owner,
-                metal_type=_as_str(ws.cell(r, 2).value),
+                # v1.6.2: canonicalised like Manual_Assets classes — a typed
+                # "gold" used to miss the rate refresh with no warning
+                metal_type=_CANON_METAL.get(
+                    _as_str(ws.cell(r, 2).value).casefold(),
+                    _as_str(ws.cell(r, 2).value)),
                 description=_as_str(ws.cell(r, 3).value),
                 isin=_as_str(ws.cell(r, 4).value),
-                qty=_as_float(ws.cell(r, 5).value),
+                qty=_num(ws, r, 5, "Qty", data.warnings),
                 purity=_as_float(ws.cell(r, 6).value),
                 buy_price=_as_float(ws.cell(r, 7).value),
                 buy_date=_as_date(ws.cell(r, 8).value),
@@ -320,7 +380,7 @@ def read_workbook(source) -> PortfolioData:
         ws = wb["NPS"]
         h = _header_row(ws, "Owner")
         for r in _data_rows(ws, h):
-            owner = _as_str(ws.cell(r, 1).value)
+            owner = _owner(ws.cell(r, 1).value)
             scheme = _manual(ws.cell(r, 3).value)
             if not owner and not scheme:
                 continue
@@ -328,7 +388,7 @@ def read_workbook(source) -> PortfolioData:
                 owner=owner,
                 pran=_as_str(ws.cell(r, 2).value),
                 scheme=scheme,
-                units=_as_float(ws.cell(r, 5).value),
+                units=_num(ws, r, 5, "Units", data.warnings),
                 current_nav=_as_float(ws.cell(r, 6).value),
                 total_contributed=_as_float(ws.cell(r, 8).value),
                 first_contribution=_as_date(ws.cell(r, 9).value),
@@ -340,7 +400,7 @@ def read_workbook(source) -> PortfolioData:
         ws = wb["Manual_Assets"]
         h = _header_row(ws, "Owner")
         for r in _data_rows(ws, h):
-            owner = _as_str(ws.cell(r, 1).value)
+            owner = _owner(ws.cell(r, 1).value)
             if not owner:
                 continue
             raw_class = _as_str(ws.cell(r, 2).value)
@@ -351,7 +411,7 @@ def read_workbook(source) -> PortfolioData:
                 institution=_as_str(ws.cell(r, 4).value),
                 invested=_as_float(ws.cell(r, 5).value),
                 cost_date=_as_date(ws.cell(r, 6).value),
-                value=_as_float(ws.cell(r, 7).value),
+                value=_num(ws, r, 7, "Value today", data.warnings),
                 as_on=_as_date(ws.cell(r, 8).value),
                 notes=_as_str(ws.cell(r, 10).value),
             ))
@@ -359,14 +419,14 @@ def read_workbook(source) -> PortfolioData:
     ws = wb["Bonds"]
     h = _header_row(ws, "Owner")
     for r in _data_rows(ws, h):
-        owner = _as_str(ws.cell(r, 1).value)
+        owner = _owner(ws.cell(r, 1).value)
         if not owner:
             continue
         data.bonds.append(BondRow(
             owner=owner,
             issuer=_as_str(ws.cell(r, 2).value),
             isin=_as_str(ws.cell(r, 3).value),
-            qty=_as_float(ws.cell(r, 4).value),
+            qty=_num(ws, r, 4, "Qty", data.warnings),
             face=_as_float(ws.cell(r, 5).value),
             buy_price=_as_float(ws.cell(r, 6).value),
             cur_price=_as_float(ws.cell(r, 7).value),
@@ -428,7 +488,7 @@ def read_workbook(source) -> PortfolioData:
         ws = wb["Equity_Sells"]
         h = _header_row(ws, "Owner")
         for r in _data_rows(ws, h):
-            owner = _as_str(ws.cell(r, 1).value)
+            owner = _owner(ws.cell(r, 1).value)
             scrip = _manual(ws.cell(r, 3).value)
             if not owner and not scrip:
                 continue
@@ -504,6 +564,30 @@ def read_workbook(source) -> PortfolioData:
         st = _as_str(sm.cell(r, 4).value)
         if isin and st:
             stock_status[isin] = (st, _as_date(sm.cell(r, 5).value))
+
+    # date sanity (v1.6.2): a serial-0 typo reads as 1899-12-30 and a
+    # passbook "as-on" of 1899 compounds ₹1L into crores — warn, never
+    # silently rewrite (the user fixes the cell; the warning is the guard)
+    _floor = date(1980, 1, 1)
+    for _attr, _field, _sheet, _label in (
+            ("equity", "cost_date", "Equity", "Buy date"),
+            ("sip", "txn_date", "MF_SIP", "date"),
+            ("fixed_deposits", "start", "FixedDeposits", "Start date"),
+            ("ppf", "as_on", "PPF", "As-on date"),
+            ("ppf_ledger", "txn_date", "PPF_Ledger", "date"),
+            ("epf", "as_on", "EPF", "As-on date"),
+            ("bonds", "buy_date", "Bonds", "Buy date"),
+            ("bullion", "buy_date", "Gold_Silver", "Buy date"),
+            ("nps", "first_contribution", "NPS", "First contribution"),
+            ("manual_assets", "cost_date", "Manual_Assets", "Buy date"),
+            ("equity_sells", "buy_date", "Equity_Sells", "Buy date"),
+            ("equity_sells", "sell_date", "Equity_Sells", "Sell date")):
+        for _row in getattr(data, _attr):
+            _d = getattr(_row, _field, None)
+            if _d and _d < _floor:
+                data.warnings.append(
+                    f"{_sheet}: a {_label} of {_d:%d-%m-%Y} looks wrong - "
+                    "figures using it will be nonsense until it is fixed")
 
     data.masters = Masters(
         mf_rows=master_rows("MF_Master"),

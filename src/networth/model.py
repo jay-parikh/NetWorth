@@ -19,11 +19,11 @@ from pathlib import Path
 HEADER_ROW = 3
 FIRST_DATA_ROW = 4
 
-EQUITY_LAST_ROW = 140          # data rows 4..140, dropdown range end
-EQUITY_TOTAL_ROW = 142
-MF_LAST_ROW = 63
-MF_TOTAL_ROW = 65
-SIP_LAST_ROW = 503
+EQUITY_LAST_ROW = 253          # data rows 4..253 (v1.6.2: was 140 — lots
+EQUITY_TOTAL_ROW = 255         # are rows, families hit 137; SPEC §3.6)
+MF_LAST_ROW = 113              # v1.6.2: was 63
+MF_TOTAL_ROW = 115
+SIP_LAST_ROW = 1003            # v1.6.2: was 503 (a decade of SIPs is 500+)
 FD_LAST_ROW = 53
 FD_TOTAL_ROW = 55
 PPF_LAST_ROW = 43
@@ -43,6 +43,88 @@ NPS_LAST_ROW = 43               # NPS data rows 4..43 (SPEC §3.16)
 HISTORY_LAST_ROW = 400          # net-worth snapshots, one per day (rows 4..400)
 
 DASH_PERSON_FIRST = 6          # Dashboard person matrix rows 6..15
+
+# v1.6.2: the workbook's fixed tab names. A person may not shadow one (their
+# tab would collide), and xlsxwriter enforces Excel's tab rules — both used
+# to crash the whole update AFTER the network fetch; now names are adjusted.
+RESERVED_SHEET_NAMES = frozenset({
+    "Dashboard", "Projection", "Settings", "Equity", "Equity_Sells",
+    "MutualFunds", "MF_SIP", "MF_Master", "Stock_Master", "Bank_Master",
+    "FixedDeposits", "PPF", "PPF_Ledger", "EPF", "Bonds", "Gold_Silver",
+    "NPS", "NPS_Master", "Manual_Assets", "By Scrip", "Corporate_Actions",
+    "Dividends", "Capital Gains", "Tax_Rules", "History", "Guide",
+})
+_SHEET_BAD_CHARS = set("[]:*?/\\")
+
+
+def parse_yes_no(txt, default: bool) -> bool:
+    """THE Yes/No reading (v1.6.2): yes/y ⇒ True, no/n ⇒ False
+    (case-insensitive), anything else ⇒ default. The reader's wrapper adds
+    a warning on garbage; the read-only peeks share this same truth so the
+    interactive prompts can never disagree with the build (a 'Y' that the
+    build masks but the peek reports as off would skip the password
+    prompt)."""
+    t = (str(txt) if txt is not None else "").strip().casefold()
+    if t in ("yes", "y", "true", "on", "1"):
+        return True
+    if t in ("no", "n", "false", "off", "0"):
+        return False
+    return default
+
+
+def person_sheet_name(name: str, taken: set[str]) -> str:
+    """An Excel-legal TAB name for a person: ≤31 chars, none of []:*?/\\,
+    no leading/trailing apostrophe, unique (case-insensitive) against
+    `taken` and the fixed sheets. Only the tab is adjusted — every cell,
+    total and Owner match keeps the person's full typed name."""
+    # strip apostrophes AFTER truncating — a 31-char cut can itself end on
+    # a ' (Excel forbids leading/trailing apostrophes in tab names)
+    s = "".join("-" if c in _SHEET_BAD_CHARS else c
+                for c in name.strip())[:31].strip("'") or "Person"
+    low = ({t.casefold() for t in taken}
+           | {t.casefold() for t in RESERVED_SHEET_NAMES})
+    base, n = s, 2
+    while s.casefold() in low:
+        suffix = f"-{n}"
+        s = base[:31 - len(suffix)] + suffix
+        n += 1
+    return s
+
+
+def person_tab_map(persons: list[str]) -> dict[str, str]:
+    """name → Excel tab for every person, in Dashboard order — THE single
+    mapping (v1.6.2): the generator builds sheets from it, the reader warns
+    from it, and the add-person prompt predicts from it, so no surface can
+    ever disagree about which tab a person gets."""
+    taken: set[str] = set()
+    out: dict[str, str] = {}
+    for p in persons:
+        tab = person_sheet_name(p, taken)
+        taken.add(tab)
+        out[p] = tab
+    return out
+
+
+# v1.6.2: every user-input sheet's row budget, ONE table (the reader warns
+# when a sheet holds more typed rows than the regenerated file can keep —
+# silent truncation was data loss). (PortfolioData attr, last row, sheet.)
+# Corporate_Actions / Dividends / History are updater-managed and have
+# their own overflow handling.
+CAPACITIES: list[tuple[str, int, str]] = [
+    ("equity", EQUITY_LAST_ROW, "Equity"),
+    ("mutual_funds", MF_LAST_ROW, "MutualFunds"),
+    ("sip", SIP_LAST_ROW, "MF_SIP"),
+    ("fixed_deposits", FD_LAST_ROW, "FixedDeposits"),
+    ("ppf", PPF_LAST_ROW, "PPF"),
+    ("ppf_ledger", PPF_LEDGER_LAST_ROW, "PPF_Ledger"),
+    ("bonds", BOND_LAST_ROW, "Bonds"),
+    ("bullion", GS_LAST_ROW, "Gold_Silver"),
+    ("nps", NPS_LAST_ROW, "NPS"),
+    ("epf", EPF_LAST_ROW, "EPF"),
+    ("manual_assets", MA_LAST_ROW, "Manual_Assets"),
+    ("equity_sells", EQSELL_LAST_ROW, "Equity_Sells"),
+    ("tax_rules", TAXRULES_LAST_ROW, "Tax_Rules"),
+]
 DASH_PERSON_LAST = 15
 DASH_TOTAL_ROW = 16
 PROJECTION_YEARS = 20          # Projection rows 4..24 (n = 0..20)
@@ -661,6 +743,11 @@ class PortfolioData:
     fy_expected: dict[str, float] = field(default_factory=dict)  # updater-written, per person
     xirr: ClassXirr = field(default_factory=ClassXirr)
     masters: Masters = field(default_factory=Masters)
+    # reader-detected problems (v1.6.2): text in a number cell, too many
+    # rows for a sheet, an implausible date… — carried on the data object
+    # (no signature churn) and surfaced into the updater's warning list.
+    # NOT part of round-trip identity: a regenerated workbook starts clean.
+    warnings: list[str] = field(default_factory=list)
 
 
 def load_fmv(data_dir: Path = DATA_DIR) -> tuple[dict[str, float], dict[str, float]]:

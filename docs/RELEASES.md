@@ -285,6 +285,21 @@ headline, the Sec 70(3) citation was corrected, and every user-facing
 sentence was narrowed to claim exactly what the engine does (no
 cross-bucket equity↔debt netting — now stated on the sheet). Suite: 236.
 
+## v1.6.2 — "Sturdy" (2026-07-18)
+
+Jay: plan the stability sweep AND cross-bucket netting together — simple
+and stable. Two halves, one release.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Stability batch (sweep verdicts) | Reader warnings channel on the data object; raised row budgets (Equity 250 / MF_SIP 1000 / MutualFunds 110) + one table-driven overflow warning for every input sheet; `--lock` backs up first and the readable-backup purge keeps this run's copy one cycle; AMFI <100-scheme results and structurally-invalid CA bodies are distrusted; person names become legal tab names (≤31, no []:*?/\\, no clashes, `'` escaped in chart refs) instead of crashing after the fetch; xirr() truly never raises; future-dated MF_SIP/PPF_Ledger rows wait for their date; text-in-number cells, pre-1980 dates and not-Yes/No Settings warn; Owner/metal joins are case-insensitive like Excel; file-opened-mid-run fails in plain words and cleans its temp | tests/test_v162_stability.py (16): overflow warning names sheet+cap, 250-row round trip, purge keeps exactly this run's backup, relock backs up, CA invalid ⇒ RuntimeError / valid-empty ⇒ checked, AMFI tiny ⇒ master kept, tab-name matrix + D''Souza escape, year-9999/serial-0 ⇒ None, future rows excluded, 'Y' means Yes under Privacy, AMIT→Amit, gold→Gold, PermissionError message + tmp cleanup |
+| Sec 70 cross-bucket netting (§6.16) | Debt-fund/slab ST losses shelter equity ST tax first, excess reduces LTCG; debt LT losses reduce LTCG (never STCG); all before the §112A allowance, era-gated, dust-clamped; column L widens to "Losses used vs LTCG ₹" (blank-when-zero, masked-presence rule kept); raw columns never fold anything in | 4 goldens: slab loss wipes equal eq-ST tax; 2L slab loss vs 0.5L ST + 3L LT ⇒ set-off 1.5L, tax_ltcg 25k×12.5%; debt LT loss reduces LTCG not STCG; equity losses never change debt/slab display sums |
+
+Docs in-commit: SPEC §3.6/§3.7/§3.19/§3.21/§5-in-§7/§6.16/§7; USER-GUIDE
+(lot-entry guidance in §5 — Jay's ask, honesty bullets, column tour,
+footer); Guide sheet (lots line + losses line); README; ROADMAP (netting ✅,
+stability ✅, cuts recorded); release notes v1.6.2. Suite: 258 tests.
+
 ## Release artifact layout (from R4)
 
 ```
