@@ -108,9 +108,12 @@ def test_mf_linkage(wb):
 
 
 def test_fd_formula(wb):
+    from networth import model as M
     f = wb["FixedDeposits"]
     assert "YEARFRAC($F4,MIN(TODAY(),$G4))" in f["I4"].value
-    assert f["J55"].value == "=SUM(J4:J53)"
+    # derived from the budget, so raising the cap needs no test edit
+    assert (f[f"J{M.FD_TOTAL_ROW}"].value
+            == f"=SUM(J4:J{M.FD_LAST_ROW})")
 
 
 def test_projection_span(wb):

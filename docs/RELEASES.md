@@ -350,6 +350,20 @@ broker files, never-double-counted note); Guide sheet ("Funds in demat"
 row); By Scrip sheet hint; release notes v1.7.1. Suite: 353 tests
 (20 added).
 
+## v1.7.2 — "Room for a hundred fixed deposits" (2026-08-09)
+
+Jay's own workbook grew to 54 FDs and the updater refused to run
+(`FixedDeposits holds 54 rows but the sheet can only save 50`). Refusing
+was correct — truncation would lose a typed deposit — but the budget was
+simply too low for a family that ladders FDs.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| FixedDeposits budget 50 → 100 (§2, §3.8) | `FD_LAST_ROW` 53 → 103 (TOTAL row 105); the total formula, the Bank type-ahead validation range and `_refuse_overfull` all derive from the constant, so nothing else needed touching. Existing rows, totals and returns unchanged | test_v172_fd_capacity.py: budget is exactly 100; a sheet filled to the cap round-trips losslessly and passes `_refuse_overfull`; the 54-row workbook that failed on v1.7.1 now fits. Two older tests that hard-coded row 53/55 now derive from the constant, so the next raise needs no test edits |
+
+Docs in-commit: SPEC §2 row budgets; release notes v1.7.2; README badges.
+Suite: 356 tests (3 added).
+
 ## Release artifact layout (from R4)
 
 ```

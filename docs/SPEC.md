@@ -72,7 +72,7 @@ The generator takes a configuration (defaults in parentheses):
 | `locale.date_format` | display format for dates (`dd-mm-yyyy`) |
 | `inflation_default` | Dashboard inflation input default (7 %) |
 | `expected_return_default` | v1: Dashboard expected-return input default for the FY-end estimate (10 %) |
-| `row_budgets` | max data rows per sheet: Equity 137, MutualFunds 60, MF_SIP 500, FixedDeposits/PPF/Bonds ≥ 30, By Scrip 150 (v1.7.1 — auto-synced, must hold every distinct held ISIN) |
+| `row_budgets` | max data rows per sheet: Equity 137, MutualFunds 60, MF_SIP 500, FixedDeposits 100 (v1.7.2 — was 50; families ladder many FDs), PPF/Bonds ≥ 30, By Scrip 150 (v1.7.1 — auto-synced, must hold every distinct held ISIN) |
 | `sample_data` | whether to include the fictional sample rows (on for the released template) |
 
 Person names appear in three places that must stay consistent: the Dashboard

@@ -28,8 +28,8 @@ MF_TOTAL_ROW = MF_LAST_ROW + 2
 SIP_LAST_ROW = 3003            # v1.7: was 1003 — an imported family CAS
                                # (2 investors × 8 funds × 10 years) needs
                                # verbatim room; exact history beats condensing
-FD_LAST_ROW = 53
-FD_TOTAL_ROW = 55
+FD_LAST_ROW = 103              # v1.7.2: was 53 — a real family runs many FDs
+FD_TOTAL_ROW = 105
 PPF_LAST_ROW = 43
 PPF_TOTAL_ROW = 45
 PPF_LEDGER_LAST_ROW = 503

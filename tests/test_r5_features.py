@@ -99,7 +99,9 @@ def test_bank_master_and_dropdown(built, wb):
     with zipfile.ZipFile(built) as z:
         idx = wb.sheetnames.index("FixedDeposits") + 1
         fd = z.read(f"xl/worksheets/sheet{idx}.xml").decode()
-    assert "OFFSET(Bank_Master!$A$3" in fd and 'sqref="B4:B53"' in fd
+    from networth import model as M
+    assert ("OFFSET(Bank_Master!$A$3" in fd
+            and f'sqref="B4:B{M.FD_LAST_ROW}"' in fd)
 
 
 def test_bond_maturity_columns(wb):
