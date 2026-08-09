@@ -364,6 +364,23 @@ simply too low for a family that ladders FDs.
 Docs in-commit: SPEC §2 row budgets; release notes v1.7.2; README badges.
 Suite: 356 tests (3 added).
 
+## v1.7.3 — "DCM Shriram Industries' demerger, filled in for you" (2026-08-09)
+
+Curated-data release (the standing R14 duty). A **user** reported holding
+DCM Shriram Industries from before its December 2025 demerger and seeing
+only the 2021 split on Corporate_Actions, with "Qty today" unchanged.
+Both halves of that are working as designed — a demerger never changes
+the parent's share count, and demergers are never auto-fetched — but the
+event itself was missing from the shipped curated file, so no child rows
+and no cost apportionment appeared.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| DCM Shriram Industries three-way demerger in `restructures.csv` | Three curated rows, ex-date 26-12-2025 (record date; NCLT sanction 21-11-2025, scheme effective 17-12-2025): retention DCMSRIND `INE843D01027` 42.66%, child DSFCL `INE0OFM01015` 25.22%, child DCMSIL `INE0OU201013` 32.12%, each 1:1 — the company's own apportionment notice (03-02-2026). Children listed 17-02-2026, so they price from the bhavcopy like any share | test_v173_dcm_demerger.py: the shipped file carries all three rows with the right ISINs/ratios/percentages and factor 1; a 2019 lot (through the 2021 split) gains exactly 2 child rows of 500 at the inherited cost date with the cost conserved to the rupee; a lot bought after the record date gains none; plus a generic invariant that **every** shipped demerger apportions to exactly 100 — a typo in any future curated event now fails a test |
+
+Docs in-commit: release notes v1.7.3; README badges. Suite: 360 tests
+(4 added).
+
 ## Release artifact layout (from R4)
 
 ```
