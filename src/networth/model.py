@@ -306,12 +306,25 @@ class EquityRow:
     cost_factor: float | None = None
     # updater-written informational flag ("MERGED→<name>", "DEMERGER:<isin>@<date>")
     flag: str = ""
+    # v1.7.4 (§3.6): your own price per share, used ONLY while the exchange
+    # quotes none — unlisted/pre-IPO holdings value correctly today, and the
+    # day the company lists the real price takes over with no edit needed.
+    manual_price: float | None = None
     # import-written (§6.18): the date this row's Quantity is true AS OF.
     # A broker holdings file reports the POST-split/bonus share count, so
     # corporate actions up to this date must never re-apply to it — the
     # adjustment window runs from here, not from the (older) Cost date.
     # Blank for typed rows: their Quantity is as-bought (as of Cost date).
     qty_asof: date | None = None
+
+
+def effective_price(row) -> float | None:
+    """The price a row values at (§3.6): the exchange's close when there is
+    one, else the user's own 'Price if unlisted'. ONE definition — the sheet
+    formula, the totals and every Python computation must agree."""
+    if row.close is not None:
+        return row.close
+    return row.manual_price
 
 
 def qty_anchor(row) -> date | None:

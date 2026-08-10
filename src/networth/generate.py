@@ -726,6 +726,17 @@ def _write_equity(wb, F, data: PortfolioData):
     # machinery, not user input (hidden column; survives round-trips)
     ws.write("U3", "Qty as of", F["key"])
     ws.set_column("U:U", 11, None, {"hidden": True})
+    # V (v1.7.4): an INPUT cell — the only price the user may type. Used
+    # while the exchange quotes nothing (unlisted/pre-IPO), and stepped
+    # over automatically the day a real close arrives.
+    ws.write("V3", "Price if unlisted", F["header"])
+    ws.set_column("V:V", 15)
+    ws.write_comment("V3", "Own shares that aren't listed on an exchange "
+                           "yet? Type what one share is worth here and the "
+                           "holding is valued at it. The moment the company "
+                           "lists, the market price takes over by itself - "
+                           "you don't have to change anything. Leave blank "
+                           "for listed shares.")
     ws.write_comment("T3", "Written by the updater after a demerger: the share "
                            "of your cost that stays with this row. Invested = "
                            "Quantity x Avg. cost x this. Blank = 1. Your typed "
@@ -796,12 +807,17 @@ def _write_equity(wb, F, data: PortfolioData):
                 ws.write_datetime(f"M{r}", row.cost_date, F["in_date"])
             if row.qty_asof is not None:
                 ws.write_datetime(f"U{r}", row.qty_asof, F["date_disp"])
+            if row.manual_price is not None:
+                ws.write_number(f"V{r}", row.manual_price, F["in_price"])
         if row and row.ca_factor is not None:
             ws.write_number(f"S{r}", row.ca_factor, F["c_units"])
         if row and row.cost_factor is not None:
             ws.write_number(f"T{r}", row.cost_factor, F["c_units"])
+        # the exchange price wins; "Price if unlisted" fills in only when
+        # there is none, so a holding needs no edit the day it lists (§3.6)
         ws.write_formula(f"I{r}",
-                         f'=IF($D{r}="","",$D{r}*IF($S{r}="",1,$S{r})*$F{r})',
+                         f'=IF($D{r}="","",$D{r}*IF($S{r}="",1,$S{r})'
+                         f'*IF($F{r}="",$V{r},$F{r}))',
                          F["c_money"])
         ws.write_formula(f"J{r}",
                          f'=IF(OR($D{r}="",$E{r}=""),"",'
@@ -1635,7 +1651,7 @@ def _write_by_scrip(wb, F, data: PortfolioData):
 def _write_corporate_actions(wb, F, data: PortfolioData):
     ws = wb.add_worksheet("Corporate_Actions")
     _widths(ws, {"A": 14, "B": 16, "C": 16, "D": 12, "E": 11, "F": 11, "G": 9,
-                 "H": 9, "I": 46, "J": 16, "K": 9, "L": 12})
+                 "H": 9, "I": 46, "J": 16, "K": 9, "L": 12, "M": 30, "N": 13})
     _sheet_head(ws, F, "CORPORATE ACTIONS (SPLITS / BONUSES / RESTRUCTURES)",
                 "Auto rows are fetched for your held stocks on every update; "
                 "Curated rows (mergers/demergers) ship with each release. Add "
@@ -1643,7 +1659,13 @@ def _write_corporate_actions(wb, F, data: PortfolioData):
                 "rewritten - factors apply at valuation time.")
     ws.write_row("A3", ["Symbol", "ISIN", "Type", "Ex-Date", "Ratio From",
                         "Ratio To", "Factor", "Source", "Details", "New ISIN",
-                        "Cost %", "Applied"], F["header"])
+                        "Cost %", "Applied", "New name", "New symbol"],
+                 F["header"])
+    ws.write_comment("M3", "What to call the new company on your Equity "
+                           "sheet. Leave it blank and the ISIN is used as "
+                           "the name - fill it in and the row reads properly.")
+    ws.write_comment("N3", "The new company's exchange symbol, if you know "
+                           "it. Used as the name when 'New name' is blank.")
     ws.write_comment("E3", "SPLIT/CONSOLIDATION: old face value. BONUS/MERGER/"
                            "DEMERGER: A of A:B (A new shares per B held).")
     ws.write_comment("F3", "SPLIT/CONSOLIDATION: new face value. BONUS/MERGER/"
@@ -1684,6 +1706,13 @@ def _write_corporate_actions(wb, F, data: PortfolioData):
                 ws.write_number(f"K{r}", a.cost_pct, fmt)
             if a.applied:
                 ws.write_datetime(f"L{r}", a.applied, F["date_disp"])
+            # v1.7.4: a hand-entered restructure can now NAME the new
+            # company — without these the child row was labelled with its
+            # raw ISIN, and Stock_Master kept that placeholder for good
+            if a.new_name:
+                ws.write(f"M{r}", a.new_name, fmt)
+            if a.new_symbol:
+                ws.write(f"N{r}", a.new_symbol, fmt)
         ws.write_formula(f"G{r}",
                          f'=IF(OR($C{r}="",$E{r}="",$F{r}=""),"",'
                          f'IF($C{r}="BONUS",1+$E{r}/$F{r},'

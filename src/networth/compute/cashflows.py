@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..model import ClassXirr, PortfolioData, enabled_classes
+from ..model import (ClassXirr, PortfolioData, effective_price,
+                     enabled_classes)
 from .xirr import xirr
 
 Flow = tuple[date, float]
@@ -32,7 +33,8 @@ def flat_accrual(balance: float, rate_pct: float, as_on: date,
 def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
     flows: list[Flow] = []
     for r in data.equity:
-        if not (r.qty and r.avg_cost and r.close and r.cost_date):
+        px = effective_price(r)
+        if not (r.qty and r.avg_cost and px and r.cost_date):
             continue
         if r.cost_date >= today:
             continue
@@ -41,7 +43,7 @@ def equity_flows(data: PortfolioData, today: date) -> list[Flow]:
         # (parent retains nothing) — only blank means "no demerger".
         cf = r.cost_factor if r.cost_factor is not None else 1.0
         flows.append((r.cost_date, -r.qty * r.avg_cost * cf))
-        flows.append((today, r.qty * (r.ca_factor or 1.0) * r.close))
+        flows.append((today, r.qty * (r.ca_factor or 1.0) * px))
     # v1.6: dividends and recorded sales are real cash — they belong in the
     # return. Appended AFTER the per-row pairs (tests pin flows[0]/[1] as the
     # first row's outflow/inflow). Dividend rows are estimates (amber, §6.12);

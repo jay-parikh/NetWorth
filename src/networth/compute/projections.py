@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..model import PortfolioData, enabled_classes
+from ..model import PortfolioData, effective_price, enabled_classes
 from .cashflows import _yearfrac, coupon_dates, flat_accrual
 
 
@@ -34,8 +34,9 @@ def fy_expected_by_person(data: PortfolioData, today: date | None = None
 
     if "equity" in on:
         for r in data.equity:
-            if r.qty and r.close:
-                add(r.owner, r.qty * (r.ca_factor or 1.0) * r.close * growth)
+            px = effective_price(r)
+            if r.qty and px:
+                add(r.owner, r.qty * (r.ca_factor or 1.0) * px * growth)
 
     if "mutual_funds" in on:
         nav_units: dict[tuple[str, str], float] = {}

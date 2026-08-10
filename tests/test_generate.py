@@ -86,7 +86,11 @@ def test_dashboard_formulas(wb):
 
 def test_equity_sheet(wb):
     e = wb["Equity"]
-    assert e["I4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4)*$F4)'
+    # v1.7.4: the exchange close wins; V ("Price if unlisted") stands in
+    # only when there is none, so a holding needs no edit the day it lists
+    assert e["I4"].value == ('=IF($D4="","",$D4*IF($S4="",1,$S4)'
+                             '*IF($F4="",$V4,$F4))')
+    assert e["V3"].value == "Price if unlisted"
     assert e["O4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4))'
     assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4*IF($T4="",1,$T4)/IF($S4="",1,$S4))'
     assert e["O3"].value == "Qty today" and e["P3"].value == "Avg cost today"

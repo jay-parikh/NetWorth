@@ -69,6 +69,7 @@ GUIDE_ROWS: list[tuple] = [
     ("kv", "A forgotten old cost", 'bought before Feb 2018 and don\'t know the price? Leave "Avg. cost" blank — the official 2018 value fills in'),
     ("kv", "Old paper shares", 'know only the company and how many? Type the quantity, leave "Avg. cost" blank, and put 31-01-2018 as the Buy date — the official 2018 value fills in and the tax maths is right'),
     ("kv", "Delisted shares", "kept at their last known price and shaded amber so you can spot them"),
+    ("kv", "Not listed yet", 'pre-IPO or private company shares? Fill the row as usual and type what one share is worth in "Price if unlisted" (last column on the Equity tab). The day it lists, the market price takes over on its own - nothing to change.'),
     ("text", "To refresh it all: close the file and double-click \"Update Portfolio\". It backs up first, then updates every price and figure. Once a week is plenty."),
     ("space",),
 

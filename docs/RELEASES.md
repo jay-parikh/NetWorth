@@ -381,6 +381,26 @@ and no cost apportionment appeared.
 Docs in-commit: release notes v1.7.3; README badges. Suite: 360 tests
 (4 added).
 
+## v1.7.4 — "Names, ETFs and shares that aren't listed yet" (2026-08-09)
+
+Three user reports in one issue, plus the curated-data duty. The naming
+one is the nastiest: a hand-entered demerger had no way to say what the
+new company is CALLED, so `_event_name` fell through to the raw ISIN —
+which became the child row's Scrip *and* was seeded into Stock_Master,
+where add-only (§6.4) made it permanent.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Corporate_Actions `New name` / `New symbol` columns (§3.9/§6.15) | A Manual restructure row can name the new company; both columns append at M/N so pre-v1.7.4 files read back unchanged. Existing placeholders self-heal: `_merge_stock_master` now upgrades a row whose name IS its own ISIN when the feed knows the real one (the ONE exception to add-only — it protects names a user chose, and an ISIN-as-name was never chosen) and returns the renames so Equity rows showing the placeholder are relabelled | test_v174: typed name wins; symbol used when only it is given; placeholder upgraded and the table stays sorted; a REAL name is never overwritten by the feed |
+| NSE fetch resilience (§5.3) | One refused NSE request used to cost the whole day's NSE data, silently freezing the price of anything listed only on NSE (most ETFs — the report was Nippon India Silver ETF / SILVERBEES) while BSE-listed rows updated. Now: cookie warm-up on `/` **and** `/all-reports`, full browser headers incl. `Referer`, 3 attempts re-warming each time, and a fallback to the legacy `content/historical/EQUITIES/...` archive whose columns the same parser reads; zip or plain CSV both accepted, bot-challenge HTML still rejected | test_v174 with a stub session: succeeds after 2 refusals; falls back to the legacy archive; returns None (degrading to single-source) when every attempt is refused; an INF-prefixed ETF ISIN parses and prices like any share |
+| Equity `Price if unlisted` column V (§3.6) | Unlisted/pre-IPO shares finally have an honest home — an INPUT cell (the sheet's rule is "type only in coloured cells", so the grey Closing Price cell was never the answer). Used ONLY while the exchange quotes nothing, so the market price takes over by itself on listing day with no edit. `model.effective_price()` is the single definition shared by the sheet formula, net worth, XIRR, projections and the capital-gains view | test_v174: valued at the typed price, superseded by a close; counts in net worth and equity XIRR; round-trips; never flagged Delisted (no close date ever arrived) |
+| Tata Motors demerger in `restructures.csv` | Two curated rows, ex-date 14-10-2025 (record date; NCLT 25-08/10-09-2025, effective 01-10-2025): retention `INE155A01022` (renamed Tata Motors Passenger Vehicles) 68.85%, child `INE1TAE01010` (TML Commercial Vehicles, renamed Tata Motors Limited, TMCV) 31.15%, 1:1 — official apportionment filed with BSE/NSE 12-11-2025; child listed 12-11-2025 | test_v174: the shipped file carries both rows with the right ISINs/percentages, factor 1, and a name on every curated row; the §6.15 Σ=100 invariant covers it |
+
+Docs in-commit: SPEC §3.6 (col V + Cur. val formula), §3.9/§6.15 (naming
+columns), §5.3 (NSE resilience), §6.4 (the placeholder exception);
+USER-GUIDE §5 (unlisted shares, ETFs); Guide sheet ("Not listed yet");
+release notes v1.7.4; README badges. Suite: 373 tests (13 added).
+
 ## Release artifact layout (from R4)
 
 ```

@@ -23,11 +23,32 @@ BSE_URL = ("https://www.bseindia.com/download/BhavCopy/Equity/"
            "BhavCopy_BSE_CM_0_0_0_{ymd}_F_0000.CSV")
 NSE_URL = ("https://nsearchives.nseindia.com/content/cm/"
            "BhavCopy_NSE_CM_0_0_0_{ymd}_F_0000.csv.zip")
+# fallback archive (pre-UDiFF layout, still served for many dates): same
+# ISIN/CLOSE/PREVCLOSE columns, so the one parser reads either (v1.7.4)
+NSE_LEGACY_URL = ("https://nsearchives.nseindia.com/content/historical/"
+                  "EQUITIES/{year}/{mon}/cm{ddmonyyyy}bhav.csv.zip")
 NSE_WARMUP = "https://www.nseindia.com/"
+# NSE hands out its cookie on the site pages, then checks it on the archive
+# host; the reports page is what a browser visits before downloading
+NSE_WARMUP_PAGES = ("https://www.nseindia.com/",
+                    "https://www.nseindia.com/all-reports")
+NSE_TRIES = 3          # a refused first call usually passes once cookied
 MAX_BACK = 7
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9"}
+# the archive host refuses plain requests: a browser sends these too, and
+# NSE's edge checks them (SPEC §5.3). Referer must be the site, not the CDN.
+_NSE_HEADERS = {**_HEADERS,
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/124.0 Safari/537.36"),
+                "Accept": ("text/html,application/xhtml+xml,application/xml;"
+                           "q=0.9,*/*;q=0.8"),
+                "Accept-Encoding": "gzip, deflate, br",
+                "Referer": "https://www.nseindia.com/all-reports",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1"}
 
 ISIN_KEYS = ("isin", "isin_code", "isin no", "isin no.", "isin code")
 CLOSE_KEYS = ("clspric", "close", "close_price", "last", "lasttradedprice")
@@ -118,20 +139,51 @@ def _get_bse(sess, d: date, timeout: int) -> str | None:
     return None
 
 
+def _nse_urls(d: date) -> tuple[str, ...]:
+    return (NSE_URL.format(ymd=d.strftime("%Y%m%d")),
+            NSE_LEGACY_URL.format(year=d.year, mon=d.strftime("%b").upper(),
+                                  ddmonyyyy=d.strftime("%d%b%Y").upper()))
+
+
+def _nse_body(resp) -> str | None:
+    """The CSV inside an NSE response — zipped (both archives) or plain."""
+    if resp.status_code != 200 or not resp.content:
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            inner = [n for n in z.namelist() if n.lower().endswith(".csv")]
+            return (z.read(inner[0]).decode("utf-8", errors="replace")
+                    if inner else None)
+    except zipfile.BadZipFile:
+        # a 200 that isn't a zip is either a plain CSV or NSE's bot-challenge
+        # HTML page — the header sniff below tells them apart
+        text = resp.text or ""
+        return text if "isin" in text[:2000].lower() else None
+
+
 def _get_nse(sess, d: date, timeout: int) -> str | None:
-    sess.get(NSE_WARMUP, headers=_HEADERS, timeout=timeout)   # cookie warm-up
-    resp = sess.get(NSE_URL.format(ymd=d.strftime("%Y%m%d")),
-                    headers=_HEADERS, timeout=timeout)
-    if resp.status_code == 200:
-        try:
-            with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-                inner = [n for n in z.namelist() if n.lower().endswith(".csv")]
-                if inner:
-                    return z.read(inner[0]).decode("utf-8", errors="replace")
-        except zipfile.BadZipFile:
-            # a 200 that isn't a zip (bot-challenge HTML page): treat as
-            # NSE-unavailable so the day degrades to BSE-only per SPEC §5.2
-            return None
+    """NSE for ONE date: UDiFF archive first, then the legacy layout, with a
+    cookie warm-up before each attempt (v1.7.4).
+
+    NSE's edge refuses uncookied requests, and a single refusal used to cost
+    the whole day's NSE data — which silently froze the price of anything
+    listed ONLY on NSE (most ETFs), while BSE-listed rows kept updating.
+    Retrying with a fresh cookie is what a browser effectively does.
+    """
+    for attempt in range(NSE_TRIES):
+        for page in NSE_WARMUP_PAGES:
+            try:
+                sess.get(page, headers=_NSE_HEADERS, timeout=timeout)
+            except Exception:      # noqa: BLE001 - warm-up is best-effort
+                pass
+        for url in _nse_urls(d):
+            try:
+                resp = sess.get(url, headers=_NSE_HEADERS, timeout=timeout)
+            except Exception:      # noqa: BLE001 - try the next URL/attempt
+                continue
+            body = _nse_body(resp)
+            if body:
+                return body
     return None
 
 

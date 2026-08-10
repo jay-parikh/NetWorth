@@ -160,7 +160,8 @@ def test_factor_flows_into_valuation_formulas(tmp_path):
     wb = load_workbook(path)
     e = wb["Equity"]
     assert e["S4"].value == 2.0
-    assert e["I4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4)*$F4)'
+    assert e["I4"].value == ('=IF($D4="","",$D4*IF($S4="",1,$S4)'
+                             '*IF($F4="",$V4,$F4))')   # v1.7.4 price fallback
     # demat-view columns derive from the same factor, zero user action
     assert e["O4"].value == '=IF($D4="","",$D4*IF($S4="",1,$S4))'
     assert e["P4"].value == '=IF(OR($D4="",$E4=""),"",$E4*IF($T4="",1,$T4)/IF($S4="",1,$S4))'

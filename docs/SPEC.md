@@ -319,7 +319,7 @@ a typed row to the budget, §7 step 5). Columns:
 | F | Closing Price | updater | last close by ISIN |
 | G | Prev. close | updater | previous close |
 | H | Closing Price Date | updater | bhavcopy date used (a real date cell — the stale-price amber conditional format keys on `TODAY()-$H4>7`) |
-| I | Cur. val | computed | `=IF($D4="","",$D4*$F4)` (v1: uses adjusted qty, §6.7) |
+| I | Cur. val | computed | `=IF($D4="","",$D4*IF($S4="",1,$S4)*IF($F4="",$V4,$F4))` (v1: adjusted qty §6.7; **v1.7.4**: falls back to the user's V price only when the exchange quotes none) |
 | J | Invested | computed | `=IF(OR($D4="",$E4=""),"",$D4*$E4*IF($T4="",1,$T4))` — × the v1.4 demerger Cost factor, blank = 1 |
 | K | Net chg. | computed | `=I−J` guarded |
 | L | Day chg. | computed | `=IF(OR($G4="",$D4=""),"",$D4*($F4-$G4))` |
@@ -331,6 +331,7 @@ a typed row to the budget, §7 step 5). Columns:
 | v1: R | Flags | updater helper | `FMV` (§6.6 fallback), `MERGED→<name>` / `ISIN→<isin>` (row priced via a successor, §6.15), `DEMERGER:<old_isin>@<ex_date>` (an appended child row) — flags round-trip regeneration. When a row carries both a restructure flag and `FMV` they are joined with `" | "`; neither may evict the other (the reader splits on the separator) |
 | v1: S | Adj factor | **updater-written** | split/bonus **and merger-ratio** multiplier since Cost date (§6.7/§6.15, chain-aware); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price` |
 | v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
+| v1.7.4: V | Price if unlisted | **input** | the user's own price per share, used ONLY while `F` (the exchange close) is empty — unlisted/pre-IPO holdings value correctly today and switch to the market price by themselves the day the security lists, with no edit. `model.effective_price(row)` is the single definition the sheet formula, the totals, XIRR, projections and the capital-gains view all share. Never written by the updater |
 | v1.7.1: U | Qty as of | **import-written**, hidden column | the date this row's Quantity is stated AS OF (§6.18). A broker HOLDINGS file reports the post-split/bonus count, so the corporate-action window for S/T starts here, not at Cost date — without it, history the broker already counted would re-apply (the ×5/×15 Qty-today bug). Blank for typed rows (their Quantity is as-bought). Round-trips like any input |
 
 Below the data block, one **updater-written** cell holds the equity-class
@@ -977,6 +978,20 @@ zip (NSE serves bot-challenge HTML pages with status 200) is treated exactly
 like NSE-unavailable: the day proceeds single-source on BSE — it must never
 abort the fetch or discard already-parsed BSE data.
 
+**Resilience (v1.7.4)** — losing NSE is not cosmetic: a security listed
+ONLY on NSE (most ETFs, e.g. SILVERBEES) then keeps yesterday's price
+while BSE-listed rows update, with nothing on screen to explain it. One
+refusal must therefore not cost the day. The fetch: warms cookies on
+`https://www.nseindia.com/` **and** `/all-reports` (the page a browser
+visits before downloading), sends the full browser header set including
+`Referer`, and retries up to `NSE_TRIES` (3) times, re-warming each time;
+each attempt tries the UDiFF archive above and then the **legacy layout**
+`…/content/historical/EQUITIES/<YYYY>/<MON>/cm<DDMONYYYY>bhav.csv.zip`,
+whose ISIN/CLOSE/PREVCLOSE columns the same parser reads. A response may
+be a zip or a plain CSV (sniffed by an `isin` header, so a challenge page
+is still rejected). Only after every attempt fails does the day degrade to
+single-source.
+
 ### 5.4 Corporate actions (v1, R7; dual-source since v1.0.0-rc)
 
 Per held stock, fetch historical + announced actions from **both exchanges**
@@ -1189,6 +1204,12 @@ Buy Date; coupons with date ≤ today enter the XIRR cashflows; future coupons
 new = fetched list;  existing = current master rows (key: ISIN)
 for isin in new:  if isin not in existing → append (symbol, name, isin)
 never rename or delete an existing row (user rows key on the NAME)
+   EXCEPT (v1.7.4) a PLACEHOLDER row whose name IS its own ISIN — seeded
+   by §6.15 before the security listed: adopt the feed's real name and
+   return it to the caller, which relabels any Equity row still showing
+   the placeholder (those rows price by their own ISIN cell, so this is
+   cosmetic). Add-only protects names a user CHOSE; an ISIN-as-name was
+   never chosen, and leaving it would make it permanent.
 resort whole table by name (ordinal, case-insensitive)   # dropdown requirement
 write refresh date to E2
 ```
@@ -1275,7 +1296,13 @@ Scrip quantities and the person-sheet Equity blocks read O/P (not raw D/E).
 The **Corporate_Actions sheet** is the audit trail: columns
 `Symbol, ISIN, Type (dropdown), Ex-Date, Ratio From, Ratio To, Factor
 (=IF(type="BONUS",1+E/F,E/F), computed), Source, Details` (+ the §6.15
-restructure columns), data rows 4..203. Auto rows are rewritten from the
+restructure columns `New ISIN, Cost %, Applied` and, **v1.7.4**,
+`New name, New symbol`), data rows 4..203. The two naming columns exist
+because a hand-entered restructure previously had no way to say what the
+new company is CALLED: `_event_name` fell through to the raw ISIN, which
+then became the child row's Scrip *and* was seeded into Stock_Master —
+where add-only (§6.4) made it permanent. Curated rows always carry a name;
+Manual rows now can. Auto rows are rewritten from the
 feed each run; Manual rows are user inputs and persist (they also override
 an Auto row with the same isin/type/ex-date). **Row order & capacity:**
 Manual and Curated rows are written FIRST — they carry user data and the

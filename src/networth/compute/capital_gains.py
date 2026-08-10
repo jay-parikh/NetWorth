@@ -30,8 +30,8 @@ from datetime import date, timedelta
 
 from ..model import (
     EQSELL_LAST_ROW, FIRST_DATA_ROW, PortfolioData, TaxRule,
-    chained_adjustment_factor, effective_tax_rules, fy_label, load_fmv,
-    tax_rule_for,
+    chained_adjustment_factor, effective_price, effective_tax_rules,
+    fy_label, load_fmv, tax_rule_for,
 )
 
 GRANDFATHER_DATE = date(2018, 1, 31)   # FMV valuation day (§6.6)
@@ -332,14 +332,15 @@ def capital_gains_report(data: PortfolioData, today: date,
     eq_rule_now = tax_rule_for(rules, "equity", today)
     eq_lt = eq_rule_now.lt_days if eq_rule_now else 365
     for r in data.equity:
-        if not (r.qty and r.avg_cost and r.close and r.cost_date):
+        px = effective_price(r)
+        if not (r.qty and r.avg_cost and px and r.cost_date):
             continue
         if r.cost_date >= today:
             continue
         isin = r.isin_override or isin_by_name.get(r.scrip, "")
         # identical arithmetic to equity_flows (§6.2) so the two surfaces
         # can never drift
-        value = r.qty * (r.ca_factor or 1.0) * r.close
+        value = r.qty * (r.ca_factor or 1.0) * px
         cf = r.cost_factor if r.cost_factor is not None else 1.0
         cost = r.qty * r.avg_cost * cf
         note = ""
@@ -347,7 +348,7 @@ def capital_gains_report(data: PortfolioData, today: date,
             f = fmv_per_share(isin, today)
             if f is not None:
                 qty_today = r.qty * (r.ca_factor or 1.0)
-                px_today = r.close
+                px_today = px
                 gf_sh = max((cost / qty_today) if qty_today else 0.0,
                             min(f, px_today))
                 cost = qty_today * gf_sh

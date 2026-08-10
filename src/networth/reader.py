@@ -249,6 +249,10 @@ def read_workbook(source) -> PortfolioData:
             ca_factor=_as_float(ws.cell(r, 19).value),            # S = Adj factor
             cost_factor=_as_float(ws.cell(r, 20).value),          # T = Cost factor
             qty_asof=_as_date(ws.cell(r, 21).value),              # U (§6.18)
+            # V (v1.7.4): the user's own price for an unlisted holding —
+            # blank in pre-v1.7.4 files
+            manual_price=_num(ws, r, 22, "Price if unlisted",
+                              data.warnings),
         ))
 
     ws = wb["MutualFunds"]
@@ -464,6 +468,10 @@ def read_workbook(source) -> PortfolioData:
                 new_isin=_as_str(ws.cell(r, 10).value),
                 cost_pct=_as_float(ws.cell(r, 11).value),
                 applied=_as_date(ws.cell(r, 12).value),
+                # v1.7.4 (§6.15): blank in pre-v1.7.4 files — the child row
+                # then falls back to the symbol, else the ISIN
+                new_name=_as_str(ws.cell(r, 13).value),
+                new_symbol=_as_str(ws.cell(r, 14).value),
             ))
 
     if "Dividends" in wb.sheetnames:

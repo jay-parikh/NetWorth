@@ -186,6 +186,20 @@ Things this tab quietly does for you:
   the tax view is right. Nothing else to hunt for.
 - **Delisted shares** — kept at their last traded price and flagged, never
   silently stale. You can type a price override.
+- **Shares that aren't listed yet** *(v1.7.4)* — pre-IPO holdings, employee
+  shares, a private company. Fill in Owner, the company name, Quantity,
+  *Avg. cost* and the Buy date as usual, and put what one share is worth
+  today in **Price if unlisted** (the last column on the tab). The holding
+  is then valued, counted in your net worth and included in your return —
+  no exchange needed. **The day the company lists, the market price takes
+  over by itself**: the exchange price always wins, and your typed one is
+  only used while there is none. Nothing to delete, nothing to change.
+  Tip: if you know the company's ISIN, type it in the **ISIN** column —
+  that's the code prices arrive by, so the switchover is automatic on
+  listing day.
+- **ETFs** — an ETF (say SILVERBEES) is a share like any other here: pick
+  it from the *Scrip* dropdown by its exchange name and it prices daily.
+  If it isn't in the dropdown, type its ISIN in the ISIN column.
 
 ---
 

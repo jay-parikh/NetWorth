@@ -237,18 +237,31 @@ def sync_by_scrip(data, isin_by_name: dict[str, str]) -> str | None:
 
 
 def _merge_stock_master(existing: list[tuple[str, str, str]],
-                        fetched: list[tuple[str, str, str]]) -> tuple[list, int]:
-    """Add-only (SPEC §6.4): known ISINs keep their names so user rows survive."""
-    known = {isin for _s, _n, isin in existing}
+                        fetched: list[tuple[str, str, str]]
+                        ) -> tuple[list, int, dict[str, str]]:
+    """Add-only (SPEC §6.4): known ISINs keep their names so user rows
+    survive. ONE exception (v1.7.4): a PLACEHOLDER name — the row a
+    restructure seeded before the security listed, where the name is just
+    the ISIN — is upgraded the moment the exchange tells us the real one.
+    Add-only exists to protect names a user row points at; an ISIN-as-name
+    is nobody's chosen label, and leaving it would make it permanent.
+    Returns (rows, added, renamed) — renamed maps isin -> new name so the
+    caller can relabel the Equity rows still showing the placeholder."""
+    at = {isin: i for i, (_s, _n, isin) in enumerate(existing)}
     merged = list(existing)
     added = 0
+    renamed: dict[str, str] = {}
     for sym, name, isin in fetched:
-        if isin not in known:
+        i = at.get(isin)
+        if i is None:
+            at[isin] = len(merged)
             merged.append((sym, name, isin))
-            known.add(isin)
             added += 1
+        elif merged[i][1] == isin and name and name != isin:
+            merged[i] = (sym or merged[i][0], name, isin)
+            renamed[isin] = name
     merged.sort(key=lambda r: r[1].casefold())
-    return merged, added
+    return merged, added, renamed
 
 
 def _replace_mf_master(existing: list[tuple[str, str, str]],
@@ -530,6 +543,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         matched = 0
         nse_only_hits = 0
         suspended = 0
+        unpriced: list[str] = []       # held, but no quote today (v1.7.4)
         name_by_isin_px = {isin: name for _s, name, isin in data.masters.stock_rows}
         for row in data.equity:
             isin = row.isin_override or isin_by_name.get(row.scrip, "")
@@ -573,8 +587,16 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                     data.masters.stock_status[isin] = (prev_status or "Active", last)
         summary["suspended"] = suspended
         summary["nse_only_matched"] = nse_only_hits
-        data.masters.stock_rows, added = _merge_stock_master(
+        data.masters.stock_rows, added, renamed = _merge_stock_master(
             data.masters.stock_rows, price_data.master_rows)
+        # a row still labelled with the raw ISIN (a restructure seeded it
+        # before the security listed, §6.15) now gets its real name —
+        # cosmetic only: these rows price by their own ISIN cell (v1.7.4)
+        for row in data.equity:
+            if row.scrip in renamed:
+                row.scrip = renamed[row.scrip]
+        if renamed:
+            summary["renamed_placeholders"] = len(renamed)
         data.masters.stock_refreshed = stamp
         summary["equity_matched"] = matched
         summary["equity_total"] = sum(1 for r in data.equity if r.scrip or r.isin_override)

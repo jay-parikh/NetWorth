@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..model import HistorySnapshot, PortfolioData
+from ..model import HistorySnapshot, PortfolioData, effective_price
 from .cashflows import _yearfrac, flat_accrual
 
 
@@ -28,8 +28,8 @@ def _mf_units(data: PortfolioData, today: date) -> dict[tuple[str, str], float]:
 
 
 def net_worth_snapshot(data: PortfolioData, today: date) -> HistorySnapshot:
-    equity = sum(r.qty * (r.ca_factor or 1.0) * r.close
-                 for r in data.equity if r.qty and r.close)
+    equity = sum(r.qty * (r.ca_factor or 1.0) * effective_price(r)
+                 for r in data.equity if r.qty and effective_price(r))
 
     units = _mf_units(data, today)
     mutual_funds = sum(units.get((m.owner, m.scheme), 0.0) * m.current_nav
