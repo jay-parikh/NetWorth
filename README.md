@@ -17,8 +17,8 @@ or your broker's file. All on **your own computer**. Nothing ever uploaded.
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Local](https://img.shields.io/badge/your%20data-100%25%20local-brightgreen)
-![Tests](https://img.shields.io/badge/tests-373%20passing-brightgreen)
-![Release](https://img.shields.io/badge/release-v1.7.4-blue)
+![Tests](https://img.shields.io/badge/tests-385%20passing-brightgreen)
+![Release](https://img.shields.io/badge/release-v1.7.5-blue)
 
 </div>
 
@@ -107,7 +107,7 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 | **Projection** | Your corpus over 20 years: your return vs inflation |
 | **Settings** | One **Show?** Yes/No per asset class (show only what you own — a hidden class keeps its rows but isn't counted, and one amber line on the Dashboard reminds you), a switch for the reference tabs, and your optional target allocation % per class |
 | **One tab per person** | Each family member's holdings and allocation |
-| **Equity** | Live prices, day/total change, per‑stock return, post‑split quantities, ▲/▼ day arrows |
+| **Equity** | Live prices, day/total change, per‑stock return, post‑split quantities, ▲/▼ day arrows. **ETFs** live here too — every one is in the dropdown, and its fund NAV stands in on a day the exchange is quiet *(v1.7.5)*. Shares **not listed yet** (pre‑IPO, private) get valued from a price you type, and switch to the market price by themselves on listing day *(v1.7.4)* |
 | **Mutual Funds** *(+ SIP ledger)* | Fund summary auto‑built from one‑row‑per‑purchase |
 | **Fixed Deposits / PPF / EPF** | Value today and at maturity; PPF interest by the official rules; EPF from your passbook balance at the declared rate |
 | **Gold & Silver** | SGBs priced like shares; jewellery/coins at the **daily bullion (IBJA) rate** × grams × purity — or your jeweller's rate if you type it |
@@ -117,7 +117,7 @@ themselves. **Green** = gain, **red** = loss, **amber** = *take a look*
 | **Dividends** | Every dividend your shares declared this financial year, logged automatically, with a by‑month chart — and counted in your return |
 | **Statement import** *(v1.7)* | Drop your fund statement (the free CAS PDF every MF investor can email themselves) or your broker's tradebook/holdings export (**CSV or Excel**, any broker whose file names its columns) next to the file and run the update — years of history type themselves in, every fund checked against the statement's own balance. Old paper shares at cost 0? One question dates them and the official 2018 value fills in. Funds held in demat (broker platforms) come in from the holdings file too — one opening line each, since the CAS often misses them *(v1.7.1)*. Re‑runs never double anything; splits and bonuses are never counted twice; who owns which folio is asked once and remembered (Import_Map); anything that can't be read reliably is left out with a plain reason, never guessed |
 | **Equity Sells** *(v1.6, optional)* | One row per share sale, straight from your contract note — feeds the tax view and your true return (a sale with its old buy price left blank counts in the tax view only) |
-| **Capital Gains** *(v1.6, optional)* | STCG & LTCG per year, the ₹1.25L tax‑free allowance you've used, an indicative tax figure, and the date each holding turns long‑term — with the pre‑2018 **grandfathering** rule applied for you. Intraday (same‑day) trades show separately as speculative income, never mixed in. Losses set off across your investments the way the law allows, in the same year — debt‑fund losses count too (v1.6.2) |
+| **Capital Gains** *(v1.6, optional)* | STCG & LTCG per year, the ₹1.25L tax‑free allowance you've used, an indicative tax figure, and the date each holding turns long‑term — with the pre‑2018 **grandfathering** rule applied for you. Intraday (same‑day) trades show separately as speculative income, never mixed in. Losses set off across your investments the way the law allows, in the same year — debt‑fund losses count too (v1.6.2). Gold, silver, overseas and bond ETFs are taxed as what they are, not as shares: they're shown under **Non‑equity fund gains** and never eat into the ₹1.25L equity allowance *(v1.7.5)* |
 | **Tax Rules** *(v1.6, optional)* | The capital‑gains rates, holding periods and allowance the report uses — editable in your workbook, so a Budget change needs no new app version |
 | **History** | A dated net‑worth snapshot per update — feeds the trend charts |
 | **Guide** | The 2‑minute manual, right inside the file |
@@ -244,7 +244,7 @@ Needs **Python 3.10+**. No compilers, no Excel, no admin rights.
 ```bash
 python -m networth.generate            # build the workbook from code (sample data)
 python -m networth.update <file.xlsx>  # refresh a workbook (must be closed in Excel)
-pytest                                 # 373 tests — golden values, parsers, scenario
+pytest                                 # 385 tests — golden values, parsers, scenario
                                        #   suites per milestone, round-trip identity
 ```
 
@@ -275,7 +275,7 @@ three OSes, builds the apps and attaches them to the GitHub Release.
 |---|---|
 | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | **For users** — every feature walked through with screenshots and worked examples |
 | [docs/SPEC.md](docs/SPEC.md) | **The product** — every sheet, data contract and algorithm, platform‑agnostic |
-| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.7.4) |
+| [docs/RELEASES.md](docs/RELEASES.md) | Milestone plan & acceptance criteria (R0 → v1.7.5) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Everything else, with ✅ / 🚧 / ⬜ status |
 | [docs/PLAN.md](docs/PLAN.md) · [docs/PLAN-v1.2.md](docs/PLAN-v1.2.md) | The approved architecture & design decisions |
 | [CLAUDE.md](CLAUDE.md) | Working notes & conventions for contributors |

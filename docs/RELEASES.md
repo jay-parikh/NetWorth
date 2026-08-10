@@ -401,6 +401,32 @@ columns), §5.3 (NSE resilience), §6.4 (the placeholder exception);
 USER-GUIDE §5 (unlisted shares, ETFs); Guide sheet ("Not listed yet");
 release notes v1.7.4; README badges. Suite: 373 tests (13 added).
 
+## v1.7.5 — "ETFs, where they belong and taxed as they are" (2026-08-10)
+
+The v1.7.4 NSE fix worked (prices arrived) but the user's next report was
+"the silver ETF still isn't in Stock_Master", and Jay's call was **all ETFs
+should be in Stock_Master**. Answering that raised the real question — *where
+should an ETF live?* — whose honest answer exposed a tax defect: every Equity
+row was hard-coded to the **equity** bucket, so a gold/silver/debt ETF
+wrongly received the ₹1.25L §112A allowance.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| ETFs seeded into Stock_Master from AMFI (§6.4) | An ETF is a fund that TRADES, so it belongs on both masters. Every MF_Master scheme whose name carries `ETF` (as a word) or `exchange traded` — never `fund of fund`/`FOF`, which aren't traded — is merged into Stock_Master add-only with a blank symbol, so ETFs are pickable even on a day an exchange refused us. A holding with no symbol and no BSE code is also excluded from the §6.7 "couldn't verify corporate actions" warning: it was never queried, so naming it every run was pure noise | test_v175: the classifier takes 4 real-shaped ETF names and rejects a plain fund, a FOF, "ETFO" and a blank ISIN; a BSE-only run lands the ETF in Stock_Master, its name resolves to the ISIN, and it is NOT named as unverified |
+| ETF price fallback to its NAV (§6.4) | On a day no exchange quotes an ETF, its same-day AMFI NAV becomes the close (an ETF's NAV is within a whisker of its traded price, and a same-day NAV beats a days-old quote). A real quote always wins — the fallback only fills ISINs absent from `priced_today` | test_v175: NAV used when the bhavcopy lacks it (`nav_priced` 1); a real close of 101.2 supersedes the 104.5 NAV and `nav_priced` is 0 |
+| Equity `Tax type` column W + `mf_other` rules (§3.6/§6.16/§3.22) | Blank/`Equity` (shares, index ETFs), `Debt` (bond ETFs → the existing Sec 50AA machinery), `Gold-Silver` (listed bullion/overseas ETFs → new `mf_other` bucket: LTCG 12.5 % after **12 months**, STCG at slab, **no** §112A allowance — they're listed securities outside Sec 50AA since Budget 2024). Sales inherit the type by scrip/ISIN; grandfathering and the allowance stay equity-only; the By-FY column is relabelled **Non-equity fund gains ₹** and the Sec 70 set-off nets mf_other with mf_debt (it nets by TERM, so that is the right head) | test_v175: word variants map to buckets; the bundled rule has lt_days 365 / 12.5 % / exempt 0; a Gold-Silver ETF stays out of the allowance while an index ETF uses it; blank behaves exactly as before; grandfathering refused for mf_other; a post-2023 Debt lot is slab-taxed; **the conservation invariant** — every realised rupee lands in exactly one summary figure — plus a guard that every bucket a Tax type can produce is summarised |
+
+The whitelist `TAXRULE_ASSETS` had to learn `mf_other` too — the existing
+Tax_Rules round-trip test caught the omission by failing (the new rows were
+being judged invalid and duplicated on the sheet), which is exactly what
+that test is for.
+
+Docs in-commit: SPEC §2 (col W), §3.6, §3.22, §6.4 (ETF seeding + NAV
+fallback), §6.16 (mf_other, set-off), §5.3 already covered NSE; USER-GUIDE
+§5 (ETFs) + §13 (the new column); Guide sheet ("ETFs"); Capital Gains sheet
+label + comment; release notes v1.7.5; README badges. Suite: 385 tests
+(12 added).
+
 ## Release artifact layout (from R4)
 
 ```

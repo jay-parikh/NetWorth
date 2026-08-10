@@ -70,6 +70,7 @@ GUIDE_ROWS: list[tuple] = [
     ("kv", "Old paper shares", 'know only the company and how many? Type the quantity, leave "Avg. cost" blank, and put 31-01-2018 as the Buy date — the official 2018 value fills in and the tax maths is right'),
     ("kv", "Delisted shares", "kept at their last known price and shaded amber so you can spot them"),
     ("kv", "Not listed yet", 'pre-IPO or private company shares? Fill the row as usual and type what one share is worth in "Price if unlisted" (last column on the Equity tab). The day it lists, the market price takes over on its own - nothing to change.'),
+    ("kv", "ETFs", 'they go on the Equity tab like any share - pick them from the Scrip dropdown (every ETF is in the list). One thing to set: if it is a GOLD, SILVER or overseas ETF, choose "Gold-Silver" in the "Tax type" column, and for a bond ETF choose "Debt". They are not taxed like shares, and the Capital Gains tab needs to know. Leave it blank for Nifty/Sensex ETFs and ordinary shares.'),
     ("text", "To refresh it all: close the file and double-click \"Update Portfolio\". It backs up first, then updates every price and figure. Once a week is plenty."),
     ("space",),
 

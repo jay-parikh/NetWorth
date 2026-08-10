@@ -253,6 +253,8 @@ def read_workbook(source) -> PortfolioData:
             # blank in pre-v1.7.4 files
             manual_price=_num(ws, r, 22, "Price if unlisted",
                               data.warnings),
+            # W (v1.7.5, §6.16): blank in pre-v1.7.5 files = taxed as equity
+            tax_type=_as_str(ws.cell(r, 23).value),
         ))
 
     ws = wb["MutualFunds"]

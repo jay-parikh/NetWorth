@@ -31,12 +31,15 @@ from datetime import date, timedelta
 from ..model import (
     EQSELL_LAST_ROW, FIRST_DATA_ROW, PortfolioData, TaxRule,
     chained_adjustment_factor, effective_price, effective_tax_rules,
-    fy_label, load_fmv, tax_rule_for,
+    equity_tax_bucket, fy_label, load_fmv, tax_rule_for,
 )
 
 GRANDFATHER_DATE = date(2018, 1, 31)   # FMV valuation day (§6.6)
 GRANDFATHER_CUTOFF = date(2018, 2, 1)  # bought before this → grandfathering
 DEBT_MF_SLAB_FROM = date(2023, 4, 1)   # debt-MF lots bought on/after → slab
+# buckets outside the §112A equity family: debt funds and, since v1.7.5,
+# listed bullion/overseas ETFs marked Gold-Silver on the Equity sheet
+NON_EQUITY_BUCKETS = ("mf_debt", "mf_other")
 DUST_INR = 1.0                         # FIFO residuals worth less than this are
                                        # float rounding (amounts are paise-
                                        # rounded, units NAV-derived), not
@@ -150,6 +153,22 @@ def capital_gains_report(data: PortfolioData, today: date,
     symbol_by_isin = {isin: sym for sym, _n, isin in data.masters.stock_rows}
     actions = data.corporate_actions
 
+    # v1.7.5 (§6.16): Tax type per holding, keyed by BOTH its name and its
+    # ISIN so an Equity_Sells row finds it either way. A non-blank marker
+    # wins over blanks (a user marks one row of a scrip and means the scrip).
+    eq_tax_type: dict[str, str] = {}
+    for r in data.equity:
+        if not (r.tax_type or "").strip():
+            continue
+        for key in (r.scrip, r.isin_override,
+                    isin_by_name.get(r.scrip, "")):
+            if key:
+                eq_tax_type.setdefault(key, r.tax_type)
+
+    def eq_bucket_for(scrip: str, isin: str) -> str:
+        return equity_tax_bucket(eq_tax_type.get(scrip)
+                                 or eq_tax_type.get(isin) or "")
+
     def fmv_per_share(isin: str, at: date) -> float | None:
         """31-01-2018 FMV expressed in the share units of `at` (§6.6): the
         bundled value is per 2018 share; splits/bonuses since then multiply
@@ -209,9 +228,17 @@ def capital_gains_report(data: PortfolioData, today: date,
                 "bought - check the two dates; left out for now")
             continue
         isin = s.isin_override or isin_by_name.get(s.scrip, "")
+        # v1.7.5: the sale inherits its holding's Tax type (§6.16). A bond or
+        # bullion ETF sits in the same demat account but is NOT equity, so it
+        # must not receive the §112A allowance or the 31-01-2018
+        # grandfathering (both are equity-only reliefs). The lookup is by
+        # scrip/ISIN because Equity_Sells has no Tax type of its own — a
+        # holding sold out completely AND deleted falls back to equity, which
+        # the SPEC states plainly.
+        bucket = eq_bucket_for(s.scrip, isin)
         note = ""
         cost_sh = s.buy_price
-        if s.buy_date < GRANDFATHER_CUTOFF:
+        if bucket == "equity" and s.buy_date < GRANDFATHER_CUTOFF:
             f = fmv_per_share(isin, s.sell_date)
             if f is not None:
                 # §6.6: taxable cost = higher of actual cost vs
@@ -232,12 +259,19 @@ def capital_gains_report(data: PortfolioData, today: date,
                 "Jan 2018) - left out")
             continue
         held = (s.sell_date - s.buy_date).days
-        rule = tax_rule_for(rules, "equity", s.sell_date)
-        lt_days = rule.lt_days if rule else 365
+        # a Debt-marked lot bought on/after 01-04-2023 is slab-taxed and
+        # deemed short-term (Sec 50AA), exactly as on the MF side
+        if bucket == "mf_debt" and s.buy_date >= DEBT_MF_SLAB_FROM:
+            bucket = "slab"
+        if bucket == "slab":
+            term = "At your slab"
+        else:
+            rule = tax_rule_for(rules, bucket, s.sell_date)
+            term = _term(held, rule.lt_days if rule else 365)
         rep.realised.append(RealisedRow(
             fy=fy_label(s.sell_date), owner=s.owner, name=s.scrip or isin,
-            bucket="equity", qty=s.qty, buy_date=s.buy_date,
-            sell_date=s.sell_date, held_days=held, term=_term(held, lt_days),
+            bucket=bucket, qty=s.qty, buy_date=s.buy_date,
+            sell_date=s.sell_date, held_days=held, term=term,
             proceeds=s.qty * s.sell_price, taxable_cost=s.qty * cost_sh,
             gain=s.qty * (s.sell_price - cost_sh), note=note))
 
@@ -338,13 +372,14 @@ def capital_gains_report(data: PortfolioData, today: date,
         if r.cost_date >= today:
             continue
         isin = r.isin_override or isin_by_name.get(r.scrip, "")
+        bucket = equity_tax_bucket(r.tax_type)
         # identical arithmetic to equity_flows (§6.2) so the two surfaces
         # can never drift
         value = r.qty * (r.ca_factor or 1.0) * px
         cf = r.cost_factor if r.cost_factor is not None else 1.0
         cost = r.qty * r.avg_cost * cf
         note = ""
-        if r.cost_date < GRANDFATHER_CUTOFF:
+        if bucket == "equity" and r.cost_date < GRANDFATHER_CUTOFF:
             f = fmv_per_share(isin, today)
             if f is not None:
                 qty_today = r.qty * (r.ca_factor or 1.0)
@@ -354,13 +389,22 @@ def capital_gains_report(data: PortfolioData, today: date,
                 cost = qty_today * gf_sh
                 note = "grandfathered (31-Jan-2018 value)"
         held = (today - r.cost_date).days
+        # each Tax type carries its OWN long-term threshold, and a Debt lot
+        # bought on/after 01-04-2023 is slab-taxed with no long-term date
+        if bucket == "mf_debt" and r.cost_date >= DEBT_MF_SLAB_FROM:
+            row_lt, term, lt_on = None, "At your slab", None
+            bucket = "slab"
+        else:
+            b_rule = (eq_rule_now if bucket == "equity"
+                      else tax_rule_for(rules, bucket, today))
+            row_lt = b_rule.lt_days if b_rule else 365
+            term = _term(held, row_lt)
+            lt_on = (None if held > row_lt
+                     else r.cost_date + timedelta(days=row_lt + 1))
         rep.unrealised.append(UnrealisedRow(
-            owner=r.owner, name=r.scrip, bucket="equity", qty=r.qty,
+            owner=r.owner, name=r.scrip, bucket=bucket, qty=r.qty,
             value_today=value, gain_today=value - cost,
-            term=_term(held, eq_lt),
-            lt_on=(None if held > eq_lt
-                   else r.cost_date + timedelta(days=eq_lt + 1)),
-            note=note))
+            term=term, lt_on=lt_on, note=note))
     nav_by_scheme = {m.scheme: m.current_nav for m in data.mutual_funds
                      if m.scheme and m.current_nav}
     for (owner, scheme), lots in open_lots.items():
@@ -409,7 +453,12 @@ def capital_gains_report(data: PortfolioData, today: date,
         s.stcg = sum(r.gain for r in eq_rows if r.term == "Short-term")
         s.ltcg = sum(r.gain for r in eq_rows if r.term == "Long-term")
         s.slab_gain = sum(r.gain for r in rows if r.bucket == "slab")
-        s.debt_gain = sum(r.gain for r in rows if r.bucket == "mf_debt")
+        # "non-equity funds": debt funds AND listed bullion/overseas ETFs
+        # (v1.7.5). Both sit outside the §112A bucket, and BOTH must land in
+        # a summary figure — a gain that appears in no figure is worse than
+        # one shown under an imperfect label.
+        s.debt_gain = sum(r.gain for r in rows
+                          if r.bucket in NON_EQUITY_BUCKETS)
         s.spec_gain = sum(r.gain for r in rows if r.bucket == "speculative")
         fy_end = date(fy_end_year[fy], 3, 31)
         rule_end = tax_rule_for(rules, "equity", fy_end)
@@ -427,10 +476,10 @@ def capital_gains_report(data: PortfolioData, today: date,
             def _dust(x: float) -> float:
                 return x if abs(x) >= 0.005 else 0.0
             debt_st_net = _dust(
-                sum(r.gain for r in rows if r.bucket == "mf_debt"
+                sum(r.gain for r in rows if r.bucket in NON_EQUITY_BUCKETS
                     and r.term == "Short-term") + s.slab_gain)
             debt_lt_loss = _dust(max(0.0, -sum(
-                r.gain for r in rows if r.bucket == "mf_debt"
+                r.gain for r in rows if r.bucket in NON_EQUITY_BUCKETS
                 and r.term == "Long-term")))
             debt_st_loss = max(0.0, -debt_st_net)     # feeds the tax loop
             excess_st = _dust(max(0.0, -(s.stcg + debt_st_net)))

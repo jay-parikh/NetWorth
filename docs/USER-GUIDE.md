@@ -197,9 +197,18 @@ Things this tab quietly does for you:
   Tip: if you know the company's ISIN, type it in the **ISIN** column —
   that's the code prices arrive by, so the switchover is automatic on
   listing day.
-- **ETFs** — an ETF (say SILVERBEES) is a share like any other here: pick
-  it from the *Scrip* dropdown by its exchange name and it prices daily.
-  If it isn't in the dropdown, type its ISIN in the ISIN column.
+- **ETFs** *(better in v1.7.5)* — an ETF (say SILVERBEES) belongs here, on
+  the shares tab: that's how you bought it and how it's held. **Every ETF is
+  now in the *Scrip* dropdown**, so just pick it — you no longer need to hunt
+  for its ISIN. It prices daily from the exchange, and on a day the exchange
+  doesn't answer, its **fund NAV** stands in so the value is never days old.
+  **One thing to set:** in the **Tax type** column choose **Gold-Silver** for
+  a gold, silver or overseas ETF, or **Debt** for a bond ETF. Leave it
+  **blank** for Nifty/Sensex ETFs and ordinary shares. This matters: gold,
+  silver, overseas and bond ETFs are *not* taxed like shares — they don't get
+  the ₹1.25 lakh tax-free slice, and the Capital Gains tab now shows them
+  separately under **Non-equity fund gains** instead of quietly using up an
+  allowance they aren't entitled to.
 
 ---
 
@@ -475,7 +484,11 @@ The **Capital Gains** tab then reads top-down like a story:
   is taxed less and gets a tax-free slice each year), the ₹1.25L tax-free
   allowance, how much of it you've used, and an **indicative tax** figure
   at the rates in force on each sale's date — after your same-year losses
-  are set off. A last column, "Losses used vs LTCG ₹", shows the amount
+  are set off. **"Non-equity fund gains ₹"** *(v1.7.5)* collects the things
+  taxed differently from shares: bond and debt funds, and any gold, silver
+  or overseas ETF you marked **Gold-Silver** on the Equity tab. They're kept
+  out of the ₹1.25 lakh allowance, because that slice belongs to shares and
+  equity funds only. A last column, "Losses used vs LTCG ₹", shows the amount
   when losses reduced that year's long-term gains — leftover short-term
   losses (debt-fund ones count too) and debt-fund long-term losses — it
   stays blank in a normal year.

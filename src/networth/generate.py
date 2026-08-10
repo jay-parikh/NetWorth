@@ -731,6 +731,23 @@ def _write_equity(wb, F, data: PortfolioData):
     # over automatically the day a real close arrives.
     ws.write("V3", "Price if unlisted", F["header"])
     ws.set_column("V:V", 15)
+    # W (v1.7.5): tax treatment — only the Capital Gains tab reads it
+    ws.write("W3", "Tax type", F["header"])
+    ws.set_column("W:W", 13)
+    ws.write_comment("W3", "Leave blank for shares and index ETFs (Nifty, "
+                           "Sensex) - they are taxed as equity. Pick "
+                           "Gold-Silver for a gold or silver ETF, or Debt "
+                           "for a bond ETF: those are NOT taxed as equity, "
+                           "so the Capital Gains tab must treat them "
+                           "differently. Only that tab uses this.")
+    ws.data_validation(f"W4:W{M.EQUITY_LAST_ROW}", {
+        "validate": "list",
+        "source": list(M.EQUITY_TAX_TYPES),
+        "show_error": False,
+        "input_title": "Tax type",
+        "input_message": "Blank = shares / equity ETF. Gold-Silver or Debt "
+                         "for those ETFs.",
+    })
     ws.write_comment("V3", "Own shares that aren't listed on an exchange "
                            "yet? Type what one share is worth here and the "
                            "holding is valued at it. The moment the company "
@@ -809,6 +826,8 @@ def _write_equity(wb, F, data: PortfolioData):
                 ws.write_datetime(f"U{r}", row.qty_asof, F["date_disp"])
             if row.manual_price is not None:
                 ws.write_number(f"V{r}", row.manual_price, F["in_price"])
+            if row.tax_type:
+                ws.write(f"W{r}", row.tax_type, F["in_text"])
         if row and row.ca_factor is not None:
             ws.write_number(f"S{r}", row.ca_factor, F["c_units"])
         if row and row.cost_factor is not None:
@@ -1874,9 +1893,15 @@ def _write_capital_gains(wb, F, data: PortfolioData, today, rep=None,
     ws.write_row(f"A{r}", ["FY", "STCG ₹", "LTCG ₹", "Tax-free allowance",
                            "Allowance used", "Still tax-free",
                            "Indicative tax (STCG)", "Indicative tax (LTCG)",
-                           "At-your-slab gains ₹", "Debt fund gains ₹",
+                           "At-your-slab gains ₹", "Non-equity fund gains ₹",
                            "Intraday gains ₹", "Losses used vs LTCG ₹"],
                  F["header"])
+    ws.write_comment(f"J{r}", "Gains on things taxed differently from "
+                              "shares: bond/debt funds, and gold, silver or "
+                              "overseas ETFs you marked Gold-Silver on the "
+                              "Equity sheet. They get no tax-free allowance "
+                              "- that ₹1.25 lakh belongs to shares and "
+                              "equity funds only.")
     ws.write_comment(f"B{r}", _G_STCG)
     ws.write_comment(f"C{r}", _G_LTCG)
     ws.write_comment(f"E{r}", "How much of the year's tax-free allowance "
@@ -2072,7 +2097,7 @@ def _write_tax_rules(wb, F, data: PortfolioData):
                 ws.write(f"G{r}", t.notes, F["in_text"])
     ws.data_validation(f"A4:A{M.TAXRULES_LAST_ROW}", {
         "validate": "list",
-        "source": ["equity", "mf_equity", "mf_debt"],
+        "source": list(M.TAXRULE_ASSETS),
         "show_error": False,
         "input_title": "Asset",
         "input_message": "equity / mf_equity / mf_debt",

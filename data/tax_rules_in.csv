@@ -5,3 +5,5 @@ mf_equity,2018-04-01,365,15,10,100000,equity funds share the Sec 112A exemption 
 mf_equity,2024-07-23,365,20,12.5,125000,Budget 2024
 mf_debt,2018-04-01,1095,,,0,old regime: STCG at slab; LTCG 20% with indexation (not modelled - no amount shown)
 mf_debt,2024-07-23,730,,12.5,0,lots bought before 2023-04-01 only; later lots taxed at slab
+mf_other,2018-04-01,1095,,,0,"old regime: STCG at slab; LTCG 20% with indexation (not modelled - no amount shown)"
+mf_other,2024-07-23,365,,12.5,0,"listed non-equity ETFs (gold/silver/overseas): LTCG 12.5% without indexation after 12 months; STCG at slab. Outside Sec 50AA since Budget 2024"

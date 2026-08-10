@@ -264,6 +264,32 @@ def _merge_stock_master(existing: list[tuple[str, str, str]],
     return merged, added, renamed
 
 
+def _etf_master_rows(mf_rows: list[tuple[str, str, str]]
+                     ) -> list[tuple[str, str, str]]:
+    """ETF schemes from the AMFI master, as Stock_Master triples (v1.7.5).
+
+    An ETF is a fund that TRADES, so it belongs on both masters: people buy
+    it through a broker like a share and expect it in the Equity dropdown.
+    Deriving it from AMFI — fetched on every run, authoritative for
+    scheme-name↔ISIN — means ETFs are listed even on a day an exchange
+    refused us, and there is no curated list to keep current. The symbol is
+    left blank: AMFI does not publish exchange tickers, and the add-only
+    merge lets a real bhavcopy row (with its symbol) fill in later.
+    """
+    out = []
+    for _house, scheme, isin in mf_rows:
+        if not isin:
+            continue
+        low = f" {scheme.casefold()} ".replace("-", " ")
+        # a fund OF an ETF is not itself traded — it must never reach the
+        # Equity dropdown (nor be read as a share by the broker import)
+        if "fund of fund" in low or " fof " in low:
+            continue
+        if " etf " in low or "exchange traded" in low:
+            out.append(("", scheme, isin))
+    return out
+
+
 def _replace_mf_master(existing: list[tuple[str, str, str]],
                        fetched: list[tuple[str, str, str]],
                        referenced: set[str]) -> list[tuple[str, str, str]]:
@@ -531,6 +557,10 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             summary["warnings"].append(f"AMFI fetch failed, keeping old NAVs: {e}")
 
     stamp = today.strftime("%d-%m-%Y")
+    # ISINs an exchange actually quoted this run — an equity row NOT in here
+    # still holds whatever price it had, so "did today's fetch price it?"
+    # can only be asked with this set (v1.7.5, the ETF-NAV fallback below)
+    priced_today: set[str] = set()
 
     # ---- equity prices + stock master + trading status (SPEC §6.5) ----
     if price_data:
@@ -570,6 +600,7 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
                 if routed == isin:
                     data.masters.stock_status[isin] = ("Active", trade_date)
                 matched += 1
+                priced_today.add(routed)
                 nse_only_hits += routed in nse_only
             elif dual_source and routed == isin:
                 # absent from both exchanges: escalate by how long it has been
@@ -633,6 +664,31 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
         data.masters.mf_refreshed = stamp
         summary["mf_matched"] = matched
         summary["mf_total"] = len(data.mutual_funds)
+        # ETFs trade like shares — make sure every one AMFI knows about can
+        # be picked on the Equity sheet, whatever the exchanges did today
+        # (v1.7.5). Add-only, so a bhavcopy row already there keeps its name.
+        data.masters.stock_rows, etfs_added, _rn = _merge_stock_master(
+            data.masters.stock_rows, _etf_master_rows(data.masters.mf_rows))
+        if etfs_added:
+            summary["etfs_added"] = etfs_added
+        # An ETF that no exchange quoted today (NSE refused us, or it trades
+        # on the exchange we couldn't reach) still has a NAV we just fetched
+        # — and an ETF's NAV is within a whisker of its traded price. Use it
+        # rather than showing a days-old price, but NEVER over a real quote.
+        isin_by_name_nav = {name: isin for _s, name, isin
+                            in data.masters.stock_rows}
+        nav_priced = 0
+        for row in data.equity:
+            isin = row.isin_override or isin_by_name_nav.get(row.scrip, "")
+            if not isin or isin in priced_today:
+                continue
+            nav = amfi_data.nav_by_isin.get(isin)
+            if nav:
+                row.close = nav
+                row.close_date = price_data.trade_date if price_data else today
+                nav_priced += 1
+        if nav_priced:
+            summary["nav_priced"] = nav_priced
 
     # ---- corporate actions (SPEC §6.7): fetch NSE+BSE, keep manual, factor rows,
     # and warn about any holding NEITHER exchange could verify — never skip silently
@@ -675,10 +731,17 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
             # from the CA feeds — the curated file IS its verification
             consumed = {i for i in held_isins if _consumed_label(i)}
             unchecked = query_isins - checked - consumed
+            # keep every unverified ISIN's existing rows...
             preserve_isins = unchecked
+            # ...but only NAME the ones we could actually ask about. A
+            # holding with no exchange symbol and no BSE code (an ETF listed
+            # from the AMFI master, v1.7.5) was never queried, so reporting
+            # it as "unverified" every run would be pure noise.
+            askable = {i for i in unchecked
+                       if symbol_by_isin.get(i) or i in set(bse_codes.values())}
             summary["ca_unverified"] = sorted(
-                name_by_isin.get(i, i) for i in unchecked)
-            if unchecked:
+                name_by_isin.get(i, i) for i in askable)
+            if askable:
                 summary["warnings"].append(
                     "corporate actions could NOT be verified for: "
                     + ", ".join(summary["ca_unverified"])

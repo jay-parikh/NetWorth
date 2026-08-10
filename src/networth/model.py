@@ -306,6 +306,11 @@ class EquityRow:
     cost_factor: float | None = None
     # updater-written informational flag ("MERGED→<name>", "DEMERGER:<isin>@<date>")
     flag: str = ""
+    # v1.7.5 (§3.6/§6.16): how the taxman sees this holding — blank/"Equity"
+    # for shares and index ETFs, "Debt" for bond ETFs (Sec 50AA), and
+    # "Gold-Silver" for listed bullion/overseas ETFs (12.5% after a year,
+    # no §112A allowance). Only the Capital Gains tab reads it.
+    tax_type: str = ""
     # v1.7.4 (§3.6): your own price per share, used ONLY while the exchange
     # quotes none — unlisted/pre-IPO holdings value correctly today, and the
     # day the company lists the real price takes over with no edit needed.
@@ -316,6 +321,29 @@ class EquityRow:
     # adjustment window runs from here, not from the (older) Cost date.
     # Blank for typed rows: their Quantity is as-bought (as of Cost date).
     qty_asof: date | None = None
+
+
+EQUITY_TAX_TYPES = ("Equity", "Debt", "Gold-Silver")
+
+
+def equity_tax_bucket(tax_type: str) -> str:
+    """Equity-sheet Tax type → capital-gains bucket key (§6.16, v1.7.5).
+
+    Blank means shares/equity ETF, which is what almost every row is; the
+    other two exist because a bond or bullion ETF sits in the same demat
+    account but is NOT taxed as equity (no §112A allowance). Spelling is
+    forgiving — a user typing "gold", "silver" or "bullion" means the same
+    thing, and anything unrecognised falls back to equity, the safe
+    default the sheet has always used."""
+    tt = (tax_type or "").strip().casefold().replace("_", " ").replace("-", " ")
+    if not tt:
+        return "equity"
+    if any(w in tt for w in ("gold", "silver", "bullion", "overseas",
+                             "international")):
+        return "mf_other"
+    if "debt" in tt or "bond" in tt:
+        return "mf_debt"
+    return "equity"
 
 
 def effective_price(row) -> float | None:
@@ -882,7 +910,8 @@ def tax_rule_for(rules: list[TaxRule], asset: str, on: date) -> TaxRule | None:
     return best
 
 
-TAXRULE_ASSETS = ("equity", "mf_equity", "mf_debt")
+# mf_other (v1.7.5) = listed non-equity ETFs: gold, silver, overseas
+TAXRULE_ASSETS = ("equity", "mf_equity", "mf_debt", "mf_other")
 
 
 def effective_tax_rules(user_rows: list[TaxRule]
@@ -915,7 +944,8 @@ def effective_tax_rules(user_rows: list[TaxRule]
             warnings.append(
                 f"Tax_Rules: the row '{t.asset or '(no asset)'} / "
                 f"{t.effective_from or 'no date'}' needs an Asset of "
-                "equity, mf_equity or mf_debt AND an Applies-from date - "
+                + ", ".join(TAXRULE_ASSETS)
+                + " AND an Applies-from date - "
                 "ignored for now, fix it on the Tax_Rules tab")
             continue
         # a rate outside 0-100, a negative allowance or a non-positive

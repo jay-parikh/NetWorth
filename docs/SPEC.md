@@ -332,6 +332,7 @@ a typed row to the budget, §7 step 5). Columns:
 | v1: S | Adj factor | **updater-written** | split/bonus **and merger-ratio** multiplier since Cost date (§6.7/§6.15, chain-aware); blank = 1. `Cur. val` and `Day chg.` use `Quantity*IF($S4="",1,$S4)*price` |
 | v1.4: T | Cost factor | **updater-written** | demerger cost retention (§6.15): the parent keeps `cost_pct/100` of its cost basis, the rest moves to the appended child row; blank = 1. The user's Avg. cost cell is never rewritten |
 | v1.7.4: V | Price if unlisted | **input** | the user's own price per share, used ONLY while `F` (the exchange close) is empty — unlisted/pre-IPO holdings value correctly today and switch to the market price by themselves the day the security lists, with no edit. `model.effective_price(row)` is the single definition the sheet formula, the totals, XIRR, projections and the capital-gains view all share. Never written by the updater |
+| v1.7.5: W | Tax type | **input** (dropdown) | how the Capital Gains tab must treat this holding: blank/`Equity` = shares and equity ETFs (§112A family), `Debt` = bond/debt ETFs, `Gold-Silver` = listed bullion/overseas ETFs. `model.equity_tax_bucket()` maps it to a bucket key and is forgiving of wording (gold/silver/bullion/overseas → `mf_other`; debt/bond → `mf_debt`; anything unrecognised → `equity`, the safe historical default). ONLY §6.16 reads it — valuation, XIRR and the totals ignore it entirely |
 | v1.7.1: U | Qty as of | **import-written**, hidden column | the date this row's Quantity is stated AS OF (§6.18). A broker HOLDINGS file reports the post-split/bonus count, so the corporate-action window for S/T starts here, not at Cost date — without it, history the broker already counted would re-apply (the ×5/×15 Qty-today bug). Blank for typed rows (their Quantity is as-bought). Round-trips like any input |
 
 Below the data block, one **updater-written** cell holds the equity-class
@@ -845,7 +846,10 @@ Layout: title r1 / hint r2 (says exactly that: edit a number or add a row
 from the date the change applies, then run the update; blank STCG % = at
 your slab; deleted shipped rows come back — edit them instead) / header r3 /
 data rows 4..TAXRULES_LAST_ROW (33). Columns: A Asset (non-blocking dropdown
-equity | mf_equity | mf_debt; the reader's anchor header) · B Applies from
+equity | mf_equity | mf_debt | mf_other, the `TAXRULE_ASSETS` whitelist —
+a value outside it is kept on the sheet with a warning and never computed
+with, so adding a bucket means adding it HERE too; the reader's anchor
+header) · B Applies from
 (date; the newest row ≤ the sale date wins — that's how mid-year changes
 work) · C Long-term after (days) · D STCG % · E LTCG % · F Tax-free
 allowance ₹/yr · G Notes. Every header carries a plain-words gloss.
@@ -1218,6 +1222,27 @@ MF_Master is regenerated wholesale from AMFI each refresh (same sort rule)
 but must also preserve any ISIN currently referenced by a user row even if
 AMFI drops it (append with its last-known names).
 
+**ETFs are seeded into Stock_Master from MF_Master (v1.7.5).** An ETF is a
+fund that TRADES: people buy it through a broker, hold it in demat and
+expect it in the Equity dropdown, so it belongs on both masters. After the
+AMFI refresh, every MF_Master scheme whose name contains `ETF` (as a word)
+or `exchange traded` — excluding `fund of fund`/`FOF`, which are NOT traded
+— is merged into Stock_Master through the same add-only merge, with a BLANK
+symbol (AMFI publishes no exchange tickers; a later bhavcopy row supplies
+one). Two consequences, both required:
+- ETFs are listed even on a day an exchange refused us, which is what made
+  an NSE-only ETF unpickable before;
+- a holding with no symbol and no BSE code cannot be queried for corporate
+  actions, so it is EXCLUDED from the §6.7 "could not be verified" warning
+  (it was never asked about — naming it every run would be pure noise).
+
+**ETF price fallback (v1.7.5).** After the AMFI refresh, an Equity row whose
+ISIN no exchange quoted THIS RUN but which has an AMFI NAV takes that NAV as
+its close (stamped with the run's trade date). An ETF's NAV is within a
+whisker of its traded price, and a same-day NAV beats a days-old quote. A
+real exchange quote always wins: the fallback only fills rows absent from
+`priced_today`, so it can never override the market.
+
 ### 6.5 Delisted / stale detection (v1)
 
 ```
@@ -1550,14 +1575,20 @@ in this run's figures but are dropped from the saved file — warned loudly.
 Tax rates come from the **workbook's Tax_Rules sheet merged over the
 bundled `data/tax_rules_in.csv` defaults** (§3.22 — nothing, including the
 ₹1.25L exemption, is hard-coded; a Budget change is an Excel edit). Rows
-are keyed by `asset` (equity | mf_equity | mf_debt) + `effective_from`
+are keyed by `asset` (equity | mf_equity | mf_debt | mf_other) + `effective_from`
 **date** — NOT by FY, because Budget 2024 changed the equity rates mid-year
 on 2024-07-23 (STCG 15→20 %, LTCG 10→12.5 %, exemption ₹1L→₹1.25L).
 mf_debt carries TWO rows: the old regime from 2018-04-01 (lt_days 1095;
 both rates blank — STCG at slab, LTCG 20 % with indexation is not modelled
 so no amount is shown) and the Budget-2024 regime from 2024-07-23 (lt_days
 730) — without the old row, pre-2024 debt-fund sales would mislabel Term
-via the 365-day fallback. The rule in force is resolved per SALE date
+via the 365-day fallback. **mf_other (v1.7.5)** is the same shape for
+LISTED non-equity ETFs (gold, silver, overseas) marked `Gold-Silver` on the
+Equity sheet: the old regime from 2018-04-01 (not modelled, as mf_debt) and
+from 2024-07-23 `lt_days 365, stcg blank (slab), ltcg 12.5, exempt 0` —
+they are listed securities, so long-term arrives after 12 months, they sit
+outside Sec 50AA (which covers >65 %-debt funds), and they get NO §112A
+allowance. The rule in force is resolved per SALE date
 (newest effective_from ≤ sale date); a date no rule covers (pre-FY-2018-19,
 the §10(38) era) shows tax "—". `stcg_pct` blank = taxed at the user's slab
 (words, never an amount). Malformed CSV rows raise loudly in the LOADER (a
@@ -1617,9 +1648,11 @@ computed ONLY inside the FY-end-rule guard (rule-less pre-2018 §10(38)
 FYs — LTCG then exempt, losses carry-forward only — keep st_setoff 0,
 like their blank tax cells). Per FY, with dust(x) = 0 when |x| < ₹0.005
 (float residue must never defeat blank-when-zero or nudge a tax figure):
-  debt_st_net  = dust(Σ mf_debt Short-term rows + Σ slab rows)  (Sec 50AA
-                 deems post-2023 debt lots short-term)
-  debt_lt_loss = dust(max(0, −Σ mf_debt Long-term rows))   [Sec 70(3): LT
+  debt_st_net  = dust(Σ NON-EQUITY Short-term rows + Σ slab rows)  (Sec 50AA
+                 deems post-2023 debt lots short-term). NON-EQUITY =
+                 mf_debt + mf_other (v1.7.5) — the set-off nets by TERM, so
+                 a bullion ETF belongs in the same head as a debt fund
+  debt_lt_loss = dust(max(0, −Σ NON-EQUITY Long-term rows))   [Sec 70(3): LT
                  losses only against LT gains, cross-asset]
   debt_st_loss = max(0, −debt_st_net)
   excess_st    = dust(max(0, −(STCG_netted + debt_st_net)))
