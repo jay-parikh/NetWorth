@@ -1,6 +1,6 @@
 """Broker equity CSV parsers — registry + generic fallback (SPEC §6.17/§6.18).
 
-Generic by design (Jay, 2026-07-18): exact header signatures are shipped
+Generic by design (project owner, 2026-07-18): exact header signatures are shipped
 for brokers we have verified exports from, and everything else goes
 through a fuzzy header matcher that looks for the CONCEPTS a tradebook or
 holdings file must carry. Matching is on headers only; every VALUE still

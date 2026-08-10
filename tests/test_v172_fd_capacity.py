@@ -1,4 +1,4 @@
-"""v1.7.2 — FixedDeposits row budget raised 50 → 100 (Jay, 2026-08-09).
+"""v1.7.2 — FixedDeposits row budget raised 50 → 100 (project owner, 2026-08-09).
 
 His real workbook holds 54 FDs (a laddered family portfolio), and the
 updater refused to run rather than truncate. The budget is now 100, and

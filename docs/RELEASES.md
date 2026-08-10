@@ -187,7 +187,7 @@ section; README; packaged README.txt. Suite: 181 tests.
 
 ## v1.5.1 — "Everything explains itself" (2026-07-18)
 
-UX pass driven by Jay's design review: the workbook must be self-explanatory
+UX pass driven by the owner's design review: the workbook must be self-explanatory
 without renaming a single term. Policy is **keep + gloss** (SPEC §3 preamble):
 domain terms — compute, NAV, ISIN, XIRR, corpus, PRAN, UAN, SGB, coupon,
 ex-date — are correct and stay verbatim everywhere; hover comments lead with
@@ -205,7 +205,7 @@ README (badge 185, R0→v1.5); release notes v1.5.1. Suite: 185 tests.
 
 ## v1.6.0 — "Honest returns + the taxman's view" (2026-07-18)
 
-Two roadmap items Jay picked for the release: dividends (and now recorded
+Two roadmap items the owner picked for the release: dividends (and now recorded
 sales) enter the equity XIRR, and a capital-gains tax report with the
 31-01-2018 grandfathering rule. Everything keep+gloss (STCG/LTCG stay
 verbatim, hover comments explain), everything default-off (Settings row 17),
@@ -236,13 +236,13 @@ guide (19 screenshots rendered from the shipped sample workbook via the
 reproducible scripts/guide_screenshots/ pipeline, worked examples per
 feature), linked from the README and the release notes.
 
-Also (Jay, 2026-07-18): **charts never sit on data** — the Dashboard charts
+Also (project owner, 2026-07-18): **charts never sit on data** — the Dashboard charts
 now anchor right of the person × class grid (grid-width-derived column, so
 enabling more classes slides them right instead of hiding columns) and the
 person-sheet pie moved right of the holding blocks (§3.3/§3.5); screenshots
 re-rendered.
 
-Also (Jay, 2026-07-18): **intraday sales surface as speculative income** —
+Also (project owner, 2026-07-18): **intraday sales surface as speculative income** —
 a same-day buy/sell is no longer warned-and-skipped: it becomes a realised
 row (bucket "speculative", term "Intraday") plus an "Intraday gains ₹" FY
 column, slab-taxed business income shown but never mixed into STCG/LTCG or
@@ -252,7 +252,7 @@ Tax_Rules rejects typo numbers (rates outside 0–100, negative allowance,
 non-positive holding days) and warns on duplicate (asset, date) rows;
 negative NAVs count as "no NAV" in the MF FIFO. Suite: 229.
 
-And (Jay, 2026-07-18): **Tax_Rules in the workbook (§3.22)** — the
+And (project owner, 2026-07-18): **Tax_Rules in the workbook (§3.22)** — the
 capital-gains rate table (rates, holding periods, the ₹1.25L allowance) is
 no longer release-bound: an editable Tax_Rules sheet ships prefilled with
 the bundled law and is upserted over the CSV defaults by (asset,
@@ -262,7 +262,7 @@ are preserved, never guessed at or dropped.
 ## v1.6.1 — "Losses count, the way the law allows" (2026-07-18)
 
 Stability patch — exactly one correctness fix, found by re-verifying the
-items deferred during v1.6.0 (Jay: simple and stable, no new features).
+items deferred during v1.6.0 (project owner: simple and stable, no new features).
 A wrong tax number is a stability bug in a tax report.
 
 | Change | Delivers | Acceptance criteria |
@@ -287,7 +287,7 @@ cross-bucket equity↔debt netting — now stated on the sheet). Suite: 236.
 
 ## v1.6.2 — "Sturdy" (2026-07-18)
 
-Jay: plan the stability sweep AND cross-bucket netting together — simple
+Project owner: plan the stability sweep AND cross-bucket netting together — simple
 and stable. Two halves, one release.
 
 | Change | Delivers | Acceptance criteria |
@@ -296,13 +296,13 @@ and stable. Two halves, one release.
 | Sec 70 cross-bucket netting (§6.16) | Debt-fund/slab ST losses shelter equity ST tax first, excess reduces LTCG; debt LT losses reduce LTCG (never STCG); all before the §112A allowance, era-gated, dust-clamped; column L widens to "Losses used vs LTCG ₹" (blank-when-zero, masked-presence rule kept); raw columns never fold anything in | 4 goldens: slab loss wipes equal eq-ST tax; 2L slab loss vs 0.5L ST + 3L LT ⇒ set-off 1.5L, tax_ltcg 25k×12.5%; debt LT loss reduces LTCG not STCG; equity losses never change debt/slab display sums |
 
 Docs in-commit: SPEC §3.6/§3.7/§3.19/§3.21/§5-in-§7/§6.16/§7; USER-GUIDE
-(lot-entry guidance in §5 — Jay's ask, honesty bullets, column tour,
+(lot-entry guidance in §5 — the owner's ask, honesty bullets, column tour,
 footer); Guide sheet (lots line + losses line); README; ROADMAP (netting ✅,
 stability ✅, cuts recorded); release notes v1.6.2. Suite: 258 tests.
 
 ## v1.7.0 — "Your history types itself" (2026-07-18)
 
-Jay: manual Equity/MF_SIP entry is the adoption deal-breaker — kill it,
+Project owner: manual Equity/MF_SIP entry is the adoption deal-breaker — kill it,
 generically (no single-broker lock-in), and it must NEVER produce garbage.
 Statement-wins on overlap; MF_SIP budget 3000; Equity budget 1500.
 
@@ -335,7 +335,7 @@ statement import.
 
 ## v1.7.1 — "Real files, straightened out" (2026-07-19)
 
-Jay imported his REAL broker holdings the day v1.7.0 shipped and found
+The owner imported his REAL broker holdings the day v1.7.0 shipped and found
 four things — three defects and one gap — all fixed the same day:
 
 | Change | Delivers | Acceptance criteria |
@@ -352,7 +352,7 @@ row); By Scrip sheet hint; release notes v1.7.1. Suite: 353 tests
 
 ## v1.7.2 — "Room for a hundred fixed deposits" (2026-08-09)
 
-Jay's own workbook grew to 54 FDs and the updater refused to run
+the owner's own workbook grew to 54 FDs and the updater refused to run
 (`FixedDeposits holds 54 rows but the sheet can only save 50`). Refusing
 was correct — truncation would lose a typed deposit — but the budget was
 simply too low for a family that ladders FDs.
@@ -404,7 +404,7 @@ release notes v1.7.4; README badges. Suite: 373 tests (13 added).
 ## v1.7.5 — "ETFs, where they belong and taxed as they are" (2026-08-10)
 
 The v1.7.4 NSE fix worked (prices arrived) but the user's next report was
-"the silver ETF still isn't in Stock_Master", and Jay's call was **all ETFs
+"the silver ETF still isn't in Stock_Master", and the owner's call was **all ETFs
 should be in Stock_Master**. Answering that raised the real question — *where
 should an ETF live?* — whose honest answer exposed a tax defect: every Equity
 row was hard-coded to the **equity** bucket, so a gold/silver/debt ETF
@@ -426,6 +426,22 @@ fallback), §6.16 (mf_other, set-off), §5.3 already covered NSE; USER-GUIDE
 §5 (ETFs) + §13 (the new column); Guide sheet ("ETFs"); Capital Gains sheet
 label + comment; release notes v1.7.5; README badges. Suite: 385 tests
 (12 added).
+
+## v1.7.6 — "Your family list stays your family list" (2026-08-10)
+
+The owner reported three Dashboard names as sheets that "does not update data":
+`Allocation by asset class`, `Dividends FY 2026-27`, `TOTAL`. They were not
+failing sheets — the updater had read those HEADINGS as family members and
+built a person tab for each. Visible in his earlier console paste, which
+listed them after the five real names.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Headings are never people (SPEC §3.3) | The person matrix (Dashboard A6:A15) is the one place a reader trusts fixed row numbers, so deleting the unused person rows — which §1 explicitly permits — slides `TOTAL` up from row 16 into the window, and the headings under it with it. Reading now skips blanks and STOPS at the first known heading (`TOTAL`, `Person`, `Asset class`, `As on`, `Family net worth`, `Portfolio XIRR`, `Dividends FY…`, `Allocation by…`, any reserved sheet name). `persons_from_column` is ONE definition shared by the reader and the updater's cheap peek, so the prompt can never offer a heading as a person again | test_v176_person_labels.py: canonical layout, deleted-rows layout, a gap between people, a full ten people; `is_person_label` over every heading and over person-ish names ("Dividend Kumar", "Totally Fictional Person") |
+| Damaged files repair themselves | A workbook that already carries such a "person" drops it on the next read, says so in plain words, and the regeneration restores the canonical layout: the junk tab disappears, real tabs and rows are untouched | end-to-end: build a file with the three strays as persons → read → 5 real people + warning + holding intact → rebuild → junk tabs gone, `TOTAL` back at row 16, second pass warns about nothing; peek and reader agree exactly |
+
+Docs in-commit: SPEC §3.3 (the reading rule, normative), RELEASES, release
+notes v1.7.6, README badges. Suite: 392 (7 added).
 
 ## Release artifact layout (from R4)
 

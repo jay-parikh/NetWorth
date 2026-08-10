@@ -23,9 +23,10 @@ from .model import (
     FDRow,
     HistorySnapshot, ImportMapRow, ImportedFileRow, ManualAssetRow, Masters,
     MFRow, NPSRow, PPFLedgerRow,
-    PPFRow, PortfolioData, ScripRef, SIPRow, TaxRule, parse_yes_no,
-    person_tab_map,
+    PPFRow, PortfolioData, ScripRef, SIPRow, TaxRule, is_person_label,
+    parse_yes_no, person_tab_map, persons_from_column,
 )
+from . import model as M
 
 # the Class dropdown is non-blocking, so users can type any casing — Excel's
 # SUMIFS matches case-insensitively and the Python side must agree, so typed
@@ -115,13 +116,25 @@ def read_workbook(source) -> PortfolioData:
     data.masked_at_rest = _named("NW_Masked") == "yes"
 
     dash = wb["Dashboard"]
-    data.persons = [
-        _as_str(dash.cell(r, 1).value)
-        for r in range(6, 16) if _as_str(dash.cell(r, 1).value)
-    ]
+    # ONE definition, shared with the updater's peek (§3.2): reading stops
+    # at the first Dashboard heading, so a file whose empty person rows
+    # were deleted — which slides TOTAL up into the person window — reads
+    # its real people instead of turning headings into family members
+    data.persons = persons_from_column(
+        lambda r: _as_str(dash.cell(r, 1).value))
+    strays = [_as_str(dash.cell(r, 1).value)
+              for r in range(M.DASH_PERSON_FIRST, M.DASH_PERSON_LAST + 1)
+              if _as_str(dash.cell(r, 1).value)
+              and not is_person_label(_as_str(dash.cell(r, 1).value))]
+    if strays:
+        data.warnings.append(
+            f"the Dashboard's people list had run into its own headings "
+            f"({', '.join(sorted(set(strays)))}) - they were left out and "
+            "the layout is rebuilt properly. Any tab created for them "
+            "disappears; your own tabs and rows are untouched")
     # v1.6.2: Excel's SUMIFS matches Owner case-insensitively but the
     # Python joins (FY-expected, dividend estimates) were exact-match — a
-    # row owned by "JAY" showed in the sheet totals yet dropped out of the
+    # row owned by "AMIT" showed in the sheet totals yet dropped out of the
     # computed columns. Canonicalise typed owners onto the person list, the
     # _CANON_CLASS idiom; unknown owners stay as typed.
     _owner_map = {p.casefold(): p for p in data.persons}

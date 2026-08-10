@@ -1,5 +1,5 @@
 """Regression tests for the v1.4.2 polish fixes (2026-07-17 review, items
-cut by the main report's cap — numbered 1..8 as presented to Jay; item 9 was
+cut by the main report's cap — numbered 1..8 as presented to the project owner; item 9 was
 docs-only)."""
 
 from datetime import date

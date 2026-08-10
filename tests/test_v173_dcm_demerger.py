@@ -57,13 +57,13 @@ def test_every_shipped_demerger_apportions_exactly_one_hundred():
 
 
 def test_pre_demerger_lot_gains_two_children_with_the_cost_split():
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = [
         ("DCMSRIND", "DCM SHRIRAM INDUSTRIES LTD.", DCM),
         ("DSFCL", "DCM SHRIRAM FINE CHEM LTD", DSFCL),
         ("DCMSIL", "DCM SHRIRAM INTERNATIONAL", DCMSIL)]
     # 100 shares bought in 2019 — before BOTH the 2021 split and the demerger
-    d.equity = [M.EquityRow(owner="Jay", scrip="DCM SHRIRAM INDUSTRIES LTD.",
+    d.equity = [M.EquityRow(owner="Amit", scrip="DCM SHRIRAM INDUSTRIES LTD.",
                             qty=100, avg_cost=90.0,
                             cost_date=date(2019, 6, 10))]
     split = M.CorporateAction(symbol="DCMSRIND", isin=DCM, type="SPLIT",
@@ -102,9 +102,9 @@ def test_pre_demerger_lot_gains_two_children_with_the_cost_split():
 
 
 def test_lot_bought_after_the_record_date_gets_no_children():
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = [("DCMSRIND", "DCM SHRIRAM INDUSTRIES LTD.", DCM)]
-    d.equity = [M.EquityRow(owner="Jay", scrip="DCM SHRIRAM INDUSTRIES LTD.",
+    d.equity = [M.EquityRow(owner="Amit", scrip="DCM SHRIRAM INDUSTRIES LTD.",
                             qty=50, avg_cost=40.0,
                             cost_date=date(2026, 1, 15))]
     evs = _dcm_events()

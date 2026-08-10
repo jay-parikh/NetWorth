@@ -1,6 +1,6 @@
 """v1.5.1 keep + gloss: terms stay, hover comments explain them.
 
-Two invariants, both from Jay's review:
+Two invariants, both from the owner's review:
 1. Domain terms are NEVER renamed or softened — headers and banners keep
    compute / NAV / ISIN / XIRR etc. verbatim.
 2. Each jargon-bearing header carries a plain-language comment that leads

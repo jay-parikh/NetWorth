@@ -2387,7 +2387,7 @@ def build_workbook(data: PortfolioData, out_path, *, masked: bool = False,
     tab_color = {"Dashboard": TAB_NAVY, "Projection": TAB_NAVY,
                  "Settings": TAB_NAVY, "Guide": TAB_GOLD}
     # keyed by the TAB name (person_tab_map), not the typed name — an
-    # adjusted tab ("Jay/HUF" → "Jay-HUF") must still get its teal strip
+    # adjusted tab ("Sample/HUF" → "Sample-HUF") must still get its teal strip
     tab_color.update({t: TAB_TEAL
                       for t in M.person_tab_map(data.persons).values()})
     tab_color.update({s: TAB_BLUE for s in (

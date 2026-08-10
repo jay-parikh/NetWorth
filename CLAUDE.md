@@ -1,7 +1,7 @@
 # CLAUDE.md — NetWorth development guide
 
 Read this before touching anything. It captures the decisions, gotchas and
-conventions agreed with the project owner (Jay), so any session — human or AI —
+conventions agreed with the project owner, so any session — human or AI —
 starts from the same page.
 
 ## What this project is
@@ -69,7 +69,7 @@ Repo: https://github.com/jay-parikh/NetWorth (owner decides when to push).
   dual-source days. See `legacy/UpdatePrices.ps1` `Get-Bhavcopy` for a
   working recipe of the headers.
 
-## Product principles (Jay, 2026-07-17)
+## Product principles (project owner, 2026-07-17)
 
 - **Docs follow code, always.** README, the workbook's Guide sheet and the
   docs are updated in the same commit as the change they describe — the
@@ -89,7 +89,7 @@ Repo: https://github.com/jay-parikh/NetWorth (owner decides when to push).
 
 - **Commits:** small, self-contained, one milestone (or sub-step) each, message
   prefixed with the milestone (`R2: ...`). **No `Co-Authored-By` trailer, ever.**
-  Do not push or create the GitHub repo unless Jay explicitly asks.
+  Do not push or create the GitHub repo unless the project owner explicitly asks.
 - **Milestones:** R0 scaffold → R1 spec → R2 generator (core parity) →
   R3 updater → R4 packaging → R5 quick wins (red/green, bond maturity, bank
   master, FY-end value) → R6 FMV-2018 + delisted → R7 corporate actions = v1.0.
@@ -106,7 +106,7 @@ python -m networth.update PATH     # round-trip update of an existing workbook
 pytest                             # XIRR golden values, round-trip identity, parsers, corp actions
 ```
 
-Verification beyond pytest: open the generated workbook in Excel (Jay's
+Verification beyond pytest: open the generated workbook in Excel (the owner's
 Windows machine) or LibreOffice and check charts, type-ahead dropdowns,
 conditional formats. The round-trip identity test (generate → read → regenerate
 → semantically equal) is the regression backbone.

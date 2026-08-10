@@ -98,6 +98,53 @@ def person_sheet_name(name: str, taken: set[str]) -> str:
     return s
 
 
+# Dashboard labels that live in the SAME column as the person names
+# (v1.7.6). The person matrix is the one place the reader trusts a fixed
+# row window, so deleting the unused person rows — which users do to tidy
+# up, and the docs invite ("delete rows freely") — slides TOTAL and the
+# headings below it up INTO that window, where they were read as people
+# and given their own tabs. Reading stops at the first of these, and any
+# that already became a "person" is dropped, which repairs the file.
+_NOT_PERSON_EXACT = frozenset({
+    "total", "person", "asset class", "as on", "family net worth",
+    "portfolio xirr", "real return", "inflation %", "expected return %",
+})
+_NOT_PERSON_PREFIX = ("dividends fy", "allocation by", "net worth by",
+                      "family portfolio")
+
+
+def is_person_label(name: str) -> bool:
+    """False for a Dashboard heading that only LOOKS like a person name."""
+    s = (name or "").strip().casefold()
+    if not s or s in _NOT_PERSON_EXACT:
+        return False
+    if any(s.startswith(p) for p in _NOT_PERSON_PREFIX):
+        return False
+    return s not in {r.casefold() for r in RESERVED_SHEET_NAMES}
+
+
+def persons_from_column(cell_value, first_row: int | None = None,
+                        last_row: int | None = None) -> list[str]:
+    """The person names in Dashboard column A (§3.2). `cell_value(row)`
+    returns that row's column-A text. Stops at the first heading, so a
+    workbook whose rows were tidied up reads its real people and nothing
+    else; ONE definition shared by the reader and the updater's peek.
+
+    (The row constants are resolved in the body, not as defaults — they
+    are defined further down this module.)"""
+    first_row = DASH_PERSON_FIRST if first_row is None else first_row
+    last_row = DASH_PERSON_LAST if last_row is None else last_row
+    out: list[str] = []
+    for r in range(first_row, last_row + 1):
+        raw = (cell_value(r) or "").strip()
+        if not raw:
+            continue
+        if not is_person_label(raw):
+            break                       # TOTAL and everything under it
+        out.append(raw)
+    return out
+
+
 def person_tab_map(persons: list[str]) -> dict[str, str]:
     """name → Excel tab for every person, in Dashboard order — THE single
     mapping (v1.6.2): the generator builds sheets from it, the reader warns

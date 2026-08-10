@@ -1386,9 +1386,10 @@ def peek_persons(path) -> list[str]:
     wb = load_workbook(path, read_only=True)
     try:
         dash = wb["Dashboard"]
-        return [str(dash.cell(r, 1).value).strip()
-                for r in range(6, 16)
-                if dash.cell(r, 1).value not in (None, "")]
+        # same rule as the reader (§3.2) — the prompt must never offer a
+        # Dashboard heading as one of the family
+        return M.persons_from_column(
+            lambda r: str(dash.cell(r, 1).value or "").strip())
     finally:
         wb.close()
 

@@ -238,6 +238,21 @@ it. `<L>` is the last allocation-table row (`19 + #enabled`).
 | F4 | verdict `=IF(B4="","",IF(B4>E3/100,"Beats inflation ✓","Below inflation ✗"))` | computed |
 | row 5 | headers `Person, <enabled class labels…>, Total, Expected @ 31-Mar-<FY>` | static |
 | A6:A15 | up to 10 person names | **input** (pre-filled from `persons`) |
+
+**Reading the people back (v1.7.6).** This matrix is the one place a reader
+may rely on fixed row numbers, which makes it the one place a user's edit
+can be misread: deleting the unused person rows (something §1 explicitly
+permits) slides `TOTAL` and the headings under it UP into A6:A15, where
+they were read as family members and given their own person sheets. The
+rule is therefore: **scan A6:A15, skip blanks, and STOP at the first cell
+that is a known Dashboard heading** — `TOTAL`, `Person`, `Asset class`,
+`As on`, `Family net worth`, `Portfolio XIRR`, anything starting
+`Dividends FY` / `Allocation by` / `Net worth by`, or any reserved sheet
+name (§3.1). One implementation serves both the reader and the updater's
+cheap peek, so the console prompt can never offer a heading as a person. A
+file that already carries such a "person" drops it on the next read, is
+reported in plain words, and the regeneration restores the canonical
+layout — the junk tab disappears, real tabs and rows are untouched.
 | B6:…15 | per class: `=IF($A6="","",SUMIFS(<class value col>, <class owner col>, $A6))` | computed |
 | `<T>`6:15 | `=IF($A6="","",SUM(B6:<last class col>6))` | computed |
 | row 16 | `TOTAL` + column sums | computed |

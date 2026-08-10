@@ -42,9 +42,9 @@ def _manual_demerger(new_name="", new_symbol=""):
 
 
 def _data_with_lot():
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = [("RELIANCE", "RELIANCE INDUSTRIES", PARENT)]
-    d.equity = [M.EquityRow(owner="Jay", scrip="RELIANCE INDUSTRIES", qty=10,
+    d.equity = [M.EquityRow(owner="Amit", scrip="RELIANCE INDUSTRIES", qty=10,
                             avg_cost=1000.0, cost_date=date(2020, 1, 1))]
     return d
 
@@ -161,7 +161,7 @@ def test_an_nse_only_etf_prices_from_the_nse_bhavcopy():
 # ---- 3: unlisted shares ----------------------------------------------------
 
 def test_unlisted_price_values_the_holding_and_yields_to_the_market():
-    unlisted = M.EquityRow(owner="Jay", scrip="SOME PRIVATE LTD", qty=100,
+    unlisted = M.EquityRow(owner="Amit", scrip="SOME PRIVATE LTD", qty=100,
                            avg_cost=50.0, cost_date=date(2024, 1, 1),
                            manual_price=80.0)
     assert M.effective_price(unlisted) == pytest.approx(80.0)
@@ -173,9 +173,9 @@ def test_unlisted_price_values_the_holding_and_yields_to_the_market():
 def test_unlisted_holding_counts_in_net_worth_and_returns():
     from networth.compute.cashflows import equity_flows
     from networth.compute.snapshot import net_worth_snapshot
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = []
-    d.equity = [M.EquityRow(owner="Jay", scrip="SOME PRIVATE LTD", qty=100,
+    d.equity = [M.EquityRow(owner="Amit", scrip="SOME PRIVATE LTD", qty=100,
                             avg_cost=50.0, cost_date=date(2024, 1, 1),
                             manual_price=80.0)]
     snap = net_worth_snapshot(d, TODAY)
@@ -187,7 +187,7 @@ def test_unlisted_holding_counts_in_net_worth_and_returns():
 
 def test_unlisted_row_is_never_flagged_delisted():
     # no close date ever arrived, so there is nothing to escalate from
-    r = M.EquityRow(owner="Jay", scrip="SOME PRIVATE LTD", qty=10,
+    r = M.EquityRow(owner="Amit", scrip="SOME PRIVATE LTD", qty=10,
                     avg_cost=10.0, manual_price=25.0)
     assert r.close_date is None and M.effective_price(r) == 25.0
 

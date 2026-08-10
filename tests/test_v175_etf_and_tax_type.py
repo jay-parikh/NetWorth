@@ -151,15 +151,15 @@ def test_tax_type_roundtrips_through_the_workbook(tmp_path):
 
 
 def _two_etfs(tax_type_for_silver="Gold-Silver"):
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = [("", "Silver ETF", SILVER), ("", "Nifty ETF", NIFTY)]
     d.show_capital_gains = True
     for name, tt in (("Silver ETF", tax_type_for_silver), ("Nifty ETF", "")):
-        d.equity.append(M.EquityRow(owner="Jay", scrip=name, qty=1000,
+        d.equity.append(M.EquityRow(owner="Amit", scrip=name, qty=1000,
                                     avg_cost=100.0, close=150.0,
                                     cost_date=date(2024, 8, 1), tax_type=tt))
         d.equity_sells.append(M.EquitySellRow(
-            owner="Jay", scrip=name, isin_override="", qty=500,
+            owner="Amit", scrip=name, isin_override="", qty=500,
             buy_date=date(2024, 8, 1), buy_price=100.0,
             sell_date=date(2026, 6, 1), sell_price=150.0))
     return d
@@ -190,10 +190,10 @@ def test_without_the_marker_it_behaves_exactly_as_before():
 def test_grandfathering_is_equity_only():
     """The 31-01-2018 relief is a §112A benefit — a bullion ETF must not
     get it even when the lot predates the cutoff."""
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = [("", "Silver ETF", SILVER)]
     d.show_capital_gains = True
-    d.equity.append(M.EquityRow(owner="Jay", scrip="Silver ETF", qty=100,
+    d.equity.append(M.EquityRow(owner="Amit", scrip="Silver ETF", qty=100,
                                 avg_cost=10.0, close=200.0,
                                 cost_date=date(2015, 1, 1),
                                 tax_type="Gold-Silver"))
@@ -205,10 +205,10 @@ def test_grandfathering_is_equity_only():
 
 
 def test_debt_marked_lot_after_2023_is_slab_taxed():
-    d = M.PortfolioData(persons=["Jay"])
+    d = M.PortfolioData(persons=["Amit"])
     d.masters.stock_rows = [("", "Bond ETF", "INF204KB17I5")]
     d.show_capital_gains = True
-    d.equity.append(M.EquityRow(owner="Jay", scrip="Bond ETF", qty=100,
+    d.equity.append(M.EquityRow(owner="Amit", scrip="Bond ETF", qty=100,
                                 avg_cost=100.0, close=120.0,
                                 cost_date=date(2024, 5, 1), tax_type="Debt"))
     rep = capital_gains_report(d, TODAY)
@@ -224,11 +224,11 @@ def test_no_realised_gain_can_vanish_from_the_fy_summary():
     this, adding a bucket could silently drop a gain from the totals."""
     d = _two_etfs()
     d.masters.stock_rows.append(("", "Bond ETF", "INF204KB17I5"))
-    d.equity.append(M.EquityRow(owner="Jay", scrip="Bond ETF", qty=100,
+    d.equity.append(M.EquityRow(owner="Amit", scrip="Bond ETF", qty=100,
                                 avg_cost=100.0, close=90.0,
                                 cost_date=date(2024, 5, 1), tax_type="Debt"))
     d.equity_sells.append(M.EquitySellRow(
-        owner="Jay", scrip="Bond ETF", isin_override="", qty=100,
+        owner="Amit", scrip="Bond ETF", isin_override="", qty=100,
         buy_date=date(2024, 5, 1), buy_price=100.0,
         sell_date=date(2026, 6, 1), sell_price=90.0))
     rep = capital_gains_report(d, TODAY)

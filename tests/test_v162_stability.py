@@ -160,9 +160,9 @@ def test_amfi_tiny_result_keeps_master(tmp_path, monkeypatch):
 # ---- person names never crash (A6) -----------------------------------------
 
 def test_person_sheet_name_rules():
-    assert person_sheet_name("Jayeshkumar Ramanbhai Patel (HUF)", set()) == \
-        "Jayeshkumar Ramanbhai Patel (HU"
-    assert person_sheet_name("Jay/HUF", set()) == "Jay-HUF"
+    assert person_sheet_name("Averylongfamilyname Placeholder (HUF)", set()) == \
+        "Averylongfamilyname Placeholder"
+    assert person_sheet_name("Sample/HUF", set()) == "Sample-HUF"
     assert person_sheet_name("asha", {"Asha"}) == "asha-2"
     assert person_sheet_name("Equity", set()) == "Equity-2"
     assert person_sheet_name("D'Souza", set()) == "D'Souza"
@@ -170,21 +170,21 @@ def test_person_sheet_name_rules():
 
 def test_weird_person_names_build_and_warn(tmp_path):
     d = sample_portfolio()
-    d.persons = ["D'Souza", "Jay/HUF",
-                 "Jayeshkumar Ramanbhai Patel (HUF)"]
+    d.persons = ["D'Souza", "Sample/HUF",
+                 "Averylongfamilyname Placeholder (HUF)"]
     p = tmp_path / "wb.xlsx"
     build_workbook(d, str(p))                           # must not raise
     wb = load_workbook(p)
-    assert "D'Souza" in wb.sheetnames and "Jay-HUF" in wb.sheetnames
+    assert "D'Souza" in wb.sheetnames and "Sample-HUF" in wb.sheetnames
     # the teal person strip must follow the ADJUSTED tab name (§3.1)
-    tc = wb["Jay-HUF"].sheet_properties.tabColor
+    tc = wb["Sample-HUF"].sheet_properties.tabColor
     assert tc is not None and "31859C" in str(tc.rgb)
     with zipfile.ZipFile(p) as z:
         charts = [z.read(n).decode() for n in z.namelist()
                   if "charts/chart" in n]
     assert any("D''Souza" in c for c in charts)         # escaped ref
     back = read_workbook(str(p))
-    assert any("Jay/HUF" in w and "Jay-HUF" in w for w in back.warnings)
+    assert any("Sample/HUF" in w and "Sample-HUF" in w for w in back.warnings)
 
 
 # ---- xirr keeps its never-raises promise (A7) ------------------------------

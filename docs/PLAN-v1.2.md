@@ -665,7 +665,7 @@ Per milestone, following the house pattern:
    sheets in all enable/disable combinations — the regression backbone.
 5. **Backward compatibility**: a v1.1 workbook (no Settings, 5-class History)
    updates cleanly; History totals unchanged; missing Settings → defaults.
-6. Manual Excel (Jay's Windows machine) / LibreOffice check per CLAUDE.md.
+6. Manual Excel (the owner's Windows machine) / LibreOffice check per CLAUDE.md.
 7. **UX check per milestone** (the design principles above are acceptance
    criteria): every new sheet has a plain one-sentence hint in row 2; every
    amber cell carries a comment saying why; the Guide covers the feature in

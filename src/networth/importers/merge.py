@@ -14,7 +14,7 @@ the batch:
 - the engine mutates `data` only after EVERY gate has passed; a deferred
   import (capacity) leaves the workbook untouched.
 
-Statement-wins (Jay, 2026-07-18): for funds the statement covers, typed
+Statement-wins (project owner, 2026-07-18): for funds the statement covers, typed
 rows are replaced by the exact history — but only when the caller passed
 replace=True, which update.py sets ONLY after an interactive confirmation.
 Headless runs always append-only (multiset dedupe), never destructive.
@@ -549,7 +549,7 @@ def merge_equity_batches(data, batches: list[ImportBatch],
         pairs: list[tuple] = []            # (buy_date, buy_price, qty, sell)
         shortfall = None
         opened = 0.0                       # units supplied by the pre-2018
-        for t in trades:                   # opening lot (Jay, 2026-07-18)
+        for t in trades:                   # opening lot (project owner, 2026-07-18)
             if t.side == "BUY":
                 lots.append([t.trade_date, t.qty, t.price])
                 continue
