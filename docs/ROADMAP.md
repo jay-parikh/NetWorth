@@ -93,10 +93,20 @@ into RELEASES.md with acceptance criteria.
   condensing first, current FY never rolled, every gate re-run) and falls
   back to the plain deferral if even full condensing can't fit. Headless
   runs never condense.
-- ✅ **Curated-data refresh cadence** *(decided 2026-07-18)* —
-  `restructures.csv` (R14) and `bullion_proxies.csv` (R13) are refreshed as
-  part of **every release** (a standing item in the RELEASES.md checklist),
-  plus an out-of-band release whenever a major index stock restructures.
+- ✅ **Curated-data refresh cadence** *(decided 2026-07-18; superseded for
+  restructures by v1.7.7)* — `bullion_proxies.csv` (R13) is still refreshed
+  as part of **every release**. `restructures.csv` (R14) no longer needs
+  one: since v1.7.7 the updater fetches it from the project on every run
+  (§5.9), so a merger or demerger reaches users **on their next update, as
+  a commit rather than a release**. The bundled copy is still refreshed at
+  release time as the offline baseline.
+- ⬜ **Feed-assisted demerger stubs** — the exchanges DO announce a
+  demerger, they just never publish the cost apportionment or the new
+  company's ISIN (matching it by name is exactly the fuzzy matching the
+  never-garbage rule forbids). A later refinement: create the event from
+  the announcement with its ex-date and ratio, leave the cost split blank
+  and amber, so a user who wants it before the project curates it supplies
+  one number instead of twelve fields.
 
 ## More of the balance sheet
 

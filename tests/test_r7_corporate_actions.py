@@ -129,7 +129,8 @@ def test_update_applies_actions_and_keeps_manual(tmp_path):
                                ratio_to=5, source="Auto",
                                details="Face Value Split From Rs 10 To Rs 5")]
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="TEST"),
-                  amfi_data=AmfiData(), ca_data=fetched, today=TODAY)
+                  amfi_data=AmfiData(), ca_data=fetched, today=TODAY,
+                  restructures=[])          # curated events are not this test
     assert summary["ca_rows"] == 2
     assert summary["ca_adjusted_rows"] == 2      # RELIANCE row + ITC row
 
@@ -145,7 +146,8 @@ def test_update_applies_actions_and_keeps_manual(tmp_path):
 
     # idempotent: run again with the same feed → same factors, no duplicates
     summary2 = run(path, price_data=PriceData(trade_date=TODAY, source="TEST"),
-                   amfi_data=AmfiData(), ca_data=fetched, today=TODAY)
+                   amfi_data=AmfiData(), ca_data=fetched, today=TODAY,
+                   restructures=[])
     assert summary2["ca_rows"] == 2
     back2 = read_workbook(str(path))
     rel2 = next(r for r in back2.equity if r.scrip == "RELIANCE INDUSTRIES LTD.")
@@ -188,7 +190,7 @@ def test_coverage_warning_for_unverified_holdings(tmp_path, monkeypatch):
     monkeypatch.setattr(U.ca_mod, "fetch",
                         lambda *a, **kw: ([], all_held - {wipro}, [], 0))
     summary = run(path, price_data=PriceData(trade_date=TODAY, source="TEST"),
-                  amfi_data=AmfiData(), today=TODAY)
+                  amfi_data=AmfiData(), today=TODAY, restructures=[])
     assert summary["ca_unverified"] == ["WIPRO LTD."]
     assert any("could NOT be verified" in w and "WIPRO LTD." in w
                for w in summary["warnings"])

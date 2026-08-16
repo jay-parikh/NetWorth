@@ -443,6 +443,46 @@ listed them after the five real names.
 Docs in-commit: SPEC §3.3 (the reading rule, normative), RELEASES, release
 notes v1.7.6, README badges. Suite: 392 (7 added).
 
+## v1.7.7 — "Corporate actions without waiting for a release" (2026-08-11)
+
+The owner's point, from a run of user issues about demergers: *the end user
+must not have to take manual action — it should be handled as soon as they
+run Update Portfolio.* Splits and bonuses already are; mergers and demergers
+were not, because no feed publishes a swap ratio or a cost apportionment, so
+they are curated by hand — and curated data only shipped inside the app.
+
+| Change | Delivers | Acceptance criteria |
+|---|---|---|
+| Curated list fetched at run time (SPEC §5.9) | The updater refreshes `data/restructures.csv` from the project on every run and merges it over the bundled copy, keyed `(old_isin, type, ex_date, new_isin)`, fetched winning. An event committed today reaches every user on their next Update Portfolio — no new version, nothing for them to do, and Manual rows still override everything. Keeping curated data current becomes a commit, not a release | test_v177_curated_fetch.py: a newly published event lands and every bundled event survives; a corrected percentage supersedes rather than duplicates; the bundled file and the fetched file go through the SAME parser |
+| A bad download can never cost data | One parser judges both copies, so Σ cost_pct = 100 still guards the fetched file; short / not-our-file / **fewer events than the app ships** / any exception → refused wholesale, bundled copy kept. Offline behaviour is exactly as before, and the fetch can never break a run | 599/404/HTML/raising-proxy/truncated/short-file/bad-split cases each keep the bundled list; an end-to-end run with a dead network completes; `--no-curated-fetch` and `NETWORTH_NO_CURATED_FETCH` opt out |
+| Hindustan Unilever demerger curated | Ice-cream business → Kwality Wall's (India) Ltd: ex-date 05-12-2025 (scheme effective 01-12-2025), 1:1, official cost split 98.09% HUL / 1.91% KWIL (intimated to the exchanges 13-12-2025), child ISIN INE2KCE01013 | the shipped-file invariant (every demerger sums to exactly 100) covers it |
+
+Hardened by a review round before release: the merge replaces whole EVENTS
+(a row-by-row union let a corrected child ISIN sit beside the stale one —
+101.91% apportioned and a phantom holding appended) and re-validates the
+result; the fetch was added to the conftest network stub (17 modules call
+`run()`, so the suite had started making live requests whose goldens
+depended on the `master` branch); a cost split corrected AFTER the event
+was applied now says so instead of quietly desyncing parent and child;
+`resp.encoding` pinned to utf-8; the trust floor moved inside the fetcher
+as one `refresh_restructures(bundled)` entry point; `no_curated_fetch`
+dropped from `run()` in favour of injecting the bundled list, the way every
+other feed is suppressed; timeouts bounded per phase; `--no-update-check`
+now suppresses this fetch too.
+
+Five sample-derived tests needed isolating (`restructures=[]`): curating a
+REAL event changes the shipped sample, which holds Hindustan Unilever, so
+a Kwality Wall's row is now appended on a sample run. The behaviour is
+correct — those tests are about feed degradation, manual rows, the 200-row
+cap, coverage warnings and FMV positional indexing, and now say so.
+
+Docs in-commit: SPEC §5.8 (now the offline baseline) + new §5.9, USER-GUIDE
+§5 (why these two actions are different, that they now arrive by
+themselves, and that a hand-entered one needs two rows with New name/New
+symbol), Guide sheet, RELEASES, release notes v1.7.7, README badges,
+screenshots re-rendered (guide-tab, tax-rules, capital-gains). Suite: 404
+(12 added).
+
 ## Release artifact layout (from R4)
 
 ```

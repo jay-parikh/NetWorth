@@ -28,6 +28,7 @@ from .compute.xirr import xirr
 from .fetch import amfi as amfi_mod
 from .fetch import bhavcopy as bhav_mod
 from .fetch import corporate_actions as ca_mod
+from .fetch import curated as curated_mod
 from .compute.restructures import (apply_demergers, consumed_label,
                                    integrate_restructures)
 from .model import (ASSET_CLASSES, MANUAL_CLASS_LABELS, DividendRow,
@@ -522,10 +523,38 @@ def run(path: Path, *, price_data=None, amfi_data=None, ca_data=None,
     # consumed ISINs route to their successor and demerger children get
     # priced in the same run. A malformed curated file fails loudly.
     if restructures is None:
+        # the bundled file, then topped up from the project itself (§5.9).
+        # Mergers and demergers are the one category no feed publishes, so
+        # they are curated by hand — refreshing them each run means a newly
+        # notified event reaches the user on their NEXT update, with nothing
+        # for them to do and no new app version. Offline or opted out
+        # (main() injects the bundled list), this is the old behaviour.
         try:
             restructures = load_restructures()
         except OSError:
             restructures = []
+        was_pct = {(c.isin, c.type, c.ex_date, c.new_isin): c.cost_pct
+                   for c in restructures}
+        restructures, added = curated_mod.refresh_restructures(restructures)
+        if added:
+            summary["curated_added"] = added
+            # a cost split CORRECTED after we already appended the spun-off
+            # rows can't be applied retroactively: those rows carry a frozen
+            # Avg. cost and the event is stamped Applied. Say so rather than
+            # let parent + child quietly stop summing to the original cost.
+            applied = {(c.isin, c.type, c.ex_date, c.new_isin)
+                       for c in data.corporate_actions if c.applied}
+            for c in restructures:
+                k = (c.isin, c.type, c.ex_date, c.new_isin)
+                if (k in applied and k in was_pct
+                        and was_pct[k] is not None and c.cost_pct is not None
+                        and abs(was_pct[k] - c.cost_pct) > 1e-9):
+                    summary["warnings"].append(
+                        f"{c.new_name or c.new_isin}: the official cost "
+                        f"split for this demerger was corrected to "
+                        f"{c.cost_pct:g}% after it was already applied to "
+                        "your sheet. Your existing rows keep the old split - "
+                        "delete the spun-off row and run again to redo it")
     else:
         # never mutate the caller's event objects (the Applied stamping
         # below writes into them) — the loaded-from-CSV path is fresh anyway
@@ -1235,6 +1264,9 @@ def _print_summary(s: dict) -> None:
                     else _c("33", f"{len(s['ca_unverified'])} stock(s) UNVERIFIED"))
         _row("🔀", "Corp acts", f"{s['ca_rows']} action(s) on file · "
              f"{s['ca_adjusted_rows']} holding(s) adjusted · {coverage}")
+    if s.get("curated_added"):
+        _row("🆕", "Merger list", f"{s['curated_added']} newly published "
+             "merger/demerger event(s) picked up from the project")
     if s.get("restructure_children"):
         _row("🧬", "Restructure", f"{s['restructure_children']} new holding row(s) "
              f"appended from a demerger (cost & dates inherited)")
@@ -2083,7 +2115,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pause", action="store_true",
                         help="wait for Enter before exiting (double-click launchers)")
     parser.add_argument("--no-update-check", action="store_true",
-                        help="don't check GitHub for a newer version")
+                        help="don't contact GitHub at all (no version check, "
+                             "no merger/demerger refresh)")
+    parser.add_argument("--no-curated-fetch", action="store_true",
+                        help="don't refresh the merger/demerger list from "
+                             "the project (use only what ships in the app)")
     parser.add_argument("--no-prompt", action="store_true",
                         help="never ask interactive questions (e.g. add a person)")
     parser.add_argument("--add-person", action="append", metavar="NAME", default=[],
@@ -2182,6 +2218,20 @@ def main(argv: list[str] | None = None) -> int:
                             password, reveal = pw, True
                 except Exception:  # noqa: BLE001
                     pass
+            # --no-curated-fetch / NETWORTH_NO_CURATED_FETCH: hand run() the
+            # bundled merger/demerger list so it has no reason to fetch one
+            bundled_only = None
+            if (args.no_curated_fetch
+                    or os.environ.get("NETWORTH_NO_CURATED_FETCH")
+                    # someone who switched the version check off did so to
+                    # stop the app contacting GitHub at all — honour that
+                    # here too rather than make them find a second flag
+                    or args.no_update_check
+                    or os.environ.get("NETWORTH_NO_UPDATE_CHECK")):
+                try:
+                    bundled_only = load_restructures()
+                except OSError:
+                    bundled_only = []
             summary = run(path, add_persons=new_persons,
                           toggle_classes=toggles, password=password,
                           import_batches=im_batches,
@@ -2190,7 +2240,11 @@ def main(argv: list[str] | None = None) -> int:
                           import_decisions=im_decisions,
                           import_openings=im_openings,
                           import_condense=im_condense,
-                          reveal=reveal, reset_privacy=reset)
+                          reveal=reveal, reset_privacy=reset,
+                          # opting out is expressed the way every other feed
+                          # expresses it — by handing run() the data, here
+                          # the bundled list, instead of a "don't fetch" flag
+                          restructures=bundled_only)
             _print_summary(summary)
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1

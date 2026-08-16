@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from .. import model as M
 from ..model import (RESTRUCTURE_TYPES, CorporateAction, EquityRow,
                      PortfolioData, chained_adjustment_factor,
-                     cost_adjustment_factor, resolve_isin)
+                     cost_adjustment_factor, resolve_isin, restructure_key)
 
 
 def integrate_restructures(data: PortfolioData,
@@ -40,16 +40,17 @@ def integrate_restructures(data: PortfolioData,
     held |= {resolve_isin(i, restructures, today) for i in held}
     # new_isin is part of the key: a demerger's retention row and child rows
     # share (isin, type, ex_date) and must track Applied independently
-    manual_keys = {(a.isin, a.type, a.ex_date, a.new_isin)
+    # ONE definition of that key (model.restructure_key), shared with the
+    # fetch-time merge (§5.9) — two spellings could disagree about what
+    # "the same event" is, and then a Manual override would stop overriding
+    manual_keys = {restructure_key(a)
                    for a in data.corporate_actions if a.source == "Manual"}
-    prev_applied = {(a.isin, a.type, a.ex_date, a.new_isin): a.applied
+    prev_applied = {restructure_key(a): a.applied
                     for a in data.corporate_actions if a.applied}
     curated = [c for c in restructures
-               if c.isin in held
-               and (c.isin, c.type, c.ex_date, c.new_isin) not in manual_keys]
+               if c.isin in held and restructure_key(c) not in manual_keys]
     for c in curated:                        # Applied survives the rewrite
-        c.applied = c.applied or prev_applied.get(
-            (c.isin, c.type, c.ex_date, c.new_isin))
+        c.applied = c.applied or prev_applied.get(restructure_key(c))
     data.corporate_actions = ([a for a in data.corporate_actions
                                if a.source != "Curated"] + curated)
     events = [a for a in data.corporate_actions

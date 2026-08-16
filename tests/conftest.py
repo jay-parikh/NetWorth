@@ -27,6 +27,7 @@ STUB_NPS = NpsData(
 @pytest.fixture(autouse=True)
 def _no_network_side_feeds(monkeypatch):
     import networth.fetch.bullion as bullion_mod
+    import networth.fetch.curated as curated_mod
     import networth.fetch.nps as nps_mod
     monkeypatch.setattr(bullion_mod, "fetch_ibja",
                         lambda *a, **k: dict(STUB_BULLION))
@@ -34,6 +35,14 @@ def _no_network_side_feeds(monkeypatch):
                         lambda *a, **k: NpsData(
                             nav_by_code=dict(STUB_NPS.nav_by_code),
                             master_rows=list(STUB_NPS.master_rows)))
+    # v1.7.7: run() refreshes the curated merger/demerger list from the
+    # project. Left live, every test calling run() would wait on a real
+    # request and its goldens would depend on whatever master carries
+    # today — None keeps the bundled file, which is what tests assert on.
+    # test_v177_curated_fetch.py calls the fetcher directly with a stub
+    # session, so the fetch path itself is still covered.
+    monkeypatch.setattr(curated_mod, "fetch_restructures",
+                        lambda *a, **k: None)
 
 
 NEW_CLASS_KEYS = ("epf", "gold_silver", "nps", "real_estate", "cash",

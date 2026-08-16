@@ -175,6 +175,27 @@ Things this tab quietly does for you:
   the tax rule). A demerger *appends* the spun-off company as its own row
   with the company-notified cost split. The Corporate_Actions tab (visible
   when you switch on *Reference lists*) is the audit trail.
+
+  These two are special, and worth knowing why. The exchanges publish
+  splits and bonuses, so the updater simply reads them. **Nobody publishes
+  mergers and demergers in a form a program can read** — the share ratio,
+  and above all how your original cost splits between the old company and
+  the new one, exist only inside the company's own filing. Somebody has to
+  read that filing and write the numbers down, and the project does that
+  for you. Since v1.7.7 those numbers **reach you on your next update**:
+  every run quietly picks up newly published events, so a demerger added
+  today is applied the next time you double-click Update Portfolio — with
+  nothing to type and no new version to install. Offline, or with
+  `--no-update-check`, the list that ships inside the app is used instead,
+  and anything you typed yourself always wins.
+
+  **A demerger never changes your existing quantity.** You keep every
+  share you had; what appears is a *new row* for the company that was
+  spun off, carrying your original buy date. If you ever add one by hand,
+  it takes **two rows** — one for the part the old company keeps (put its
+  own ISIN in *New ISIN*) and one per new company — and their *Cost %*
+  must total 100. Fill in *New name* and *New symbol* too, or the new row
+  will be labelled with its ISIN instead of a readable name.
 - **Forgotten old costs** — bought before February 2018 and don't know
   the price? Leave *Avg. cost* blank: the official 31-01-2018 value (the
   tax "grandfathering" value) fills in, marked amber.

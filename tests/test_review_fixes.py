@@ -73,7 +73,8 @@ def test_manual_ca_rows_survive_a_flooded_feed(tmp_path):
                              ratio_from=5, ratio_to=5, source="Auto")
              for i in range(250)]
     summary = run(path, price_data=_prices(), amfi_data=AmfiData(),
-                  ca_data=flood, div_data=[], today=TODAY)
+                  ca_data=flood, div_data=[], today=TODAY,
+                  restructures=[])   # this test is about the 200-row cap
     assert any("Corporate_Actions sheet is full" in w
                for w in summary["warnings"])
     back = read_workbook(str(path))

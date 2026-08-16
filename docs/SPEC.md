@@ -1158,6 +1158,60 @@ from the file each run **except the Applied date, which persists** (§6.15).
 
 ---
 
+### 5.9 Curated restructures, refreshed at run time (v1.7.7)
+
+§5.8's file is bundled with the app, which made every newly notified merger
+or demerger wait for a **new app version** — the user's only recourse being
+a hand-entered Manual row. Since v1.7.7 the curated list behaves like every
+other feed: on each run the updater fetches the project's current
+`data/restructures.csv` and merges it over the bundled copy, so an event
+published today reaches every user on their **next Update Portfolio, with
+no action on their part and no new version**.
+
+- **Source**: the project's own repository over HTTPS (a public file; no
+  user data is sent). ~8 s timeout, never blocking.
+- **One parser** (§5.8) judges both copies, so a fetched row can never be
+  accepted on weaker terms than a shipped one — in particular
+  Σ cost_pct = 100 still holds, or the whole download is refused.
+- **Distrust-empty** (the §5.1 AMFI precedent): a response that is short,
+  is not this file, or carries **fewer events than the app already ships**
+  is refused wholesale — a truncated download must never remove a merger
+  the user's holdings depend on.
+- **Merge replaces whole EVENTS, not rows.** A demerger is only coherent
+  as a group: if a correction moves a child to a different ISIN, a
+  row-by-row union would keep the stale child *beside* the new one — two
+  individually valid files combining into a list that apportions more than
+  100% of the cost and appends a holding that does not exist. So every row
+  sharing `(old_isin, type, ex_date)` with the fetched file is dropped and
+  replaced by it, **the merged result is re-validated**, and a merge that
+  would break the 100% rule is discarded in favour of the bundled list.
+  A Manual row on Corporate_Actions still overrides everything (§6.15).
+  The run reports how many rows were new, corrected or withdrawn.
+- **A correction that arrives after the event was already applied** cannot
+  be applied retroactively — the spun-off rows carry a frozen Avg. cost and
+  the event is stamped Applied (§6.15) — so the run says so plainly rather
+  than letting parent + child quietly stop summing to the original cost.
+- **The trust gate lives inside the fetcher**, not in its caller: one
+  `refresh_restructures(bundled)` entry point fetches, floors and merges,
+  so no call site can bypass the rule by omitting an argument.
+- **Any failure — offline, proxy, 404, malformed — keeps the bundled copy**,
+  i.e. exactly the pre-v1.7.7 behaviour. A corporate-action refresh can
+  never break an update.
+- **Timeouts are bounded per phase** (connect and read), so an unreachable
+  host cannot double the delay it adds to a run.
+- Switched off with `--no-curated-fetch` / `NETWORTH_NO_CURATED_FETCH`, and
+  also by `--no-update-check` / `NETWORTH_NO_UPDATE_CHECK` — someone who
+  turned off the version check meant "don't contact GitHub", and should not
+  have to find a second flag. The CLI resolves either by handing the updater
+  the bundled list, the way every other feed is suppressed (§7), rather than
+  a per-feed "don't fetch" flag inside the update itself.
+
+Consequence for the maintainer: keeping curated data current is a **commit**,
+not a release. The bundled file is still refreshed at release time as the
+offline baseline.
+
+---
+
 ## 6. Algorithms (normative pseudocode)
 
 ### 6.1 XIRR solver

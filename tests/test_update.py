@@ -94,7 +94,7 @@ def test_update_degrades_gracefully(workbook):
     U.amfi_mod.fetch = lambda **kw: (_ for _ in ()).throw(RuntimeError("amfi down"))
     U.ca_mod.fetch = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("ca down"))
     try:
-        summary = run(workbook, today=TODAY)
+        summary = run(workbook, today=TODAY, restructures=[])
     finally:
         U.bhav_mod.fetch, U.amfi_mod.fetch, U.ca_mod.fetch = orig
 

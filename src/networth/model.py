@@ -691,42 +691,74 @@ def cost_adjustment_factor(isin: str, cost_date: date | None, today: date,
 
 
 def load_restructures(data_dir: Path = DATA_DIR) -> list[CorporateAction]:
-    """Curated mergers/demergers/ISIN changes (SPEC §5.8) — release-refreshed
-    like ppf_rates/fmv; no free feed publishes swap ratios. Validates that
-    every DEMERGER event's cost_pct sums to 100 and FAILS LOUDLY otherwise:
-    silently wrong cost basis would corrupt capital-gains numbers."""
-    import csv
-    from collections import defaultdict
-    from datetime import datetime as _dt
+    """The BUNDLED curated file (SPEC §5.8) — the offline baseline. The same
+    file is also fetched from the project at run time (§5.9) so a newly
+    notified event reaches users without a new app version."""
+    with open(data_dir / "restructures.csv", newline="",
+              encoding="utf-8") as f:
+        return parse_restructures(f.read())
 
-    out: list[CorporateAction] = []
-    with open(data_dir / "restructures.csv", newline="", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            if not (r.get("old_isin") or "").strip():
-                continue
-            out.append(CorporateAction(
-                symbol=(r.get("old_symbol") or "").strip(),
-                isin=r["old_isin"].strip(),
-                type=r["type"].strip().upper(),
-                ex_date=_dt.strptime(r["ex_date"].strip(), "%Y-%m-%d").date(),
-                ratio_from=float(r["ratio_from"]) if r.get("ratio_from") else None,
-                ratio_to=float(r["ratio_to"]) if r.get("ratio_to") else None,
-                source="Curated",
-                details=(r.get("details") or "").strip(),
-                new_isin=(r.get("new_isin") or "").strip(),
-                new_name=(r.get("new_name") or "").strip(),
-                new_symbol=(r.get("new_symbol") or "").strip(),
-                cost_pct=float(r["cost_pct"]) if r.get("cost_pct") else None,
-            ))
+
+def restructure_key(a: CorporateAction) -> tuple:
+    """Identity of one curated row — a demerger's retention and child rows
+    share (isin, type, ex_date), so new_isin is part of the key (§6.15)."""
+    return (a.isin, a.type, a.ex_date, a.new_isin)
+
+
+def restructure_event_key(a: CorporateAction) -> tuple:
+    """Identity of the EVENT a row belongs to. A demerger is only coherent
+    as a whole — its rows must sum to 100 — so anything that replaces one
+    row of an event must replace the event (§5.9)."""
+    return (a.isin, a.type, a.ex_date)
+
+
+def validate_restructures(events: list[CorporateAction]) -> None:
+    """Every DEMERGER event's cost_pct must sum to 100. Raises ValueError.
+    Applied to the bundled file, to a fetched one, AND to the two merged —
+    a rule that only guards the inputs is no rule at all, since a merge can
+    combine two valid lists into an invalid one."""
+    from collections import defaultdict
     sums: dict[tuple, float] = defaultdict(float)
-    for a in out:
+    for a in events:
         if a.type == "DEMERGER":
             sums[(a.isin, a.ex_date)] += a.cost_pct or 0.0
     for (isin, ex), total in sums.items():
         if abs(total - 100.0) > 1e-6:
             raise ValueError(
-                f"restructures.csv: DEMERGER {isin} @ {ex} cost_pct sums to "
+                f"restructures: DEMERGER {isin} @ {ex} cost_pct sums to "
                 f"{total}, not 100 — refusing to corrupt cost bases")
+
+
+def parse_restructures(text: str) -> list[CorporateAction]:
+    """Curated mergers/demergers/ISIN changes — no free feed publishes swap
+    ratios or cost apportionment. Validates that every DEMERGER event's
+    cost_pct sums to 100 and FAILS LOUDLY otherwise: silently wrong cost
+    basis would corrupt capital-gains numbers. ONE parser for the bundled
+    file and the fetched one, so the fetched copy can never be trusted on
+    weaker terms than the shipped one."""
+    import csv
+    import io
+    from datetime import datetime as _dt
+
+    out: list[CorporateAction] = []
+    for r in csv.DictReader(io.StringIO(text)):
+        if not (r.get("old_isin") or "").strip():
+            continue
+        out.append(CorporateAction(
+            symbol=(r.get("old_symbol") or "").strip(),
+            isin=r["old_isin"].strip(),
+            type=r["type"].strip().upper(),
+            ex_date=_dt.strptime(r["ex_date"].strip(), "%Y-%m-%d").date(),
+            ratio_from=float(r["ratio_from"]) if r.get("ratio_from") else None,
+            ratio_to=float(r["ratio_to"]) if r.get("ratio_to") else None,
+            source="Curated",
+            details=(r.get("details") or "").strip(),
+            new_isin=(r.get("new_isin") or "").strip(),
+            new_name=(r.get("new_name") or "").strip(),
+            new_symbol=(r.get("new_symbol") or "").strip(),
+            cost_pct=float(r["cost_pct"]) if r.get("cost_pct") else None,
+        ))
+    validate_restructures(out)
     return out
 
 

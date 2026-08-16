@@ -45,7 +45,10 @@ def test_fmv_fallback_by_isin_and_symbol(tmp_path):
     build_workbook(data, str(path))
 
     prices, amfi = _empty_sources()
-    summary = run(path, price_data=prices, amfi_data=amfi, ca_data=[], today=TODAY)
+    # restructures=[]: this test indexes the LAST three equity rows, and a
+    # curated demerger on a sample holding would append one after them
+    summary = run(path, price_data=prices, amfi_data=amfi, ca_data=[],
+                  today=TODAY, restructures=[])
     assert summary["fmv_filled"] == 2
 
     back = read_workbook(str(path))
